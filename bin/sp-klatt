@@ -3,7 +3,7 @@
 # usage: sp-klatt SONG.rb      needs node; uses the bundled vendor/klattsch unless KLATTSCH is set
 SP_ROOT = File.expand_path("..", __dir__)
 KLATTSCH = ENV["KLATTSCH"] || "#{SP_ROOT}/vendor/klattsch/bin/klattsch.mjs"
-src = File.read(ARGV[0])
+src = File.read(ARGV[0], encoding: "utf-8")
 block = src[/^# ---- klattsch voices\n(.*?)^# ---- end klattsch voices/m, 1] or exit 0
 def note(n) = n
 eval(block)

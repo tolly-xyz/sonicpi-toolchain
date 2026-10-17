@@ -24,8 +24,7 @@ fi
 ffmpeg -y -loglevel error -i "$ROOT/out/radiator_teeth_v2.wav" -b:a 320k "$ROOT/out/radiator_teeth_v2.mp3"
 echo "$ROOT/out/radiator_teeth_v2.mp3"
 if [ "${want[0]}" = video ] || [ "${VIDEO:-}" = 1 ]; then
-  # word timings for the lyrics come straight from klattsch's compiler
-  ruby "$ROOT/tools/vox-inspect/dump_klatt.rb" "$SONG" > "$W/klatt_table.json"
-  node "$ROOT/tools/vox-inspect/timing.mjs" < "$W/klatt_table.json" > "$W/klatt_timing.json"
+  # the on-screen words come from the same LYRICS data the voices are rendered from
+  ruby "$HERE/lyrics.rb" "$SONG" > "$W/lyrics.json"
   "$PY" "$HERE/draw.py" "$ROOT/out/radiator_teeth_v2.mp4"
 fi

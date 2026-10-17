@@ -2,8 +2,8 @@
 """Radiator Teeth: a photocopied-zine video, cut to the score.
 
 usage: draw.py OUT.mp4 [--from S] [--to S] [--still S ...]
-Reads work/radiator_teeth_v2/{timeline.json, parts/*.wav} (build.sh makes them; parts come
-from `mix.py OUT --parts DIR`) and muxes out/radiator_teeth_v2.wav as the soundtrack.
+Reads work/radiator_teeth_v2/{timeline.json, lyrics.json, parts/*.wav} (build.sh makes them:
+lyrics.json from lyrics.rb, parts from `mix.py OUT --parts DIR`) and muxes out/radiator_teeth_v2.wav as the soundtrack.
 Structure (bars, kicks, snares, the seizure, every sung word) comes from the score; the
 part tracks add texture (guitar static, bass rattle, the howl bending the pipes).
 """
@@ -63,30 +63,22 @@ def until(times, t):
     return times[i] - t if i < len(times) else 1e9
 
 def lyrics():
-    """Lines of words, each word timed from the vocal score: (start, end, style, [(t, text), ...])."""
+    """Lines of words, timed from the song's own LYRICS data (lyrics.rb): (start, end, style, [(t, text), ...])."""
     out = []
-    def bar(sec, k): return next(b for b in BARS if b["sec"] == sec and b["k"] == k)
-    def line(b, steps, texts, style, hold=0.3):
-        t = b["t"] - VOX_EARLY; st = b["step"]; ws = []
-        for n, txt in zip(steps, texts): ws.append((t, txt)); t += n * st
-        out.append((ws[0][0], t + hold, style, ws))
-    shout = ([3, 1, 1, 2, 1, 1, 3], ["TEETH ", "in ", "the ", "RA", "DI", "A", "TOR!"])
-    for k in (1, 3, 5): line(bar("a", k), *shout, "shout")
-    for k in (0, 2, 4): line(bar("a3", k), *shout, "shout")
-    for k in (0, 2, 4, 6): line(bar("a2", k), [3, 1, 4], ["BITE ", "the ", "HEAT!"], "shout")
-    for k in (3, 7): line(bar("a2", k), [3] * 5, ["BI- "] * 4 + ["BITE"], "stuck", hold=0.1)
-    sung = ["the ", "pipes ", "are ", "sing", "ing"]
-    for k in (0, 2, 4, 6): line(bar("b", k), [2, 14, 4, 6, 6], sung, "sung", hold=0)
-    tm = json.load(open(f"{WORK}/klatt_timing.json"))
-    for k, name, splits, txt in [(1, "warm", [0, 3, 7, 9], "it's warm in here."), (4, "warm2", [0, 3, 5, 9, 11], "it's so warm in here.")]:
-        ph = tm[name]["voices"][0]; t0 = bar("down", k)["t"] - VOX_EARLY
-        ws = [(t0 + ph[i][1] / 1000, w + " ") for i, w in zip(splits, txt.split())]
-        out.append((ws[0][0], t0 + ph[-1][2] / 1000 + 2.5, "whisper-L" if k == 1 else "whisper-R", ws))
-    for b in SEC["blast"]:
-        for q in range(b["steps"] // 4):
-            t = b["t"] + q * 4 * b["step"] - VOX_EARLY; out.append((t, t + 3 * b["step"], "hot", [(t, "HOT")]))
-    tail = SEC["tail"][0]; t = tail["t"] + 2 * 60 / tail["bpm"]
-    out.append((t, TOTAL + 10, "last", [(t, "teeth.")]))
+    for l in json.load(open(f"{WORK}/lyrics.json")):
+        b = next(x for x in BARS if x["sec"] == l["sec"] and x["k"] == l["k"])
+        t0 = b["t"] - VOX_EARLY + l.get("delay_beats", 0) * 60 / b["bpm"]
+        style = l["style"]
+        if "steps" in l:
+            ws = [(t0 + n * b["step"], w + " ") for w, n in l["steps"]]
+            end = t0 + l["end_steps"] * b["step"] + (0.1 if style == "stuck" else 0.3)
+        else:
+            ws = [(t0 + ms / 1000, w + " ") for w, ms in l["ms"]]
+            end = t0 + l["end_ms"] / 1000 + 2.5
+        if style == "number": ws = [(ws[0][0], l["show"])]; end = b["t"] + b["steps"] * b["step"]
+        if style == "whisper": style = "whisper-L" if l["k"] < 3 else "whisper-R"
+        if style == "last": end = TOTAL + 10
+        out.append((ws[0][0], end, style, ws))
     return out
 LYR = lyrics()
 
@@ -286,10 +278,10 @@ def frame(c, surf, t):
             c.select_font_face("FreeMono", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD); c.set_font_size(52)
             x = 110 if left else W - 110 - c.text_extents(text.rstrip()).x_advance
             typewriter(c, text, x, 150 if left else 270, 52, BONE, fade, chars=n)
-        elif style == "hot":
-            q = random.Random(seed); hx, hy = q.uniform(360, 1560), q.uniform(200, 880); age = t - s0
-            c.save(); c.translate(hx, hy); c.rotate(q.uniform(-0.3, 0.3)); k = 1.7 - 0.6 * clamp(age / 0.1)
-            c.scale(k, k); ransom(c, "HOT", 0, 0, 130, seed, palette=("ink", "bone")); c.restore()
+        elif style == "number":                                 # the temperature, stamped on each bar
+            q = random.Random(seed); hx, hy = q.uniform(560, 1360), q.uniform(240, 820); age = t - s0
+            c.save(); c.translate(hx, hy); c.rotate(q.uniform(-0.25, 0.25)); k = 1.8 - 0.6 * clamp(age / 0.1)
+            c.scale(k, k); ransom(c, text.strip(), 0, 0, 150, seed, palette=("ink", "bone")); c.restore()
         elif style == "last":
             typewriter(c, text, 960, 560, 40, BONE, 1.0, chars=int(clamp((t - s0) / 0.6) * len(text) + 0.999), align="center")
 
