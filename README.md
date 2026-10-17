@@ -46,7 +46,7 @@ def klatt(name) = "#{KDIR}/#{name}.wav"
 ```
 
 `sp-klatt` evaluates just that block (plain Ruby, so you can compute `r` from your tempo,
-see `songs/radiator_teeth_v2.rb`), renders each changed entry with the bundled klattsch,
+see `songs/silt_psalm.rb`), renders each changed entry with the bundled klattsch,
 and caches the WAVs. Rendering happens before playback so Sonic Pi's timing is untouched.
 klattsch syntax: `b` pitch (Hz or note name), `r` ms per phoneme or per `( group )`,
 `v`/`w` vibrato depth/rate, `h` breathiness, `g` effort, `t` tilt, `s` vocal-tract scale,
@@ -58,8 +58,8 @@ klattsch syntax: `b` pitch (Hz or note name), `r` ms per phoneme or per `( group
 |------|-------|
 | `songs/demo.rb` | `bin/sp-render songs/demo.rb out/demo.mp3 -d 12` |
 | `songs/the_room.rb`: *The Room With The Crooked Clock* (7/8, D major) | `projects/the_room/build.sh` makes `out/the_room.mp3` and the video `out/the_room.mp4` |
-| `songs/radiator_teeth.rb`: *Radiator Teeth*, pure Sonic Pi | `bin/sp-render songs/radiator_teeth.rb out/radiator_teeth.mp3 -d 74 -t 5` |
-| `songs/radiator_teeth_v2.rb`: *Radiator Teeth v2*, stems + mix + klattsch vocals | `projects/radiator_teeth_v2/build.sh` (all stems, ~9 min), `build.sh vox` (one stem), `build.sh mix` (remix only), `build.sh video` (remix + the zine video), or `VIDEO=1 build.sh` for everything |
+| `songs/radiator_teeth.rb`: *Radiator Teeth*, the instrumental, pure Sonic Pi | `bin/sp-render songs/radiator_teeth.rb out/radiator_teeth.mp3 -d 74 -t 5` |
+| `songs/silt_psalm.rb`: *Silt Psalm*, the same music with words: stems + mix + klattsch vocals | `projects/silt_psalm/build.sh` (all stems, ~9 min), `build.sh vox` (one stem), `build.sh mix` (remix only), `build.sh video` (remix + the video; still Radiator Teeth's radiator imagery), or `VIDEO=1 build.sh` for everything |
 
 **The Room** — `draw.py` reads the bar/note timeline exported from the song
 (`timeline.rb`) and draws every frame with cairo, piping them into ffmpeg with the
@@ -68,7 +68,7 @@ audio. `--still 25 60` writes PNGs instead of a video for quick looks;
 Songs written as a `PLAN` of bars support rehearsal: prepend
 `FROM_BAR = 20; TO_BAR = 28; SOLO = [:piano]` with `sp-render -p`.
 
-**Radiator Teeth v2** — Sonic Pi renders synth stems (two guitar takes for left/right,
+**Silt Psalm** — Sonic Pi renders synth stems (two guitar takes for left/right,
 bass, lead, fx, vocals), each starting with a sync click that `mix.py` aligns on.
 `mix.py` then builds sample-accurate parts from the same timeline: drums from the
 Hydrogen *Black Pearl* kit with velocity layers, recorded guitar strums from
@@ -76,7 +76,7 @@ Hydrogen *Black Pearl* kit with velocity layers, recorded guitar strums from
 MuseScore soundfont, and mixes/masters everything with Spotify's `pedalboard`. Each part
 is leveled to a target loudness (`parts` in `mix.py`), so balance changes are one number.
 
-**Radiator Teeth video** — `projects/radiator_teeth_v2/draw.py`: a photocopied-zine
+**Video** — `projects/silt_psalm/draw.py` (made for the Radiator Teeth lyrics): a photocopied-zine
 radiator whose jaw snaps on the kicks, ransom-note lyrics timed per word from klattsch's own
 compiler, the breakdown melting under a cathedral arch, a red strobe for the blast.
 `--still 8.3 46.8` writes PNGs for quick looks.
@@ -93,11 +93,11 @@ node tools/vox-inspect/pitches.mjs "E F G A Bb B C D" < work/table.json  # the n
 ```
 
 `mix.py OUT --parts DIR` also writes each processed part (e.g. `vox.wav`) as it sits in the mix.
-Lessons from tuning *Radiator Teeth*: avoid `( groups )` for speech (they split time evenly, so
+Lessons from tuning these vocals: avoid `( groups )` for speech (they split time evenly, so
 consonants eat the vowels); give each phoneme its own `r`; keep stops (P B T D K G) short,
 since klattsch renders them as closure silence plus a 25 ms burst; keep `h` (breath) low enough
 for formants to show; use stress marks, falling pitch deltas, scoops and late-blooming vibrato
-for life. `songs/radiator_teeth_v2.rb` has a `syl_ms` helper that does this on a beat grid,
+for life. `songs/silt_psalm.rb` has a `syl_ms` helper that does this on a beat grid,
 with every pitch and glide named as a note (klattsch moves are in Hz; `d(from, to)` converts),
 so the melody can't drift off the key. Scale vibrato and scoops with the note, too: fixed-Hz
 values get proportionally wider an octave down.

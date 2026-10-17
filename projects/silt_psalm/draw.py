@@ -2,8 +2,8 @@
 """Radiator Teeth: a photocopied-zine video, cut to the score.
 
 usage: draw.py OUT.mp4 [--from S] [--to S] [--still S ...]
-Reads work/radiator_teeth_v2/{timeline.json, lyrics.json, parts/*.wav} (build.sh makes them:
-lyrics.json from lyrics.rb, parts from `mix.py OUT --parts DIR`) and muxes out/radiator_teeth_v2.wav as the soundtrack.
+Reads work/silt_psalm/{timeline.json, lyrics.json, parts/*.wav} (build.sh makes them:
+lyrics.json from lyrics.rb, parts from `mix.py OUT --parts DIR`) and muxes out/silt_psalm.wav as the soundtrack.
 Structure (bars, kicks, snares, the seizure, every sung word) comes from the score; the
 part tracks add texture (guitar static, bass rattle, the howl bending the pipes).
 """
@@ -11,7 +11,7 @@ import argparse, json, math, os, random, subprocess, sys
 import numpy as np, soundfile as sf, cairo
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-WORK = f"{ROOT}/work/radiator_teeth_v2"
+WORK = f"{ROOT}/work/silt_psalm"
 W, H, FPS = 1920, 1080, 30
 BONE, INK, RED = (0.93, 0.90, 0.84), (0.07, 0.06, 0.06), (0.84, 0.15, 0.12)
 VOX_EARLY = 0.020                    # mix.py places the vocals this much ahead of the grid
@@ -315,7 +315,7 @@ def main():
     if a.still:
         for s in a.still: frame(c, surf, s); surf.write_to_png(f"{a.out}_{s:06.2f}.png")
         return
-    audio = f"{ROOT}/out/radiator_teeth_v2.wav"
+    audio = f"{ROOT}/out/silt_psalm.wav"
     dur = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", audio],
                                capture_output=True, text=True).stdout)
     t1 = min(a.t1 or dur, dur); n = int((t1 - a.t0) * FPS)

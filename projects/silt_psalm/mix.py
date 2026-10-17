@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Radiator Teeth v2: build the sampled parts from the score's timeline and mix everything.
+"""Silt Psalm: build the sampled parts from the score's timeline and mix everything.
 
-Sonic Pi stems (work/radiator_teeth_v2/stems/*.wav) each start with a sync click; the song begins 4 beats at
+Sonic Pi stems (work/silt_psalm/stems/*.wav) each start with a sync click; the song begins 4 beats at
 168 bpm after it. Drums, real guitar strums, organ and choir are built here, sample-accurate.
 usage: mix.py OUT.wav [--parts DIR]   (--parts also writes each processed, leveled part)
 """
@@ -11,7 +11,7 @@ from pedalboard import (Pedalboard, Compressor, Distortion, Gain, HighpassFilter
                         PeakFilter, LowShelfFilter, HighShelfFilter, Reverb, Limiter, Delay, Chorus)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-HERE = f"{ROOT}/work/radiator_teeth_v2"     # stems, timeline and scratch renders
+HERE = f"{ROOT}/work/silt_psalm"     # stems, timeline and scratch renders
 SR = 48000
 PREROLL = 4 * 60 / 168
 KITS = "/usr/share/hydrogen/data/drumkits"

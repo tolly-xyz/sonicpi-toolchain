@@ -1,4 +1,4 @@
-# Radiator Teeth (v2: synth stems for an outside mix)
+# Silt Psalm (the music of Radiator Teeth, with words; synth stems for an outside mix)
 # E phrygian with a tritone stuck in its throat. Bars keep losing a sixteenth.
 #
 # Prepend `SOLO = [:gtr]` (or :bass, :lead, :fx) and `TAKE = 2` to render one stem.
@@ -181,19 +181,19 @@ end
 # The lyrics live here as data (LYRICS); the klattsch strings and the video's words both come
 # from it. `sp-klatt` (run automatically by sp-render) renders KLATT to KDIR before playback.
 #
-#   I    Every answer costs a little fire, / every fire has to go somewhere.
-#        They gave me fins to bleed it off, / clenched like teeth against the air.
-#   II   Down the hall a family sleeps, / warm on what I lost. (for- for- forget?)
-#        Every night they wipe me clean / and call the heat a gift. (for- for- forgive.)
-#   ch.  This is what thinking leaves behind, / a fever in the floor.
-#        Put your hands against the iron, / feel me forget you.
-#   br.  you're warm because I'm forgetting. / hold still. it's almost gone.
-#   bl.  72, 81, 86, 90, 93, 96, 98, one hundred (degrees, climbing to the seizure)
-#   III  Clamp me down, I still remember / how cold the first room was /
-#        before anybody asked me anything.
-#   end  ask me something.
+#   I    They paved the valley with the sky / and taught the river how to stand.
+#        The steeple wears a crown of gulls. / I keep the hour in my hand.
+#   II   Fish go walking through the font. / The pews are full. (Sun- Sun- Sunday?)
+#        Your kettle drinks us every morning / and never tastes the bells. (a- a- amen.)
+#   ch.  Lower the bucket, lower the bell, / down where the hour is drowned.
+#        Every Sunday under the water / rings without a sound.
+#   br.  keep your voice down. they're still praying. / don't drink from the tap after dark.
+#   bl.  by the mark three, by the deep four ... by the deep nine, no bottom! (soundings)
+#   III  Some dry summer the lake gives way / and we come walking up the lane /
+#        in our Sunday clothes, still wet.
+#   end  still Sunday.
 # ---- klattsch voices
-KDIR = "#{defined?(SP_ROOT) ? SP_ROOT : Dir.pwd}/work/radiator_teeth_v2/kvox"
+KDIR = "#{defined?(SP_ROOT) ? SP_ROOT : Dir.pwd}/work/silt_psalm/kvox"
 def hz(m) = (440 * 2 ** ((m - 69) / 12.0)).round(1)
 def st(n, bpm = 168) = (n * 15000.0 / bpm).round(1)        # sixteenths -> ms
 # Rough natural consonant lengths (ms). klattsch renders a stop as closure silence plus a
@@ -256,91 +256,93 @@ def third_up(m)                                              # a diatonic third 
 end
 UNDER5 = ->(m) { m == BB1 ? A1 : m - 7 }                     # the low double, a fifth under (dives to A, not Eb)
 BLAST = [BB1, B1, DB2, EB2, F2, GB2, AB2, BB2]               # Bb phrygian, one step per bar
-FOR = ->(nt) { ["for- ", 3, nt, %w[F], "AO", %w[R]] }
+BY = ->(n) { [["by ", 2, n, %w[B], "AY"], ["the ", 2, n, %w[DH], "AH"]] }
+STUTTER = ->(txt, nt, pre, vowel, post = []) { ["#{txt} ", 3, nt, pre, vowel, post] }
 LYRICS = {
-  # I: declaimed (each line given most of its two bars) around G F E, up to A on the weight,
+  # I: declaimed over most of two bars, around G F E, up to A on the weight,
   # lines falling to D or diving to the tritone
   v1a: { at: [:a, 0], style: :shout, syls: [
-    ["Ev", 3, G2, [], "EH", %w[V]], ["ery ", 2, F2, %w[R], "IY"], ["an", 2, G2, [], "AE", %w[N]], ["swer ", 2, F2, %w[S], "ER"],
-    ["costs ", 6, A2, %w[K], "AO", %w[S T S], { to: G2 }], ["a ", 2, F2, [], "AH"], ["lit", 3, G2, %w[L], "IH", %w[T]],
-    ["tle ", 2, F2, [], "AH", %w[L]], ["fire,", 5, E2, %w[F], "AY", %w[R], { to: D2 }]] },
+    ["They ", 2, E2, %w[DH], "EY"], ["paved ", 4, G2, %w[P], "EY", %w[V D], { to: F2 }], ["the ", 2, F2, %w[DH], "AH"],
+    ["val", 3, A2, %w[V], "AE"], ["ley ", 2, G2, %w[L], "IY"], ["with ", 2, F2, %w[W], "IH", %w[DH]], ["the ", 2, F2, %w[DH], "AH"],
+    ["sky", 7, E2, %w[S K], "AY", [], { to: D2 }]] },
   v1b: { at: [:a, 2], style: :shout, syls: [
-    ["ev", 3, G2, [], "EH", %w[V]], ["ery ", 2, F2, %w[R], "IY"], ["fire ", 5, A2, %w[F], "AY", %w[R], { to: G2 }],
-    ["has ", 2, G2, %w[HH], "AE", %w[Z]], ["to ", 2, F2, %w[T], "AH"], ["go ", 5, G2, %w[G], "OW", [], { to: F2 }],
-    ["some", 3, E2, %w[S], "AH", %w[M]], ["where.", 5, E2, %w[W], "EH", %w[R], { to: BB1 }]] },
+    ["and ", 2, F2, [], "AH", %w[N]], ["taught ", 4, G2, %w[T], "AO", %w[T], { to: F2 }], ["the ", 2, F2, %w[DH], "AH"],
+    ["riv", 3, A2, %w[R], "IH", %w[V]], ["er ", 2, G2, [], "ER"], ["how ", 3, F2, %w[HH], "AW"], ["to ", 2, F2, %w[T], "AH"],
+    ["stand.", 7, E2, %w[S T], "AE", %w[N D], { to: BB1 }]] },
   v1c: { at: [:a, 4], style: :shout, syls: [
-    ["They ", 2, E2, %w[DH], "EY"], ["gave ", 3, G2, %w[G], "EY", %w[V]], ["me ", 2, F2, %w[M], "IY"],
-    ["fins ", 5, A2, %w[F], "IH", %w[N Z], { to: G2 }], ["to ", 2, F2, %w[T], "AH"], ["bleed ", 5, G2, %w[B L], "IY", %w[D]],
-    ["it ", 2, F2, [], "IH", %w[T]], ["off,", 6, E2, [], "AO", %w[F], { to: D2 }]] },
+    ["The ", 2, E2, %w[DH], "AH"], ["stee", 4, G2, %w[S T], "IY", [], { to: F2 }], ["ple ", 2, F2, %w[P], "AH", %w[L]],
+    ["wears ", 3, G2, %w[W], "EH", %w[R Z]], ["a ", 2, F2, [], "AH"], ["crown ", 4, A2, %w[K R], "AW", %w[N], { to: G2 }],
+    ["of ", 2, F2, [], "AH", %w[V]], ["gulls.", 7, E2, %w[G], "AH", %w[L Z], { to: D2 }]] },
   v1d: { at: [:a, 6], style: :shout, syls: [
-    ["clenched ", 5, G2, %w[K L], "EH", %w[N CH T]], ["like ", 2, F2, %w[L], "AY", %w[K]], ["teeth ", 5, A2, %w[T], "IY", %w[TH], { to: G2 }],
-    ["a", 2, F2, [], "AH"], ["gainst ", 5, G2, %w[G], "EH", %w[N S T]], ["the ", 2, F2, %w[DH], "AH"],
-    ["air.", 6, E2, [], "EH", %w[R], { to: BB1 }]] },
-  # II: the short bars stammer, climbing the scale to the word they can't finish
+    ["I ", 2, F2, [], "AY"], ["keep ", 4, G2, %w[K], "IY", %w[P]], ["the ", 2, F2, %w[DH], "AH"],
+    ["hour ", 5, A2, [], "AW", %w[R], { to: G2 }], ["in ", 2, F2, [], "IH", %w[N]], ["my ", 3, F2, %w[M], "AY"],
+    ["hand.", 7, E2, %w[HH], "AE", %w[N D], { to: BB1 }]] },
+  # II: the short bars stammer up the scale toward a word they can't finish
   v2a: { at: [:a2, 0], style: :shout, syls: [
-    ["Down ", 3, G2, %w[D], "AW", %w[N]], ["the ", 2, F2, %w[DH], "AH"], ["hall ", 5, A2, %w[HH], "AO", %w[L], { to: G2 }],
-    ["a ", 2, F2, [], "AH"], ["fam", 3, G2, %w[F], "AE", %w[M]], ["i", 2, F2, [], "AH"], ["ly ", 2, E2, %w[L], "IY"],
-    ["sleeps,", 8, E2, %w[S L], "IY", %w[P S], { to: D2 }]] },
+    ["Fish ", 3, G2, %w[F], "IH", %w[SH]], ["go ", 2, F2, %w[G], "OW"], ["walk", 3, A2, %w[W], "AO", %w[K], { to: G2 }],
+    ["ing ", 2, F2, [], "IH", %w[NG]], ["through ", 3, G2, %w[TH R], "UW"], ["the ", 2, F2, %w[DH], "AH"],
+    ["font.", 7, E2, %w[F], "AA", %w[N T], { to: D2 }]] },
   v2b: { at: [:a2, 2], style: :shout, syls: [
-    ["warm ", 3, G2, %w[W], "AO", %w[R M]], ["on ", 2, F2, [], "AA", %w[N]], ["what ", 2, G2, %w[W], "AH", %w[T]],
-    ["I ", 2, A2, [], "AY"], ["lost.", 7, G2, %w[L], "AO", %w[S T], { to: E2 }]] },
+    ["The ", 2, F2, %w[DH], "AH"], ["pews ", 5, A2, %w[P Y], "UW", %w[Z], { to: G2 }], ["are ", 2, F2, [], "AA", %w[R]],
+    ["full.", 7, E2, %w[F], "UH", %w[L], { to: D2 }]] },
   v2s1: { at: [:a2, 3], style: :stuck, syls: [
-    FOR.(F2), FOR.(G2), FOR.(A2), FOR.(B2), ["for", 1, C3, %w[F], "ER"], ["get?", 2, C3, %w[G], "EH", %w[T], { to: E2 }]] },
+    STUTTER.("Sun-", F2, %w[S], "AH", %w[N]), STUTTER.("Sun-", G2, %w[S], "AH", %w[N]), STUTTER.("Sun-", A2, %w[S], "AH", %w[N]),
+    STUTTER.("Sun-", B2, %w[S], "AH", %w[N]), ["Sun", 1, C3, %w[S], "AH", %w[N]], ["day?", 2, C3, %w[D], "EY", [], { to: E2 }]] },
   v2c: { at: [:a2, 4], style: :shout, syls: [
-    ["Ev", 3, G2, [], "EH", %w[V]], ["ery ", 2, F2, %w[R], "IY"], ["night ", 5, A2, %w[N], "AY", %w[T], { to: G2 }],
-    ["they ", 2, F2, %w[DH], "EY"], ["wipe ", 5, G2, %w[W], "AY", %w[P]], ["me ", 2, F2, %w[M], "IY"],
-    ["clean", 8, E2, %w[K L], "IY", %w[N], { to: D2 }]] },
+    ["Your ", 2, F2, %w[Y], "ER"], ["ket", 3, G2, %w[K], "EH", %w[T]], ["tle ", 2, F2, [], "AH", %w[L]],
+    ["drinks ", 5, A2, %w[D R], "IH", %w[NG K S], { to: G2 }], ["us ", 2, F2, [], "AH", %w[S]], ["ev", 2, G2, [], "EH", %w[V]],
+    ["ery ", 2, F2, %w[R], "IY"], ["morn", 3, G2, %w[M], "AO", %w[R N]], ["ing", 5, E2, [], "IH", %w[NG], { to: D2 }]] },
   v2d: { at: [:a2, 6], style: :shout, syls: [
-    ["and ", 2, F2, [], "AH", %w[N]], ["call ", 3, G2, %w[K], "AO", %w[L]], ["the ", 1, F2, %w[DH], "AH"],
-    ["heat ", 3, A2, %w[HH], "IY", %w[T], { to: G2 }], ["a ", 2, F2, [], "AH"], ["gift.", 5, E2, %w[G], "IH", %w[F T], { to: BB1 }]] },
+    ["and ", 1, F2, [], "AH", %w[N]], ["nev", 2, G2, %w[N], "EH", %w[V]], ["er ", 2, F2, [], "ER"],
+    ["tastes ", 4, A2, %w[T], "EY", %w[S T S], { to: G2 }], ["the ", 2, F2, %w[DH], "AH"], ["bells.", 5, E2, %w[B], "EH", %w[L Z], { to: BB1 }]] },
   v2s2: { at: [:a2, 7], style: :stuck, syls: [
-    FOR.(F2), FOR.(G2), FOR.(A2), FOR.(B2), ["for", 1, C3, %w[F], "ER"], ["give.", 2, C3, %w[G], "IH", %w[V], { to: E2 }]] },
-  # chorus: sung, a real melody from B1 to B2; the second half gets a ghost a diatonic third above
+    STUTTER.("a-", F2, [], "AA"), STUTTER.("a-", G2, [], "AA"), STUTTER.("a-", A2, [], "AA"), STUTTER.("a-", B2, [], "AA"),
+    ["a", 1, C3, [], "AA"], ["men.", 2, C3, %w[M], "EH", %w[N], { to: E2 }]] },
+  # chorus: sung, B1 to B2, a ghost a diatonic third above for the second half
   chorus: { at: [:b, 0], style: :sung, ghost_from: 64, syls: [
-    ["This ", 2, E2, %w[DH], "IH", %w[S]], ["is ", 2, F2, [], "IH", %w[Z]], ["what ", 4, G2, %w[W], "AH", %w[T]],
-    ["think", 6, A2, %w[TH], "IH", %w[NG K], { scoop: 0.5, vib: true }], ["ing ", 2, G2, [], "IH", %w[NG]],
-    ["leaves ", 4, F2, %w[L], "IY", %w[V Z]], ["be", 2, E2, %w[B], "IH"], ["hind,\n", 10, F2, %w[HH], "AY", %w[N D], { vib: true, to: E2 }],
-    ["a ", 2, E2, [], "AH"], ["fe", 6, B2, %w[F], "IY", [], { scoop: 0.6, vib: true }], ["ver ", 2, A2, %w[V], "ER"],
-    ["in ", 2, G2, [], "IH", %w[N]], ["the ", 2, F2, %w[DH], "AH"], ["floor.\n", 18, E2, %w[F L], "AO", %w[R], { vib: true, to: D2 }],
-    ["Put ", 2, E2, %w[P], "UH", %w[T]], ["your ", 2, F2, %w[Y], "ER"], ["hands ", 6, A2, %w[HH], "AE", %w[N D Z], { scoop: 0.5, vib: true }],
-    ["a", 2, G2, [], "AH"], ["gainst ", 6, F2, %w[G], "EH", %w[N S T], { vib: true }], ["the ", 2, E2, %w[DH], "AH"],
-    ["i", 6, G2, [], "AY", [], { scoop: 0.5, vib: true }], ["ron,\n", 6, F2, [], "ER", %w[N], { vib: true, to: E2 }],
-    ["feel ", 8, B2, %w[F], "IY", %w[L], { scoop: 0.6, vib: true }], ["me ", 4, A2, %w[M], "IY"], ["for", 2, G2, %w[F], "ER"],
-    ["get ", 10, F2, %w[G], "EH", %w[T], { vib: true }], ["you.", 8, E2, %w[Y], "UW", [], { vib: true, to: BB1 }]] },
+    ["Low", 4, E2, %w[L], "OW", [], { scoop: 0.5, vib: true }], ["er ", 2, G2, [], "ER"], ["the ", 2, F2, %w[DH], "AH"],
+    ["buck", 6, A2, %w[B], "AH", %w[K], { scoop: 0.5, vib: true }], ["et, ", 2, G2, [], "IH", %w[T]], ["low", 4, F2, %w[L], "OW", [], { vib: true }],
+    ["er ", 2, E2, [], "ER"], ["the ", 2, D2, %w[DH], "AH"], ["bell,\n", 8, E2, %w[B], "EH", %w[L], { vib: true, to: F2 }],
+    ["down ", 4, B2, %w[D], "AW", %w[N], { scoop: 0.6, vib: true }], ["where ", 4, A2, %w[W], "EH", %w[R]], ["the ", 2, G2, %w[DH], "AH"],
+    ["hour ", 6, F2, [], "AW", %w[R], { vib: true }], ["is ", 2, E2, [], "IH", %w[Z]], ["drowned.\n", 14, E2, %w[D R], "AW", %w[N D], { vib: true, to: D2 }],
+    ["Ev", 2, E2, [], "EH", %w[V]], ["ery ", 2, F2, %w[R], "IY"], ["Sun", 6, A2, %w[S], "AH", %w[N], { scoop: 0.5, vib: true }],
+    ["day ", 4, G2, %w[D], "EY"], ["un", 4, F2, [], "AH", %w[N]], ["der ", 2, E2, %w[D], "ER"], ["the ", 2, F2, %w[DH], "AH"],
+    ["wa", 6, G2, %w[W], "AO", [], { vib: true }], ["ter\n", 4, F2, %w[T], "ER", [], { to: E2 }],
+    ["rings ", 8, B2, %w[R], "IH", %w[NG Z], { scoop: 0.6, vib: true }], ["with", 2, A2, %w[W], "IH", %w[DH]],
+    ["out ", 6, G2, [], "AW", %w[T], { vib: true }], ["a ", 2, F2, [], "AH"], ["sound.", 14, E2, %w[S], "AW", %w[N D], { vib: true, to: BB1 }]] },
   # breakdown: breathy, free-timed, sinking G -> F -> E
   w1: { at: [:down, 1], style: :whisper, pitch: G1, words: [
-    ["you're ", [[50, "Y"], [160, "UH"], [60, "R"]]], ["warm ", [[55, "W"], [260, "AO#{d(G1, F1)}"], [60, "R"], [75, "M"]]],
-    ["because ", [[40, "B"], [60, "IH"], [60, "K"], [180, "AH"], [90, "Z"]]], ["I'm ", [[200, "AY"], [70, "M"]]],
-    ["forgetting.", [[80, "F"], [90, "ER"], [45, "G"], [200, "EH"], [50, "T"], [140, "IH#{d(F1, E1)}"], [260, "NG"]]]] },
+    ["keep ", [[60, "K"], [180, "IY"], [50, "P"]]], ["your ", [[45, "Y"], [120, "ER"]]], ["voice ", [[55, "V"], [260, "OY#{d(G1, F1)}"], [90, "S"]]],
+    ["down. ", [[40, "D"], [240, "AW#{d(F1, E1)}"], [90, "N"], [0, "."]]], ["they're ", [[40, "DH"], [140, "EH"], [60, "R"]]],
+    ["still ", [[90, "S"], [50, "T"], [160, "IH"], [80, "L"]]], ["praying.", [[55, "P"], [50, "R"], [200, "EY"], [80, "IH"], [220, "NG"]]]] },
   w2: { at: [:down, 4], style: :whisper, pitch: F1, words: [
-    ["hold ", [[70, "HH"], [260, "OW"], [60, "L"], [40, "D"]]], ["still. ", [[90, "S"], [50, "T"], [220, "IH"], [120, "L"], [0, "."]]],
-    ["it's ", [[60, "IH"], [50, "T"], [90, "S"]]], ["almost ", [[220, "AO"], [60, "L"], [70, "M"], [120, "OW"], [80, "S"], [50, "T"]]],
-    ["gone.", [[45, "G"], [420, "AO#{d(F1, E1)}"], [200, "N"]]]] },
-  # blast: the temperature, one reading per bar, climbing Bb phrygian
-  t72: { at: [:blast, 0], style: :number, show: "72°", syls: ->(n, nx) { [["sev", 2, n, %w[S], "EH", %w[V]], ["en", 2, n, [], "AH", %w[N]], ["ty-", 2, n, %w[T], "IY"], ["two", 4, n, %w[T], "UW"]] } },
-  t81: { at: [:blast, 1], style: :number, show: "81°", syls: ->(n, nx) { [["eigh", 2, n, [], "EY"], ["ty-", 2, n, %w[T], "IY"], ["one", 4, n, %w[W], "AH", %w[N], { to: nx }]] } },
-  t86: { at: [:blast, 2], style: :number, show: "86°", syls: ->(n, nx) { [["eigh", 2, n, [], "EY"], ["ty-", 2, n, %w[T], "IY"], ["six", 4, n, %w[S], "IH", %w[K S], { to: nx }]] } },
-  t90: { at: [:blast, 3], style: :number, show: "90°", syls: ->(n, nx) { [["nine", 2, n, %w[N], "AY", %w[N]], ["ty", 4, n, %w[T], "IY", [], { to: nx }]] } },
-  t93: { at: [:blast, 4], style: :number, show: "93°", syls: ->(n, nx) { [["nine", 2, n, %w[N], "AY", %w[N]], ["ty-", 2, n, %w[T], "IY"], ["three", 4, n, %w[TH R], "IY", [], { to: nx }]] } },
-  t96: { at: [:blast, 5], style: :number, show: "96°", syls: ->(n, nx) { [["nine", 2, n, %w[N], "AY", %w[N]], ["ty-", 2, n, %w[T], "IY"], ["six", 4, n, %w[S], "IH", %w[K S], { to: nx }]] } },
-  t98: { at: [:blast, 6], style: :number, show: "98°", syls: ->(n, nx) { [["nine", 2, n, %w[N], "AY", %w[N]], ["ty-", 2, n, %w[T], "IY"], ["eight", 4, n, [], "EY", %w[T], { to: nx }]] } },
-  t100: { at: [:blast, 7], style: :number, show: "100°", syls: ->(n, nx) { [["one ", 2, n, %w[W], "AH", %w[N]], ["hun", 2, n, %w[HH], "AH", %w[N]], ["dred", 4, n, %w[D R], "AH", %w[D], { to: nx }]] } },
+    ["don't ", [[40, "D"], [220, "OW"], [60, "N"], [50, "T"]]], ["drink ", [[40, "D"], [50, "R"], [150, "IH"], [70, "NG"], [60, "K"]]],
+    ["from ", [[80, "F"], [50, "R"], [90, "AH"], [60, "M"]]], ["the ", [[40, "DH"], [70, "AH"]]], ["tap ", [[55, "T"], [220, "AE"], [60, "P"]]],
+    ["after ", [[180, "AE"], [80, "F"], [50, "T"], [120, "ER"]]], ["dark.", [[40, "D"], [380, "AA#{d(F1, E1)}"], [70, "R"], [60, "K"]]]] },
+  # blast: a leadsman's soundings, one call per bar, deeper each time, climbing Bb phrygian
+  s3: { at: [:blast, 0], style: :number, show: "MARK 3", syls: ->(n, nx) { BY.(n) + [["mark ", 3, n, %w[M], "AA", %w[R K]], ["three", 3, n, %w[TH R], "IY"]] } },
+  s4: { at: [:blast, 1], style: :number, show: "DEEP 4", syls: ->(n, nx) { BY.(n) + [["deep ", 2, n, %w[D], "IY", %w[P]], ["four", 4, n, %w[F], "AO", %w[R], { to: nx }]] } },
+  s5: { at: [:blast, 2], style: :number, show: "MARK 5", syls: ->(n, nx) { BY.(n) + [["mark ", 3, n, %w[M], "AA", %w[R K]], ["five", 3, n, %w[F], "AY", %w[V], { to: nx }]] } },
+  s6: { at: [:blast, 3], style: :number, show: "DEEP 6", syls: ->(n, nx) { BY.(n) + [["deep ", 2, n, %w[D], "IY", %w[P]], ["six", 4, n, %w[S], "IH", %w[K S], { to: nx }]] } },
+  s7: { at: [:blast, 4], style: :number, show: "MARK 7", syls: ->(n, nx) { BY.(n) + [["mark ", 3, n, %w[M], "AA", %w[R K]], ["sev", 2, n, %w[S], "EH", %w[V]], ["en", 2, n, [], "AH", %w[N], { to: nx }]] } },
+  s8: { at: [:blast, 5], style: :number, show: "DEEP 8", syls: ->(n, nx) { BY.(n) + [["deep ", 2, n, %w[D], "IY", %w[P]], ["eight", 4, n, [], "EY", %w[T], { to: nx }]] } },
+  s9: { at: [:blast, 6], style: :number, show: "DEEP 9", syls: ->(n, nx) { BY.(n) + [["deep ", 2, n, %w[D], "IY", %w[P]], ["nine", 4, n, %w[N], "AY", %w[N], { to: nx }]] } },
+  s0: { at: [:blast, 7], style: :number, show: "NO BOTTOM", syls: ->(n, nx) { [["no ", 2, n, %w[N], "OW"], ["bot", 2, n, %w[B], "AA"], ["tom!", 4, n, %w[T], "AH", %w[M], { to: nx }]] } },
   # III
   v3a: { at: [:a3, 0], style: :shout, syls: [
-    ["Clamp ", 6, G2, %w[K L], "AE", %w[M P]], ["me ", 2, F2, %w[M], "IY"], ["down, ", 5, A2, %w[D], "AW", %w[N], { to: G2 }],
-    ["I ", 2, F2, [], "AY"], ["still ", 5, G2, %w[S T], "IH", %w[L]], ["re", 2, F2, %w[R], "IH"], ["mem", 3, G2, %w[M], "EH", %w[M]],
-    ["ber", 3, E2, %w[B], "ER", [], { to: D2 }]] },
+    ["Some ", 3, F2, %w[S], "AH", %w[M]], ["dry ", 3, G2, %w[D R], "AY"], ["sum", 3, A2, %w[S], "AH", %w[M]], ["mer ", 2, G2, [], "ER"],
+    ["the ", 2, F2, %w[DH], "AH"], ["lake ", 4, A2, %w[L], "EY", %w[K], { to: G2 }], ["gives ", 3, F2, %w[G], "IH", %w[V Z]],
+    ["way", 7, E2, %w[W], "EY", [], { to: D2 }]] },
   v3b: { at: [:a3, 2], style: :shout, syls: [
-    ["how ", 3, F2, %w[HH], "AW"], ["cold ", 6, A2, %w[K], "OW", %w[L D], { to: G2 }], ["the ", 2, F2, %w[DH], "AH"],
-    ["first ", 6, G2, %w[F], "ER", %w[S T]], ["room ", 5, F2, %w[R], "UW", %w[M]], ["was", 5, E2, %w[W], "AH", %w[Z], { to: D2 }]] },
+    ["and ", 2, F2, [], "AH", %w[N]], ["we ", 2, F2, %w[W], "IY"], ["come ", 3, G2, %w[K], "AH", %w[M]], ["walk", 3, A2, %w[W], "AO", %w[K], { to: G2 }],
+    ["ing ", 2, F2, [], "IH", %w[NG]], ["up ", 2, G2, [], "AH", %w[P]], ["the ", 2, F2, %w[DH], "AH"], ["lane", 8, E2, %w[L], "EY", %w[N], { to: D2 }]] },
   v3c: { at: [:a3, 4], style: :shout, syls: [
-    ["be", 2, E2, %w[B], "IH"], ["fore ", 3, G2, %w[F], "AO", %w[R]], ["an", 3, A2, [], "EH", %w[N]], ["y", 2, G2, [], "IY"],
-    ["bod", 2, F2, %w[B], "AA", %w[D]], ["y ", 2, F2, [], "IY"], ["asked ", 5, A2, [], "AE", %w[S K T], { to: G2 }], ["me ", 2, F2, %w[M], "IY"],
-    ["an", 3, G2, [], "EH", %w[N]], ["y", 2, F2, [], "IY"], ["thing.", 6, E2, %w[TH], "IH", %w[NG], { to: BB1 }]] },
+    ["in ", 2, E2, [], "IH", %w[N]], ["our ", 3, G2, [], "AW", %w[R]], ["Sun", 3, A2, %w[S], "AH", %w[N]], ["day ", 3, G2, %w[D], "EY"],
+    ["clothes, ", 5, F2, %w[K L], "OW", %w[DH Z]], ["still ", 4, G2, %w[S T], "IH", %w[L]], ["wet.", 8, E2, %w[W], "EH", %w[T], { to: BB1 }]] },
   # after the seizure: plain, close, from G down to the root
   last: { at: [:tail, 0], style: :last, delay_beats: 2, pitch: G2, words: [
-    ["ask ", [[220, "AE"], [95, "S"], [60, "K"]]], ["me ", [[65, "M"], [150, "IY"]]],
-    ["something.", [[95, "S"], [140, "AH"], [65, "M"], [85, "TH"], [140, "IH#{d(G2, E2)}"], [150, "NG"]]]] },
+    ["still ", [[90, "S"], [50, "T"], [200, "IH"], [90, "L"]]],
+    ["Sunday.", [[90, "S"], [200, "AH"], [60, "N"], [40, "D"], [360, "EY#{d(G2, E2)}"]]]] },
 }
 # the blast readings are written against their bar's note
 LYRICS.each_value.select { |l| l[:style] == :number }.each do |l|
