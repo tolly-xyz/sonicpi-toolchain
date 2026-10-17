@@ -58,16 +58,25 @@ CLEAN = ("$sp_base ||= Module.nesting.first.constants(false); "
 CLEAN += "; sample_free_all"
 # all on the song's first line, so Sonic Pi's error line numbers match the file
 code = f"{CLEAN}; SP_ROOT = {ROOT!r}; {a.prepend}; {song}"
+# Sonic Pi 3.2's OSC decoder assumes one byte per character, so a single non-ASCII character
+# (a degree sign, an accented letter) corrupts the whole message and the song silently never
+# runs. Send ASCII only: Ruby reads "\u{b0}" back as the same character inside strings.
+code = "".join(ch if ord(ch) < 128 else "\\u{%x}" % ord(ch) for ch in code)
+# The server reads each OSC message into a 16 KB buffer, so a longer song sent inline is cut off
+# and never runs. Hand it the song as a file instead; run_file behaves exactly like /run-code.
+fd, code_file = tempfile.mkstemp(prefix="sp-render-", suffix=".rb")
+with os.fdopen(fd, "w", encoding="ascii") as f: f.write(code)
 if "# ---- klattsch voices" in song:   # render the song's klattsch voices first
     subprocess.run([os.path.join(os.path.dirname(os.path.abspath(__file__)), "sp-klatt"), a.song], check=True)
 wav = a.out if a.out.endswith(".wav") else tempfile.mktemp(suffix=".wav")
 
 send("/stop-all-jobs"); time.sleep(0.5)
 send("/start-recording"); time.sleep(0.2)
-send("/run-code", code)
+send("/run-code", f"run_file {code_file!r}")
 print(f"rendering {a.song} for {a.duration}s + {a.tail}s tail...", file=sys.stderr)
 time.sleep(a.duration)
 send("/stop-all-jobs")
+os.remove(code_file)
 time.sleep(a.tail)
 send("/stop-recording"); time.sleep(0.5)
 send("/save-recording", os.path.abspath(wav))

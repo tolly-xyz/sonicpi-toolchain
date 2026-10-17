@@ -8,7 +8,7 @@ def note(n)
 end
 def use_debug(*); end
 def use_random_seed(*); end
-src = File.read(ARGV[0]).split("# Rehearsal controls").first
+src = File.read(ARGV[0], encoding: "utf-8").split("# Rehearsal controls").first
 eval(src)
 t = 0.0; bars = []
 PLAN.each_with_index do |bar, i|

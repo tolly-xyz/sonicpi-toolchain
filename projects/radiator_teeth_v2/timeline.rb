@@ -8,7 +8,7 @@ def note(n)
 end
 def use_debug(*); end
 def set_sched_ahead_time!(*); end
-eval(File.read(ARGV[0]).split("# ---- end of score").first)
+eval(File.read(ARGV[0], encoding: "utf-8").split("# ---- end of score").first)
 t = 0.0
 out = PLAN.map do |b|
   st = 0.25 * 60.0 / b[:bpm]
