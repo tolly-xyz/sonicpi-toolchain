@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+pkill -f "ruby sonic-pi-[s]erver"; pkill -x scsynth; pkill -f pi_server; pkill -x jackd; echo stopped

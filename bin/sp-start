@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Boot JACK (dummy driver, no sound card) and the Sonic Pi server headless.
+set -euo pipefail
+export PATH=/usr/bin:$PATH   # Sonic Pi's helpers need the system ruby + gems
+LOG=${SP_LOG:-/tmp/sonicpi}; mkdir -p "$LOG" ~/.sonic-pi/log
+if ! jack_lsp >/dev/null 2>&1; then
+  pkill -x jackd || true; sleep 1
+  nohup jackd -r -d dummy -r 48000 -p 1024 >"$LOG/jackd.log" 2>&1 &
+  sleep 2
+fi
+if ! pgrep -f "ruby sonic-pi-[s]erver" >/dev/null; then
+  cd /usr/lib/sonic-pi/app/server/ruby/bin
+  nohup ruby sonic-pi-server.rb -u >"$LOG/server.log" 2>&1 &
+  for _ in $(seq 60); do grep -q "successfully booted" "$LOG/server.log" 2>/dev/null && break; sleep 1; done
+fi
+grep -q "successfully booted" "$LOG/server.log" && echo "Sonic Pi ready" || { echo "boot failed, see $LOG/server.log"; exit 1; }

@@ -1,0 +1,8 @@
+# renders, stems, caches and finished media are rebuilt by the build scripts
+/work/*
+/out/*
+!/work/.gitkeep
+!/out/.gitkeep
+/.venv/
+__pycache__/
+*.pyc

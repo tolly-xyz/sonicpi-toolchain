@@ -1,0 +1,59 @@
+{
+  "name": "klattsch",
+  "version": "0.8.0",
+  "description": "Primitive parallel-formant speech synthesis engine.",
+  "type": "module",
+  "main": "./src/engine/index.js",
+  "exports": {
+    ".": "./src/engine/index.js",
+    "./engine/dsp.js": "./src/engine/dsp.js",
+    "./engine/synth-core.js": "./src/engine/synth-core.js",
+    "./engine/sequencer.js": "./src/engine/sequencer.js",
+    "./engine/phonemes.js": "./src/engine/phonemes.js",
+    "./engine/wav.js": "./src/engine/wav.js",
+    "./formant-worklet.js": "./src/formant-worklet.js",
+    "./pronounce": "./src/engine/pronounce.js",
+    "./kana": "./src/engine/kana.js",
+    "./highlight": "./src/highlight.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src/engine/",
+    "src/formant-worklet.js",
+    "src/highlight.js",
+    "bin/",
+    "README.md",
+    "LICENSE"
+  ],
+  "bin": {
+    "klattsch": "./bin/klattsch.mjs"
+  },
+  "sideEffects": false,
+  "keywords": [
+    "speech-synthesis",
+    "formant",
+    "klatt",
+    "audioworklet",
+    "tts",
+    "phoneme",
+    "arpabet",
+    "voice",
+    "synthesizer"
+  ],
+  "author": "Tony Gies <tgies@tgies.net> (https://github.com/tgies)",
+  "license": "MIT",
+  "homepage": "https://klatts.ch/play/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tgies/klattsch.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tgies/klattsch/issues"
+  },
+  "scripts": {
+    "dev": "python3 -m http.server 8088"
+  },
+  "optionalDependencies": {
+    "cmu-pronouncing-dictionary": "^3.0.0"
+  }
+}

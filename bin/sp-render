@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+"""Render a Sonic Pi .rb file to mp3 (or wav) via the headless server.
+
+usage: sp-render SONG.rb OUT.(mp3|wav) [-d SECONDS] [-t TAIL_SECONDS] [-p "RUBY CODE"]
+Rendering is real time: a 60 s piece takes about 60 s. Needs a running server (sp-start).
+The song sees SP_ROOT (this toolchain's folder); -p prepends code, e.g. -p "SOLO = [:gtr]; TAKE = 2".
+"""
+import argparse, array, os, re, socket, struct, subprocess, sys, tempfile, threading, time, wave
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+def osc_str(s):
+    b = s.encode() + b"\0"
+    return b + b"\0" * (-len(b) % 4)
+
+def osc(addr, *args):
+    tags = "," + "".join("i" if isinstance(a, int) else "s" for a in args)
+    body = b"".join(struct.pack(">i", a) if isinstance(a, int) else osc_str(a) for a in args)
+    return osc_str(addr) + osc_str(tags) + body
+
+def send(addr, *args):
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.sendto(osc(addr, "headless", *args), ("127.0.0.1", 4557))
+    s.close()
+
+errors = []
+def listen():
+    # The server sends logs and errors to the GUI port; surface errors here.
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.bind(("127.0.0.1", 4558))
+    while True:
+        data = s.recv(65536)
+        if data.startswith((b"/error", b"/syntax_error")):
+            text = " | ".join(t.decode(errors="replace") for t in re.findall(rb"[\x20-\x7e\n]{4,}", data)[2:])
+            text = re.sub(r"<[^>]+>", "", text)
+            errors.append(text)
+            print("SONIC PI ERROR:", text, file=sys.stderr)
+threading.Thread(target=listen, daemon=True).start()
+
+p = argparse.ArgumentParser()
+p.add_argument("song"); p.add_argument("out")
+p.add_argument("-d", "--duration", type=float, default=30, help="seconds to let the code run (default 30)")
+p.add_argument("-t", "--tail", type=float, default=3, help="seconds of reverb/release tail after stopping (default 3)")
+p.add_argument("-b", "--bitrate", default="192k")
+p.add_argument("-p", "--prepend", default="", help="Ruby code to run before the song")
+a = p.parse_args()
+
+song = open(a.song, encoding="utf-8").read()
+# Sonic Pi keeps Ruby constants between runs (in the module songs are evaluated in), so a
+# SOLO or FROM_BAR from the last render would leak into this one. The first render after
+# the server boots records Sonic Pi's own constants; every render then removes any other
+# data constant (classes and modules are left alone) before the song defines its own.
+CLEAN = ("$sp_base ||= Module.nesting.first.constants(false); "
+         "(Module.nesting.first.constants(false) - $sp_base).each { |c| "
+         "Module.nesting.first.send(:remove_const, c) unless Module.nesting.first.const_get(c).is_a?(Module) }")
+# Sonic Pi also caches samples by path for the server's lifetime; a re-rendered klattsch
+# phrase keeps its name, so flush the cache or the old take would play.
+CLEAN += "; sample_free_all"
+# all on the song's first line, so Sonic Pi's error line numbers match the file
+code = f"{CLEAN}; SP_ROOT = {ROOT!r}; {a.prepend}; {song}"
+if "# ---- klattsch voices" in song:   # render the song's klattsch voices first
+    subprocess.run([os.path.join(os.path.dirname(os.path.abspath(__file__)), "sp-klatt"), a.song], check=True)
+wav = a.out if a.out.endswith(".wav") else tempfile.mktemp(suffix=".wav")
+
+send("/stop-all-jobs"); time.sleep(0.5)
+send("/start-recording"); time.sleep(0.2)
+send("/run-code", code)
+print(f"rendering {a.song} for {a.duration}s + {a.tail}s tail...", file=sys.stderr)
+time.sleep(a.duration)
+send("/stop-all-jobs")
+time.sleep(a.tail)
+send("/stop-recording"); time.sleep(0.5)
+send("/save-recording", os.path.abspath(wav))
+last = -1                      # Sonic Pi writes the file over time: wait until it stops growing
+for _ in range(300):
+    size = os.path.getsize(wav) if os.path.exists(wav) else -1
+    if size > 44 and size == last: break
+    last = size; time.sleep(0.5)
+if not os.path.exists(wav):
+    sys.exit("no recording produced; check /tmp/sonicpi/server.log and ~/.sonic-pi/log/")
+with wave.open(wav) as w:      # a silent take means the code never ran
+    frames, width = w.readframes(w.getnframes()), w.getsampwidth()
+if not any(array.array({2: "h", 4: "i"}.get(width, "b"), frames)):
+    if wav != a.out: os.remove(wav)
+    sys.exit(f"silent recording: the code produced no sound (see errors above) -> {wav}")
+if wav != a.out:
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", wav, "-b:a", a.bitrate, a.out], check=True)
+    os.remove(wav)
+print(a.out)
+if errors: sys.exit(2)
