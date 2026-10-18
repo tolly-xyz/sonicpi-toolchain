@@ -1,0 +1,63 @@
+{
+ "schemaVersion": 1,
+ "name": "silt-stops",
+ "displayName": "klatt1980-en with stops from Kokoro measurements",
+ "language": "en-US",
+ "license": "MIT",
+ "extends": "klatt1980-en",
+ "source": "Burst centroids measured from Kokoro v1.0 (am_onyx/echo/adam/michael, word-initial stops, 4 words each): T 5.6 kHz, D 4.4 kHz, K 3.0 kHz, G 2.0 kHz, P/B < 1 kHz. B/D/G voicing lowered so the burst isn't a nasal hum.",
+ "phonemes": {
+  "B": {
+   "voicing": 0.25,
+   "F1": 200,
+   "F2": 1100,
+   "F3": 2150,
+   "BW1": 60,
+   "BW2": 110,
+   "BW3": 130,
+   "A1": 0.2,
+   "A2": 0.2,
+   "A3": 0.2,
+   "isStop": true
+  },
+  "D": {
+   "voicing": 0.25,
+   "F1": 200,
+   "F2": 1600,
+   "F3": 4300,
+   "BW1": 60,
+   "BW2": 100,
+   "BW3": 600,
+   "A1": 0.2,
+   "A2": 0.4,
+   "A3": 0.7,
+   "isStop": true
+  },
+  "G": {
+   "voicing": 0.25,
+   "F1": 200,
+   "F2": 1990,
+   "F3": 2850,
+   "BW1": 60,
+   "BW2": 150,
+   "BW3": 280,
+   "A1": 0.2,
+   "A2": 0.5,
+   "A3": 0.4,
+   "isStop": true
+  },
+  "T": {
+   "voicing": 0,
+   "F1": 400,
+   "F2": 1600,
+   "F3": 4500,
+   "BW1": 300,
+   "BW2": 120,
+   "BW3": 600,
+   "A1": 0,
+   "A2": 0.3,
+   "A3": 0.7,
+   "isStop": true
+  }
+ }
+}

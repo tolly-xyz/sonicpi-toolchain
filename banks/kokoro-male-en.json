@@ -1,0 +1,188 @@
+{
+ "schemaVersion": 1,
+ "name": "kokoro-male-en",
+ "displayName": "English, deep male (measured from Kokoro TTS)",
+ "language": "en-US",
+ "license": "MIT",
+ "extends": "klatt1980-en",
+ "source": "Formants measured with Praat (Burg) from Kokoro v1.0 voices am_onyx, am_echo, am_adam, am_michael speaking 4 words per vowel; median of 16. Diphthong onsets other than AY/OY, ER, bandwidths and amplitudes are klatt1980-en's (unreliable to measure this way).",
+ "phonemes": {
+  "IY": {
+   "voicing": 1,
+   "F1": 347,
+   "F2": 1987,
+   "F3": 2471,
+   "BW1": 45,
+   "BW2": 200,
+   "BW3": 400,
+   "A1": 1,
+   "A2": 0.9,
+   "A3": 0.7,
+   "glideTo": {
+    "F1": 290,
+    "F2": 2070,
+    "F3": 2960
+   }
+  },
+  "IH": {
+   "voicing": 1,
+   "F1": 448,
+   "F2": 1569,
+   "F3": 2516,
+   "BW1": 50,
+   "BW2": 100,
+   "BW3": 140,
+   "A1": 1,
+   "A2": 0.9,
+   "A3": 0.7,
+   "glideTo": {
+    "F1": 470,
+    "F2": 1600,
+    "F3": 2600
+   }
+  },
+  "EH": {
+   "voicing": 1,
+   "F1": 521,
+   "F2": 1593,
+   "F3": 2523,
+   "BW1": 60,
+   "BW2": 90,
+   "BW3": 200,
+   "A1": 1,
+   "A2": 0.9,
+   "A3": 0.7,
+   "glideTo": {
+    "F1": 620,
+    "F2": 1530,
+    "F3": 2530
+   }
+  },
+  "AE": {
+   "voicing": 1,
+   "F1": 604,
+   "F2": 1535,
+   "F3": 2499,
+   "BW1": 70,
+   "BW2": 150,
+   "BW3": 320,
+   "A1": 1,
+   "A2": 0.9,
+   "A3": 0.7,
+   "glideTo": {
+    "F1": 650,
+    "F2": 1490,
+    "F3": 2470
+   }
+  },
+  "AA": {
+   "voicing": 1,
+   "F1": 614,
+   "F2": 1079,
+   "F3": 2579,
+   "BW1": 130,
+   "BW2": 70,
+   "BW3": 160,
+   "A1": 1,
+   "A2": 0.9,
+   "A3": 0.7
+  },
+  "AO": {
+   "voicing": 1,
+   "F1": 528,
+   "F2": 941,
+   "F3": 2528,
+   "BW1": 90,
+   "BW2": 100,
+   "BW3": 80,
+   "A1": 1,
+   "A2": 0.9,
+   "A3": 0.7,
+   "glideTo": {
+    "F1": 630,
+    "F2": 1040,
+    "F3": 2600
+   }
+  },
+  "UH": {
+   "voicing": 1,
+   "F1": 457,
+   "F2": 1342,
+   "F3": 2473,
+   "BW1": 80,
+   "BW2": 100,
+   "BW3": 80,
+   "A1": 1,
+   "A2": 0.9,
+   "A3": 0.7,
+   "glideTo": {
+    "F1": 500,
+    "F2": 1180,
+    "F3": 2390
+   }
+  },
+  "UW": {
+   "voicing": 1,
+   "F1": 394,
+   "F2": 1038,
+   "F3": 2405,
+   "BW1": 65,
+   "BW2": 110,
+   "BW3": 140,
+   "A1": 1,
+   "A2": 0.9,
+   "A3": 0.7,
+   "glideTo": {
+    "F1": 320,
+    "F2": 900,
+    "F3": 2200
+   }
+  },
+  "AH": {
+   "voicing": 1,
+   "F1": 536,
+   "F2": 1232,
+   "F3": 2536,
+   "BW1": 80,
+   "BW2": 50,
+   "BW3": 140,
+   "A1": 1,
+   "A2": 0.9,
+   "A3": 0.7
+  },
+  "AY": {
+   "voicing": 1,
+   "F1": 595,
+   "F2": 1099,
+   "F3": 2599,
+   "BW1": 100,
+   "BW2": 70,
+   "BW3": 200,
+   "A1": 1,
+   "A2": 0.9,
+   "A3": 0.7,
+   "glideTo": {
+    "F1": 373,
+    "F2": 1700,
+    "F3": 2469
+   }
+  },
+  "OY": {
+   "voicing": 1,
+   "F1": 525,
+   "F2": 897,
+   "F3": 2581,
+   "BW1": 80,
+   "BW2": 50,
+   "BW3": 130,
+   "A1": 1,
+   "A2": 0.9,
+   "A3": 0.7,
+   "glideTo": {
+    "F1": 367,
+    "F2": 1536,
+    "F3": 2448
+   }
+  }
+ }
+}
