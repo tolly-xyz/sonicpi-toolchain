@@ -259,7 +259,8 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
     const startF0 = t.stressed ? f0 + DEFAULTS.stressF0Lift : f0;
     const endF0 = startF0 + t.pitchDelta;
     if (p.isStop) {
-      const burstMs = Math.min(DEFAULTS.stopBurstMs, slotMs * 0.3);
+      // (sonicpi-toolchain patch) a bank entry's burstMs sets its release burst (MITalk: P 5, T 15, K 25 ms)
+      const burstMs = Math.min(p.burstMs ?? DEFAULTS.stopBurstMs, slotMs * 0.3);
       const silenceMs = slotMs - burstMs;
       silence(Math.min(20, silenceMs * 0.4));
       timeMs += silenceMs;

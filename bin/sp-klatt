@@ -10,6 +10,15 @@ block = src[/^# ---- klattsch voices\n(.*?)^# ---- end klattsch voices/m, 1] or 
 def note(n) = n
 eval(block)
 require "fileutils"; FileUtils.mkdir_p(KDIR)
+# A KLATT entry may be a klattsing spec (a Hash: mode, text, notes, bpm, voice, ...) instead of a
+# klattsch string; all specs compile in one klattsing call.
+specs = KLATT.select { |_, v| v.is_a?(Hash) }
+unless specs.empty?
+  require "json"; require "open3"
+  out, err, st = Open3.capture3("node", "#{SP_ROOT}/klattsing/bin/klattsing.mjs", "-", "--print", stdin_data: JSON.generate(specs.values))
+  abort "klattsing failed: #{err}" unless st.success?
+  specs.keys.zip(out.split("\n")).each { |name, text| KLATT[name] = text }
+end
 KLATT.each do |name, text|
   out = "#{KDIR}/#{name}.wav"; stamp = "#{out}.txt"
   next if File.exist?(out) && File.exist?(stamp) && File.read(stamp) == "#{text}\n#{BANKS}"   # unchanged

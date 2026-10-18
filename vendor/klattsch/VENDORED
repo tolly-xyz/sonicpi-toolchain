@@ -1,3 +1,4 @@
 tgies/klattsch @ 63dc2c6 (MIT), vendored with patches:
   src/engine/sequencer.js: [TR=ms] sets the formant transition into steady phonemes (default 35 ms, at most 40% of the phoneme; with TR, up to 90%)
   src/engine/sequencer.js: [AV=x] scales loudness (the synth's gain, default 3.5) and glides with the phoneme's transition
+  src/engine/sequencer.js: a stop's bank entry may set burstMs (default 25 ms for all)
