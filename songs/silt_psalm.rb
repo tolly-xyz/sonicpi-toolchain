@@ -266,10 +266,12 @@ def lead(syls) = syls[0][3].sum { |p| CONS_MS[p] }
 # ON_BEAT puts vowels on the beat (onsets borrowed from the slot before). Whisper heard no
 # gain from it in the verses and lost the chorus ("Mel over the" for "Lower the"), so it's off.
 ON_BEAT = false
+HOLD = 0.55
 def sing(syls, bpm = 168, map = ->(m) { m }, gate: nil, accent_from: A2, on_beat: ON_BEAT)
   slots, pre = onsets(syls, bpm)
   syls.each_with_index.map do |(txt, n, nt, ons, vowel, post, o), i|
     o = { gate: gate }.merge(o || {}); o[:to] = map.(o[:to]) if o[:to]
+    o[:gate] = [o[:gate], slots[i] * HOLD].max if o[:gate] && n >= 6
     lx = o.delete(:onset_x) || 1                              # a held onset, so a line's first word reads
     acc = o.key?(:accent) ? o.delete(:accent) : !accent_from.nil? && nt >= accent_from
     nxt = (pre[i + 1] || []).sum
@@ -334,7 +336,7 @@ LYRICS = {
   chorus: { at: [:b, 0], style: :sung, ghost_from: 64, syls: [
     ["Low", 3, E2, %w[L], "OW", [], { onset_x: 1.8, accent: true }], ["er ", 3, G2, [], "ER"], ["the ", 3, F2, %w[DH], "AH"], ["buck", 3, A2, %w[B], "AH"],
     ["et, ", 4, G2, %w[K], "IH", %w[T]], ["low", 3, F2, %w[L], "OW", [], { onset_x: 1.8, accent: true }], ["er ", 3, E2, [], "ER"], ["the ", 6, D2, %w[DH], "AH"],
-    ["bell,\n", 4, E2, %w[B], "EH", %w[L], { to: F2 }],
+    ["bell,\n", 4, E2, %w[B], "EH", %w[L], { to: F2, onset_x: 1.5, accent: true }],
     ["down ", 3, B2, %w[D], "AW", %w[N]], ["where ", 3, A2, %w[W], "EH", %w[R]], ["the ", 3, G2, %w[DH], "AH"],
     ["hour ", 3, F2, [], "AW", %w[R]], ["is ", 4, E2, [], "IH", %w[Z]], ["drowned.\n", 16, E2, %w[D R], "AW", %w[N D], { to: D2 }],
     ["Ev", 3, E2, [], "EH", %w[V]], ["ery ", 3, F2, %w[R], "IY"], ["Sun", 3, A2, %w[S], "AH", %w[N]], ["day ", 3, G2, %w[D], "EY"],
@@ -383,8 +385,9 @@ end
 VOICE = { shout: "g0.8 t0.35 h0.12 s0.97", under: "g0.7 t0.1 h0.2 s0.9", stuck: "g0.75 t0.3 h0.1",
           sung: "g0.55 t0.1 h0.06", ghost: "g0.4 h0.3 s1.15", whisper: "g0.25 h0.55 t-0.2", last: "g0.45 t-0.1 h0.08",
           shout2: "g0.74 t0.28 h0.16 s1.01" }
-# Every grid-timed syllable is clipped short (vowel in ms), the rest of its slot left silent.
-GATE = { shout: 120, number: 110, sung: 150 }
+# Every grid-timed syllable is clipped short (vowel in ms), the rest of its slot left silent;
+# a long note (6+ sixteenths) holds for HOLD of its slot instead, so line ends ring.
+GATE = { shout: 150, number: 130, sung: 190 }
 # the second takes: another throat (VOICE *2), a few cents off, played a little late and to the side
 DETUNE = ->(c) { ->(m) { m + c / 100.0 } }
 KLATT = {}
