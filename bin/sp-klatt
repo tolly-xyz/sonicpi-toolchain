@@ -1,8 +1,10 @@
 #!/usr/bin/env ruby
 # Render a song's klattsch voices (the KLATT table between the "# ---- klattsch voices" markers).
-# usage: sp-klatt SONG.rb      needs node; uses the bundled vendor/klattsch unless KLATTSCH is set
+# usage: sp-klatt SONG.rb      needs node; uses the bundled vendor/klattsch (with banks/*.json) unless KLATTSCH is set
 SP_ROOT = File.expand_path("..", __dir__)
-KLATTSCH = ENV["KLATTSCH"] || "#{SP_ROOT}/vendor/klattsch/bin/klattsch.mjs"
+KLATTSCH = ENV["KLATTSCH"] || "#{SP_ROOT}/bin/klatt-render.mjs"
+require "digest"
+BANKS = Digest::SHA1.hexdigest(Dir["#{SP_ROOT}/banks/*.json"].sort.map { |f| File.read(f) }.join)   # re-render when a bank changes
 src = File.read(ARGV[0], encoding: "utf-8")
 block = src[/^# ---- klattsch voices\n(.*?)^# ---- end klattsch voices/m, 1] or exit 0
 def note(n) = n
@@ -10,9 +12,9 @@ eval(block)
 require "fileutils"; FileUtils.mkdir_p(KDIR)
 KLATT.each do |name, text|
   out = "#{KDIR}/#{name}.wav"; stamp = "#{out}.txt"
-  next if File.exist?(out) && File.exist?(stamp) && File.read(stamp) == text   # unchanged
+  next if File.exist?(out) && File.exist?(stamp) && File.read(stamp) == "#{text}\n#{BANKS}"   # unchanged
   ok = system("node", KLATTSCH, text, out, err: "#{out}.log")
   abort "klattsch failed on #{name}: #{File.read("#{out}.log")}" unless ok
   warn "klattsch #{name}: #{File.read("#{out}.log").strip}"
-  File.write(stamp, text)
+  File.write(stamp, "#{text}\n#{BANKS}")
 end

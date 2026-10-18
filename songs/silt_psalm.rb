@@ -203,6 +203,8 @@ CONS_MS = Hash.new(60).merge(
   "S" => 95, "Z" => 75, "SH" => 100, "F" => 85, "V" => 55, "TH" => 85, "DH" => 40, "HH" => 60,
   "M" => 65, "N" => 50, "NG" => 70, "L" => 55, "R" => 50, "W" => 55, "Y" => 45)
 # A held diphthong is sung on its first vowel and glides at the very end.
+BANK = "[bank=silt-stops]"
+ASP_MS = 35
 DIPH = { "AY" => %w[AA IY], "EY" => %w[EH IY], "OW" => %w[AO UW], "AW" => %w[AA UW], "OY" => %w[AO IY] }
 # Every pitch is a named note and every glide ends on one, so the voice stays in E phrygian
 # (E F G A B C D, plus the tritone Bb); the blast climbs Bb phrygian. klattsch pitch moves are
@@ -224,11 +226,14 @@ def syl_ms(ms, pre, vowel, post = [], pitch: nil, to: nil, scoop: 0, vib: false,
   if v < 45                                                  # crowded: squeeze consonants, not the vowel
     k = [(avail - 45) / coda.sum.to_f, 0.5].max; coda = coda.map { |c| (c * k).round(1) }; v = avail - coda.sum
   end
+  asp = %w[P T K].include?(pre.last) ? ASP_MS : 0          # a breath after P T K before the vowel, as spoken
+  v -= asp
   rest = 0
   if gate && v > gate then rest = v - gate; v = gate end
   out = +"v0 "
   out << "b#{hz(pitch - scoop)} " if pitch
   pre.each_with_index { |p, i| out << "r#{pre_ms[i].round(1)} #{p} " }
+  out << "r#{asp} HH " if asp > 0
   out << "g+0.15 t+0.15 " if accent
   parts = (DIPH[vowel] && v > 200) ? [[DIPH[vowel][0], v * 0.8], [DIPH[vowel][1], v * 0.2]] : [[vowel, v]]
   parts.each_with_index do |(ph, len), j|
@@ -410,6 +415,8 @@ LYRICS.each do |name, l|
   end
   LEAD[name] = lead(l[:syls]) if ON_BEAT && l[:syls]
 end
+# every line through the stop bank (banks/silt-stops.json): burst frequencies measured from a TTS voice
+KLATT.transform_values! { |s| "#{BANK} #{s.gsub("[voice=1]", "[voice=1] #{BANK}")}" }
 # ---- end klattsch voices
 def klatt(name) = "#{KDIR}/#{name}.wav"
 def lines_at(bar, *styles) = LYRICS.select { |_, l| styles.include?(l[:style]) && l[:at] == [bar[:sec], bar[:k]] }

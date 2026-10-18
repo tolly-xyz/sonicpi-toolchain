@@ -1,6 +1,7 @@
 // For each klattsch string, print each voice's phoneme timings (ms) as JSON.
 import { compileString } from '../../vendor/klattsch/src/engine/index.js';
 import { readFileSync } from 'node:fs';
+import '../../bin/klatt-render.mjs';   // registers banks/*.json
 const table = JSON.parse(readFileSync(0, 'utf8'));
 const out = {};
 for (const [name, text] of Object.entries(table)) {

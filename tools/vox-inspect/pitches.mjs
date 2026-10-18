@@ -3,6 +3,7 @@
 // usage: node pitches.mjs "E F G A Bb B C D" < table.json
 import { compileString } from '../../vendor/klattsch/src/engine/index.js';
 import { readFileSync } from 'node:fs';
+import '../../bin/klatt-render.mjs';   // registers banks/*.json
 const NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 const scale = new Set((process.argv[2] || 'E F G A Bb B C D').split(/\s+/));
 const table = JSON.parse(readFileSync(0, 'utf8'));
