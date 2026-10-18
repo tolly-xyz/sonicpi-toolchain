@@ -276,11 +276,12 @@ HOLD = 0.55
 # Each word's consonants, scaled by how a real voice times that word (lib/worddict.rb):
 # per syllable, [onset factors, coda factors]. WORD_TIMING = false uses CONS_MS as is.
 WORD_TIMING = true
+WORD_LO = 1.0                                # lengthen where a voice lingers; never clip below the singing table
 def word_shape(syls)
   out = []; word = []
   flush = lambda do
     txt = word.map { |s| s[0] }.join; phones = word.flat_map { |s| s[3] + [s[4]] + (s[5] || []) }
-    f = WORD_TIMING ? word_factors(txt.strip, phones) : phones.map { nil }
+    f = WORD_TIMING ? word_factors(txt.strip, phones, lo: WORD_LO) : phones.map { nil }
     word.each { |s| a = s[3].size; b = (s[5] || []).size; out << [f.shift(a), (f.shift; f.shift(b))] }
     word = []
   end
