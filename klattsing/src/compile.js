@@ -63,10 +63,15 @@ export function speak(o) {
 // notes: one per syllable: [note, length] with length in sixteenths at bpm (or { ms }), or null for a rest
 // gate: ms a vowel is held before the rest of its slot is silence (null = legato); hold: share of a
 // long note (>= 6 sixteenths) held regardless of gate. Consonants sit on the beat.
+// A melody for any text: stressed syllables get `long` sixteenths, others `short`, stepping through
+// `scale` (note names) and ending on its first note; for tests and sketches.
+export function autoNotes(syl, { scale = ['E2', 'G2', 'A2', 'G2', 'F2'], long = 4, short = 2, last = 6 } = {}) {
+  return syl.map((s, i) => [i === syl.length - 1 ? scale[0] : scale[i % scale.length], i === syl.length - 1 ? last : s.stress === 1 ? long : short]);
+}
 export function sing(o) {
   const bpm = o.bpm ?? 120, st = (n) => n * 15000 / bpm;
   const syl = words(o.text, o.rules, o.durations).flatMap((w) => w.syllables);
-  const notes = o.notes.filter((n) => n !== null);
+  const notes = (o.notes === 'auto' || !o.notes ? autoNotes(syl, o.melody) : o.notes).filter((n) => n !== null);
   if (notes.length !== syl.length) throw new Error(`${syl.length} syllables but ${notes.length} notes in "${o.text}"`);
   let out = `${prefix({ voice: 'sing', ...o })} `;
   syl.forEach((s, i) => {
