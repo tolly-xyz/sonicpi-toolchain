@@ -210,21 +210,26 @@ DIPH = { "AY" => %w[AA IY], "EY" => %w[EH IY], "OW" => %w[AO UW], "AW" => %w[AA 
 E1, F1, G1, A1, BB1, B1, C2, DB2, D2, EB2, E2, F2, GB2, G2, AB2, A2, BB2, B2, C3 =
   28, 29, 31, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48
 def d(from, to) = format("%+.1f", hz(to) - hz(from))         # Hz glide from one note to another
-# One syllable lasting exactly `ms`: consonants at natural length, the vowel takes the rest.
+# One syllable in a slot of `ms`. The vowel lands on the slot's start: the onset consonants
+# (pre_ms long) sound just before it, borrowed from the previous slot, and the slot's own tail
+# lends `next_ms` to the next syllable's onset. An accent leans harder on the vowel only.
 #   pitch: the note   to: the note the vowel slides to   scoop: start this many semitones flat
 #   vib: a vibrato (about +-0.4 semitone) that blooms after the first third of a long vowel
 #   gate: cut the vowel off after this many ms and rest for the rest of the slot (short, barked)
-def syl_ms(ms, pre, vowel, post = [], pitch: nil, to: nil, scoop: 0, vib: false, gate: nil)
-  cons = (pre + post).map { |p| CONS_MS[p] }
-  v = ms - cons.sum
+def syl_ms(ms, pre, vowel, post = [], pitch: nil, to: nil, scoop: 0, vib: false, gate: nil, pre_ms: nil, next_ms: 0, accent: false)
+  pre_ms ||= pre.map { |p| CONS_MS[p] }
+  coda = post.map { |p| CONS_MS[p] }
+  avail = ms - next_ms
+  v = avail - coda.sum
   if v < 45                                                  # crowded: squeeze consonants, not the vowel
-    k = [(ms - 45) / cons.sum.to_f, 0.5].max; cons = cons.map { |c| (c * k).round(1) }; v = ms - cons.sum
+    k = [(avail - 45) / coda.sum.to_f, 0.5].max; coda = coda.map { |c| (c * k).round(1) }; v = avail - coda.sum
   end
   rest = 0
   if gate && v > gate then rest = v - gate; v = gate end
   out = +"v0 "
   out << "b#{hz(pitch - scoop)} " if pitch
-  pre.each_with_index { |p, i| out << "r#{cons[i]} #{p} " }
+  pre.each_with_index { |p, i| out << "r#{pre_ms[i].round(1)} #{p} " }
+  out << "g+0.15 t+0.15 " if accent
   parts = (DIPH[vowel] && v > 200) ? [[DIPH[vowel][0], v * 0.8], [DIPH[vowel][1], v * 0.2]] : [[vowel, v]]
   parts.each_with_index do |(ph, len), j|
     rise = j == 0 && scoop > 0 ? d(pitch - scoop, pitch) : ""
@@ -238,17 +243,32 @@ def syl_ms(ms, pre, vowel, post = [], pitch: nil, to: nil, scoop: 0, vib: false,
       out << "r#{len.round(1)} #{ph}#{rise}#{fall} "
     end
   end
-  post.each_with_index { |p, i| out << "r#{cons[pre.size + i]} #{p} " }
+  out << "g-0.15 t-0.15 " if accent
+  coda.each_with_index { |c, i| out << "r#{c} #{post[i]} " }
   out << "p#{rest.round(1)} " if rest > 0
   out
 end
 # A line on the beat grid is a list of syllables:
 #   [shown text, sixteenths, note, onset consonants, vowel, coda consonants, options]
 # Text ending in a space ends a word; "\n" ends a line on screen. `map` transposes the notes.
-def sing(syls, bpm = 168, map = ->(m) { m }, gate: nil)
-  syls.map do |txt, n, nt, pre, vowel, post, o|
+# Syllables on a peak (A2 and up, before the map) are accented unless accent_from is nil.
+# The rendered line starts lead(syls) ms before its first vowel, which sits on the downbeat.
+def onsets(syls, bpm)
+  slots = syls.map { |s| st(s[1], bpm) }
+  pre = syls.map { |s| s[3].map { |p| CONS_MS[p] } }
+  (1...syls.size).each do |i|                                # no more than 40% of the slot before
+    budget = slots[i - 1] * 0.4; sum = pre[i].sum
+    pre[i] = pre[i].map { |c| c * budget / sum } if sum > budget
+  end
+  [slots, pre]
+end
+def lead(syls) = syls[0][3].sum { |p| CONS_MS[p] }
+def sing(syls, bpm = 168, map = ->(m) { m }, gate: nil, accent_from: A2)
+  slots, pre = onsets(syls, bpm)
+  syls.each_with_index.map do |(txt, n, nt, ons, vowel, post, o), i|
     o = { gate: gate }.merge(o || {}); o[:to] = map.(o[:to]) if o[:to]
-    syl_ms(st(n, bpm), pre, vowel, post || [], pitch: map.(nt), **o)
+    syl_ms(slots[i], ons, vowel, post || [], pitch: map.(nt), pre_ms: pre[i], next_ms: (pre[i + 1] || []).sum,
+           accent: !accent_from.nil? && nt >= accent_from, **o)
   end.join
 end
 # Free-timed speech: [shown word, [[ms, phoneme], ...]], with , ; . as klattsch pauses.
@@ -354,37 +374,49 @@ LYRICS.each_value.select { |l| l[:style] == :number }.each do |l|
   k = l[:at][1]; l[:bpm] = 184; l[:syls] = l[:syls].(BLAST[k], BLAST[[k - 1, 0].max])
 end
 VOICE = { shout: "g0.8 t0.35 h0.12 s0.97", under: "g0.7 t0.1 h0.2 s0.9", stuck: "g0.75 t0.3 h0.1",
-          sung: "g0.55 t0.1 h0.06", ghost: "g0.4 h0.3 s1.15", whisper: "g0.25 h0.55 t-0.2", last: "g0.45 t-0.1 h0.08" }
+          sung: "g0.55 t0.1 h0.06", ghost: "g0.4 h0.3 s1.15", whisper: "g0.25 h0.55 t-0.2", last: "g0.45 t-0.1 h0.08",
+          shout2: "g0.74 t0.28 h0.16 s1.01", sung2: "g0.5 t0.05 h0.1 s1.03" }
 # Every grid-timed syllable is clipped short (vowel in ms), the rest of its slot left silent.
 GATE = { shout: 120, number: 110, sung: 150 }
+# the second takes: another throat (VOICE *2), a few cents off, played a little late and to the side
+DETUNE = ->(c) { ->(m) { m + c / 100.0 } }
 KLATT = {}
+LEAD = Hash.new(0)                                           # ms each line starts before its first vowel
 LYRICS.each do |name, l|
   case l[:style]
   when :shout
     KLATT[name] = "#{VOICE[:shout]} #{sing(l[:syls], gate: GATE[:shout])}"
-    KLATT[:"#{name}_lo"] = "#{VOICE[:under]} #{sing(l[:syls], 168, UNDER5, gate: GATE[:shout])}"
+    KLATT[:"#{name}_dbl"] = "#{VOICE[:shout2]} #{sing(l[:syls], 168, DETUNE.(8), gate: GATE[:shout])}"
+    KLATT[:"#{name}_lo"] = "#{VOICE[:under]} #{sing(l[:syls], 168, UNDER5, gate: GATE[:shout], accent_from: nil)}"
   when :stuck then KLATT[name] = "#{VOICE[:stuck]} #{sing(l[:syls], gate: GATE[:shout])}"
   when :number
-    KLATT[name] = "#{VOICE[:shout]} #{sing(l[:syls], 184, gate: GATE[:number])}"
-    KLATT[:"#{name}_lo"] = "#{VOICE[:under]} #{sing(l[:syls], 184, ->(m) { m - 12 }, gate: GATE[:number])}"   # an octave under
+    KLATT[name] = "#{VOICE[:shout]} #{sing(l[:syls], 184, gate: GATE[:number], accent_from: nil)}"
+    KLATT[:"#{name}_lo"] = "#{VOICE[:under]} #{sing(l[:syls], 184, ->(m) { m - 12 }, gate: GATE[:number], accent_from: nil)}"   # an octave under
   when :sung
     at = 0; later = l[:syls].select { |s| (at += s[1]) > l[:ghost_from] }
-    KLATT[name] = "#{VOICE[:sung]} #{sing(l[:syls], gate: GATE[:sung])} [voice=1] p#{st(l[:ghost_from])} #{VOICE[:ghost]} #{sing(later, 168, method(:third_up), gate: GATE[:sung])}"
+    ghost_in = st(l[:ghost_from]) + lead(l[:syls]) - lead(later)
+    KLATT[name] = "#{VOICE[:sung]} #{sing(l[:syls], gate: GATE[:sung])} [voice=1] p#{ghost_in.round(1)} #{VOICE[:ghost]} #{sing(later, 168, method(:third_up), gate: GATE[:sung], accent_from: nil)}"
+    KLATT[:"#{name}_dbl"] = "#{VOICE[:sung2]} #{sing(l[:syls], 168, DETUNE.(-7), gate: GATE[:sung])}"
   when :whisper, :last then KLATT[name] = "#{VOICE[l[:style]]} #{speak(l[:pitch], l[:words])}"
   end
+  LEAD[name] = lead(l[:syls]) if l[:syls]
 end
 # ---- end klattsch voices
 def klatt(name) = "#{KDIR}/#{name}.wav"
 def lines_at(bar, *styles) = LYRICS.select { |_, l| styles.include?(l[:style]) && l[:at] == [bar[:sec], bar[:k]] }
+# a line's first vowel lands on the beat, so its consonants start early; a second take sits `late` s behind
+def voice_in(name, late = 0, &blk) = time_warp(rt(late - LEAD[name] / 1000.0), &blk)
 
-# shouted through a blown megaphone, with the low double a fifth under
+# shouted through a blown megaphone: a second take on the right, the low double a fifth under on the left
 with_fx :lpf, cutoff: 118 do
   with_fx :hpf, cutoff: 55 do
     with_fx :distortion, distort: 0.55, mix: 0.45 do
       layer(:vox) do |bar, i|
         lines_at(bar, :shout, :stuck).each do |name, l|
-          sample klatt(name), amp: 1.4
-          sample klatt(:"#{name}_lo"), amp: 0.55 if l[:style] == :shout
+          voice_in(name) { sample klatt(name), amp: 1.3 }
+          next unless l[:style] == :shout
+          voice_in(name, 0.017) { sample klatt(:"#{name}_dbl"), amp: 0.6, pan: 0.55 }
+          voice_in(name, 0.006) { sample klatt(:"#{name}_lo"), amp: 0.5, pan: -0.45 }
         end
       end
     end
@@ -395,7 +427,10 @@ end
 with_fx :reverb, room: 0.7, mix: 0.3 do
   with_fx :distortion, distort: 0.4, mix: 0.4 do
     layer(:vox) do |bar, i|
-      lines_at(bar, :sung).each_key { |name| sample klatt(name), amp: 1.4 }
+      lines_at(bar, :sung).each_key do |name|
+        voice_in(name) { sample klatt(name), amp: 1.3, pan: -0.1 }
+        voice_in(name, 0.014) { sample klatt(:"#{name}_dbl"), amp: 0.65, pan: 0.5 }
+      end
     end
   end
 end
@@ -414,8 +449,8 @@ with_fx :echo, phase: 0.33, decay: 1.2, mix: 0.25 do
   with_fx :bitcrusher, bits: 8, sample_rate: 11000, mix: 0.5 do
     layer(:vox) do |bar, i|
       lines_at(bar, :number).each_key do |name|
-        sample klatt(name), amp: 1.3
-        sample klatt(:"#{name}_lo"), amp: 0.5
+        voice_in(name) { sample klatt(name), amp: 1.3 }
+        voice_in(name) { sample klatt(:"#{name}_lo"), amp: 0.5 }
       end
     end
   end

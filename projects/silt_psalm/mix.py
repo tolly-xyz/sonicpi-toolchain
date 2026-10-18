@@ -6,13 +6,14 @@ Sonic Pi stems (work/silt_psalm/stems/*.wav) each start with a sync click; the s
 usage: mix.py OUT.wav [--parts DIR]   (--parts also writes each processed, leveled part)
 """
 import json, random, subprocess, sys, os, xml.etree.ElementTree as ET
-import numpy as np, soundfile as sf, mido
+import numpy as np, soundfile as sf, mido, pyloudnorm
 from pedalboard import (Pedalboard, Compressor, Distortion, Gain, HighpassFilter, LowpassFilter,
                         PeakFilter, LowShelfFilter, HighShelfFilter, Reverb, Limiter, Delay, Chorus)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 HERE = f"{ROOT}/work/silt_psalm"     # stems, timeline and scratch renders
 SR = 48000
+LUFS = -10.5                         # integrated loudness to make up to before the limiter
 PREROLL = 4 * 60 / 168
 KITS = "/usr/share/hydrogen/data/drumkits"
 rnd = random.Random(13)
@@ -166,6 +167,38 @@ def active_rms_db(x):
     return 20 * np.log10(np.sqrt(np.mean(on ** 2))) if len(on) else -120.0
 def level(x, target):
     return x * db(target - active_rms_db(x))
+def envelope(x, attack_ms, release_ms):
+    """Peak follower of a part (mono), for keying one part off another."""
+    from scipy.signal import lfilter
+    a = np.abs(x).max(axis=1); n = len(a)
+    ka, kr = np.exp(-1 / (SR * attack_ms / 1000)), np.exp(-1 / (SR * release_ms / 1000))
+    # a release-only follower on a 2 ms block grid, then an attack smoother; fast enough in numpy
+    blk = int(SR * 0.002); m = np.pad(a, (0, -n % blk)).reshape(-1, blk).max(axis=1)
+    out = np.empty_like(m); g = kr ** blk; acc = 0.0
+    for i, v in enumerate(m): acc = v if v > acc else acc * g; out[i] = acc
+    e = np.repeat(out, blk)[:n]
+    return lfilter([1 - ka], [1, -ka], e).astype("float32")
+def duck(x, key, depth_db, attack_ms=2, release_ms=90, band=None):
+    """Pull `x` (or just its `band` = (lo, hi) Hz) down by up to depth_db while `key` sounds."""
+    k = envelope(key, attack_ms, release_ms); k = np.clip(k / (np.percentile(k[k > 1e-4], 95) + 1e-9), 0, 1)
+    g = (db(-depth_db * k) - 1)[:, None]                       # 0 when the key is quiet, negative when it hits
+    if band is None: return x * (1 + g)
+    from scipy.signal import butter, sosfiltfilt
+    b = sosfiltfilt(butter(2, band, "bandpass", fs=SR, output="sos"), x, axis=0).astype("float32")
+    return x + b * g                                           # zero-phase band, so taking it away is clean
+def ride(x):
+    """Section-by-section level, so the song keeps its shape after the master squeezes it."""
+    plan = {"intro": 0, "a": 0, "a2": 0.5, "b": 1, "down": -6, "blast": 2, "a3": 1, "end": 0, "tail": -2}
+    g = np.zeros(len(x), "float32")
+    for b in BARS:
+        i = int(b["t"] * SR); g[i:] = plan[b["sec"]]
+    g = np.convolve(g, np.ones(int(0.12 * SR)) / int(0.12 * SR), mode="same")   # 120 ms moves, no steps
+    return x * db(g)[:, None]
+def mono_lows(x, hz=120):
+    """Keep everything under `hz` in the middle."""
+    m, s = (x[:, 0] + x[:, 1]) / 2, (x[:, 0] - x[:, 1]) / 2
+    s = fx(np.stack([s, s], 1), HighpassFilter(hz), HighpassFilter(hz))[:, 0]
+    return np.stack([m + s, m - s], 1).astype("float32")
 
 def main(out, parts_dir=None):
     cab = lambda: [HighpassFilter(100), PeakFilter(420, -5, 1.2),
@@ -177,31 +210,41 @@ def main(out, parts_dir=None):
     lead = fx(stem("lead"), HighpassFilter(200), PeakFilter(3000, -3, 1.0), Delay(delay_seconds=0.268, feedback=0.25, mix=0.18),
               Reverb(room_size=0.6, wet_level=0.2, dry_level=0.85))
     sfx = fx(stem("fx"), HighpassFilter(40))
-    # consonants go just ahead of the beat, as a singer would place them
-    vox = fx(stem("vox", early_ms=20), HighpassFilter(120), Compressor(threshold_db=-20, ratio=5, attack_ms=3, release_ms=120),
-             PeakFilter(1800, 3, 1.0), Delay(delay_seconds=0.178, feedback=0.15, mix=0.12))
+    # the song already puts each line's consonants ahead of the beat; a slower attack keeps their bite,
+    # the shelf takes the fizz off the distortion, and a short slap gives it a room
+    vox = fx(stem("vox"), HighpassFilter(100), PeakFilter(300, -2.5, 1.0),
+             Compressor(threshold_db=-22, ratio=4, attack_ms=8, release_ms=90),
+             PeakFilter(1800, 2.5, 1.0), HighShelfFilter(7000, -2.5), Delay(delay_seconds=0.089, feedback=0.0, mix=0.08),
+             Delay(delay_seconds=0.178, feedback=0.15, mix=0.1))
     kick, snare, hat, cym = drums()
     kick = fx(kick, HighpassFilter(40), PeakFilter(70, 2, 1.2), PeakFilter(350, -6, 1.5), PeakFilter(4000, 5, 1.0))
     snare = fx(snare, HighpassFilter(90), PeakFilter(220, 3, 1.0), PeakFilter(6000, 2, 1.0), Reverb(room_size=0.35, wet_level=0.18, dry_level=0.9))
     kit = kick * db(1) + snare * db(-1) + hat * db(-9) + cym * db(-8)
     # parallel smash: a crushed copy of the kit under the clean one
     kit = kit + fx(kit, Compressor(threshold_db=-30, ratio=10, attack_ms=1, release_ms=60), Distortion(drive_db=18), LowpassFilter(9000)) * db(-10)
+    kit = duck(kit, vox, 2.5, attack_ms=5, release_ms=180, band=(1500, 4500))   # the snare's crack gives the words room
+    # the bass gets out of the kick's way; the guitars clear the voice's band while it sings
+    bass = duck(bass, kick, 5)
+    gL, gR = (duck(g, vox, 4, attack_ms=5, release_ms=180, band=(1400, 3600)) for g in (gL, gR))
     real = strums()
     org = organ_choir()
 
     # balance: each part's loudness while it plays (dB RMS)
-    parts = {"gtrL": (gL, -20), "gtrR": (gR, -20), "bass": (bass, -21), "kit": (kit, -17.5), "vox": (vox, -20),
+    parts = {"gtrL": (gL, -20), "gtrR": (gR, -20), "bass": (bass, -21), "kit": (kit, -17.5), "vox": (vox, -19),
              "lead": (lead, -25), "fx": (sfx, -23), "real": (real, -27), "organ": (org, -26)}
-    mixd = sum(level(x, t) for x, t in parts.values())
+    mixd = ride(mono_lows(sum(level(x, t) for x, t in parts.values())))
     if parts_dir:                              # each part as it sits in the mix, for inspection
         os.makedirs(parts_dir, exist_ok=True)
         for name, (x, t) in parts.items():
             sf.write(f"{parts_dir}/{name}.wav", level(x, t)[:int((TL["total"] + 4.5) * SR)], SR, subtype="PCM_24")
     # tonal balance: the raw mix tilted ~19 dB from sub to air; pull the floor up out of the mud
-    master = fx(mixd, HighpassFilter(38), LowShelfFilter(90, -4), PeakFilter(280, -3, 0.8),
-                PeakFilter(3500, 3, 0.7), HighShelfFilter(6500, 5),
-                Compressor(threshold_db=-14, ratio=2.5, attack_ms=15, release_ms=150),
-                Gain(4), Limiter(threshold_db=-1.0, release_ms=80))
+    # headroom first (the parts sum well over full scale), a light glue, then make up to the
+    # target loudness into a limiter that only catches the hits
+    master = fx(mixd * db(-10), HighpassFilter(38), LowShelfFilter(90, -4), PeakFilter(280, -3, 0.8),
+                PeakFilter(3500, 3, 0.7), HighShelfFilter(6500, 4),
+                Compressor(threshold_db=-20, ratio=2, attack_ms=30, release_ms=200))
+    master *= db(LUFS - pyloudnorm.Meter(SR).integrated_loudness(master))
+    master = fx(master, Limiter(threshold_db=-1.0, release_ms=120))
     peak = np.abs(master).max(); master *= db(-0.3) / max(peak, 1e-9) if peak > db(-0.3) else 1
     # trim to the song plus the last scream's tail
     end = int((TL["total"] + 4.5) * SR); master = master[:end]

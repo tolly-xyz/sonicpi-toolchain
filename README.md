@@ -75,6 +75,11 @@ Hydrogen *Black Pearl* kit with velocity layers, recorded guitar strums from
 *belofilms_GuitarStrums* through an amp chain, organ and choir via FluidSynth and the
 MuseScore soundfont, and mixes/masters everything with Spotify's `pedalboard`. Each part
 is leveled to a target loudness (`parts` in `mix.py`), so balance changes are one number.
+Parts duck each other where they collide: the bass under the kick, the guitars' and kit's
+presence band under the voice. Sections are ridden in level (`ride`), lows under 120 Hz are kept
+mono, and the master leaves headroom, glues lightly, then makes up to `LUFS` into a limiter
+that only catches hits (the sum of the parts runs ~4 dB over full scale, so limiting it hard
+flattens every section to the same loudness).
 
 **Video** — `projects/silt_psalm/draw.py`: one body of water for the whole song, simulated
 (a 2D stable-fluids solver carrying ~110k grains of silt) and driven by the score. Kicks stir
@@ -105,6 +110,12 @@ for life. `songs/silt_psalm.rb` has a `syl_ms` helper that does this on a beat g
 with every pitch and glide named as a note (klattsch moves are in Hz; `d(from, to)` converts),
 so the melody can't drift off the key. Scale vibrato and scoops with the note, too: fixed-Hz
 values get proportionally wider an octave down.
+Put the vowel, not the consonant, on the beat: `sing` borrows each syllable's onset consonants
+from the end of the previous slot and records the line's lead in `LEAD`, and the song starts each
+sample that much early (`voice_in`, a negative `time_warp`). Accents are relative `g+`/`t+`
+around a vowel (the `!` stress adds a fixed +8 Hz, which is nearly two semitones on E2). For a
+double-track, render the line again with a slightly different voice and a few cents off
+(`DETUNE`), and play it 15 ms late, panned.
 
 ## Gotchas handled by sp-render
 
