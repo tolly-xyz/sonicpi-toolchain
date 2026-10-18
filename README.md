@@ -123,6 +123,12 @@ the" for "Lower the"). Consonants on the beat everywhere scored no worse in the 
 words; it's gone. Two fixes that got the chorus opening heard: hold a line-initial consonant
 (`onset_x: 1.8` on "Low", with an accent) and put a consonant where it's said ("buh-ket", not
 "buck-et"); Whisper went from "I'm a lover, the butted lover" to "lower the bucket, lower the bell".
+Phoneme banks: `bin/klatt-render.mjs` loads `banks/*.json` (select one with `[bank=NAME]`; sp-klatt
+re-renders when one changes). `banks/silt-stops.json` moves the T/D bursts up toward what
+`tools/tts-measure/` measured from Kokoro and takes the hum out of B/D/G (klattsch's 60%-voiced
+burst made "beat" read as "me"); with a 35 ms breath after P/T/K, Whisper went 66 -> 67/132 on the
+song, chorus 16 -> 18/21, and "still Sunday" heard for the first time. Measured vowel targets
+(`banks/kokoro-male-en.json`) scored no better than klattsch's own, so the song doesn't use them.
 
 ## Gotchas handled by sp-render
 
