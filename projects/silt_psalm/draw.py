@@ -90,7 +90,9 @@ py = np.where(rng.random(N) < 0.5, GH - 1 - rng.exponential(5, N).clip(0, 60),  
               rng.uniform(GH * 0.35, GH - 2, N))                                        # half already hanging
 size = rng.uniform(0.4, 1.0, N)
 stuck = np.zeros(N, bool)
+wv = np.zeros(N)                     # each grain's own upward kick (entrainment), decaying
 ONE = N // 2                         # the grain that stays at the end
+ENTRAIN = 0.12                       # chance per frame, per unit of flow speed, that a resting grain lifts
 
 def project(u, v, iters=150):
     u[:, 0] = u[:, -1] = 0; v[0, :] = v[-1, :] = 0
@@ -116,7 +118,7 @@ def vortex(r, strength, spread=300.0, lo=0.15, hi=0.85):
 FROZEN = {"until": -1.0}
 def step(t, dt):
     """Advance the water to time t."""
-    global u, v, px, py, stuck, solid
+    global u, v, px, py, stuck, solid, wv
     b = bar_at(t); sec = b["sec"]
     # the stammering bars: the water stops dead for their last few sixteenths
     if sec == "a2" and b["steps"] == 15 and (t - b["t"]) / b["step"] >= 6: return
@@ -126,7 +128,7 @@ def step(t, dt):
     # forces
     k = fired(KICK, t, dt)
     if k is not None and sec in ("a", "a2", "blast", "a3", "end", "down"):
-        strength = {"a": 2.0, "a2": 2.6, "blast": 3.2, "a3": 1.6, "end": 2.6, "down": 0.9}[sec]
+        strength = {"a": 2.0, "a2": 2.6, "blast": 3.2, "a3": 1.6, "end": 2.6, "down": 1.8}[sec]
         vortex(np.random.default_rng(k), strength, hi=0.95)          # low enough to churn the floor
     if fired(SNARE, t, dt) is not None and sec in ("a", "a2", "blast", "a3", "end"):
         u += 1.4 * np.sin(Y / GH * np.pi * 3 + t) * np.exp(-((Y - GH * 0.45) / 40) ** 2)
@@ -150,13 +152,21 @@ def step(t, dt):
     u, v = project(u, v)
     # the grains: ride the flow, sink (or rise, in the last verse), settle in the chorus
     pu = map_coordinates(u, [py, px], order=1, mode="nearest"); pv = map_coordinates(v, [py, px], order=1, mode="nearest")
-    grav = {"intro": 0.03, "b": 0.55, "down": 0.25, "a3": -0.18, "tail": 0.0}.get(sec, 0.08)
+    grav = {"intro": 0.03, "b": 0.55, "down": 0.06, "tail": 0.0}.get(sec, 0.04)
     if sec == "end" and b["k"] == 1: grav = 0.0
+    if sec == "a3":                                          # rise toward a band under the surface, stay in shot
+        y0 = view(t)[1]; grav = -0.18 * np.clip((py - (y0 + 14)) / 20, -1, 1)
+    if not calm and not after:                               # flow along the floor picks grains back up
+        bed = (py > GH - 6) & ~stuck
+        speed = np.hypot(pu, pv)
+        go = bed & (rng.random(N) < np.clip((speed - 0.15) * ENTRAIN * {"down": 3, "blast": 2.5}.get(sec, 1), 0, 0.3))
+        wv[go] += rng.uniform(0.6, 1.8, go.sum()) * np.clip(speed[go], 0.3, 3)
+    py -= wv * dt * 30; wv *= 0.95                           # a lifted grain climbs ~20x its kick before it sinks
     m = ~stuck
     if after: m[ONE] = False; py[ONE] += 0.04 * dt * 30           # the one grain, sinking very slowly
     jitter = 0.05 if not after else 0.0
     px[m] += (pu[m] + rng.normal(0, jitter, m.sum())) * dt * 30
-    py[m] += (pv[m] + grav * size[m] + rng.normal(0, jitter, m.sum())) * dt * 30
+    py[m] += (pv[m] + np.broadcast_to(grav, (N,))[m] * size[m] + rng.normal(0, jitter, m.sum())) * dt * 30
     for q, lim in ((px, GW - 1.01), (py, GH - 1.01)):
         lo = q < 1; q[lo] = 2 - q[lo]; hi = q > lim; q[hi] = 2 * lim - q[hi]
     np.clip(px, 1, GW - 1.01, out=px); np.clip(py, 1, GH - 1.01, out=py)
