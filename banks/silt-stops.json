@@ -5,7 +5,7 @@
  "language": "en-US",
  "license": "MIT",
  "extends": "klatt1980-en",
- "source": "Burst centroids measured from Kokoro v1.0 (am_onyx/echo/adam/michael, word-initial stops, 4 words each): T 5.6 kHz, D 4.4 kHz, K 3.0 kHz, G 2.0 kHz, P/B < 1 kHz. B/D/G voicing lowered so the burst isn't a nasal hum.",
+ "source": "Burst centroids measured from Kokoro v1.0 (am_onyx/echo/adam/michael, word-initial stops, 4 words each): T 5.6 kHz, D 4.4 kHz, K 3.0 kHz, G 2.0 kHz, P/B < 1 kHz. B/D/G voicing lowered so the burst isn't a nasal hum. T/D burst kept below the measured centroid and quieter: at full level a 25 ms burst reads as 'st'.",
  "phonemes": {
   "B": {
    "voicing": 0.25,
@@ -24,13 +24,13 @@
    "voicing": 0.25,
    "F1": 200,
    "F2": 1600,
-   "F3": 4300,
+   "F3": 3600,
    "BW1": 60,
    "BW2": 100,
-   "BW3": 600,
+   "BW3": 500,
    "A1": 0.2,
    "A2": 0.4,
-   "A3": 0.7,
+   "A3": 0.35,
    "isStop": true
   },
   "G": {
@@ -50,13 +50,13 @@
    "voicing": 0,
    "F1": 400,
    "F2": 1600,
-   "F3": 4500,
+   "F3": 3800,
    "BW1": 300,
    "BW2": 120,
-   "BW3": 600,
+   "BW3": 500,
    "A1": 0,
    "A2": 0.3,
-   "A3": 0.7,
+   "A3": 0.4,
    "isStop": true
   }
  }
