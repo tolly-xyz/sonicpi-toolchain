@@ -204,7 +204,7 @@ CONS_MS = Hash.new(60).merge(
   "S" => 95, "Z" => 75, "SH" => 100, "F" => 85, "V" => 55, "TH" => 85, "DH" => 40, "HH" => 60,
   "M" => 65, "N" => 50, "NG" => 70, "L" => 55, "R" => 50, "W" => 55, "Y" => 45)
 # A held diphthong is sung on its first vowel and glides at the very end.
-BANK = "[bank=silt-stops]"
+BANK = "[bank=silt-stops] [TR=70]"
 ASP_MS = 35
 DIPH = { "AY" => %w[AA IY], "EY" => %w[EH IY], "OW" => %w[AO UW], "AW" => %w[AA UW], "OY" => %w[AO IY] }
 # Every pitch is a named note and every glide ends on one, so the voice stays in E phrygian
@@ -275,7 +275,7 @@ ON_BEAT = false
 HOLD = 0.55
 # Each word's consonants, scaled by how a real voice times that word (lib/worddict.rb):
 # per syllable, [onset factors, coda factors]. WORD_TIMING = false uses CONS_MS as is.
-WORD_TIMING = true
+WORD_TIMING = false                          # Whisper: 63 (full) and 65 (lengthen-only) vs 67/132 without
 WORD_LO = 1.0                                # lengthen where a voice lingers; never clip below the singing table
 def word_shape(syls)
   out = []; word = []
