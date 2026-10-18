@@ -204,7 +204,7 @@ CONS_MS = Hash.new(60).merge(
   "S" => 95, "Z" => 75, "SH" => 100, "F" => 85, "V" => 55, "TH" => 85, "DH" => 40, "HH" => 60,
   "M" => 65, "N" => 50, "NG" => 70, "L" => 55, "R" => 50, "W" => 55, "Y" => 45)
 # A held diphthong is sung on its first vowel and glides at the very end.
-BANK = "[bank=silt-stops] [TR=70]"
+BANK = "[bank=silt-stops]"
 ASP_MS = 35
 DIPH = { "AY" => %w[AA IY], "EY" => %w[EH IY], "OW" => %w[AO UW], "AW" => %w[AA UW], "OY" => %w[AO IY] }
 # Every pitch is a named note and every glide ends on one, so the voice stays in E phrygian
@@ -405,9 +405,11 @@ LYRICS = {
 LYRICS.each_value.select { |l| l[:style] == :number }.each do |l|
   k = l[:at][1]; l[:bpm] = 184; l[:syls] = l[:syls].(BLAST[k], BLAST[[k - 1, 0].max])
 end
-VOICE = { shout: "g0.8 t0.35 h0.12 s0.97", under: "g0.7 t0.1 h0.2 s0.9", stuck: "g0.75 t0.3 h0.1",
-          sung: "g0.55 t0.1 h0.06", ghost: "g0.4 h0.3 s1.15", whisper: "g0.25 h0.55 t-0.2", last: "g0.45 t-0.1 h0.08",
-          shout2: "g0.74 t0.28 h0.16 s1.01" }
+# [TR=70]: formants glide into each sound over 70 ms (closest to a real voice; Whisper: verses and
+# whispers clearer). The chorus keeps klattsch's 35 ms: slower glides smeared its opening "Lower".
+VOICE = { shout: "[TR=70] g0.8 t0.35 h0.12 s0.97", under: "[TR=70] g0.7 t0.1 h0.2 s0.9", stuck: "[TR=70] g0.75 t0.3 h0.1",
+          sung: "g0.55 t0.1 h0.06", ghost: "g0.4 h0.3 s1.15", whisper: "[TR=70] g0.25 h0.55 t-0.2", last: "[TR=70] g0.45 t-0.1 h0.08",
+          shout2: "[TR=70] g0.74 t0.28 h0.16 s1.01" }
 # Every grid-timed syllable is clipped short (vowel in ms), the rest of its slot left silent;
 # a long note (6+ sixteenths) holds for HOLD of its slot instead, so line ends ring.
 GATE = { shout: 150, number: 130, sung: 190 }
