@@ -210,12 +210,11 @@ def main(out, parts_dir=None):
     lead = fx(stem("lead"), HighpassFilter(200), PeakFilter(3000, -3, 1.0), Delay(delay_seconds=0.268, feedback=0.25, mix=0.18),
               Reverb(room_size=0.6, wet_level=0.2, dry_level=0.85))
     sfx = fx(stem("fx"), HighpassFilter(40))
-    # the song already puts each line's consonants ahead of the beat; a slower attack keeps their bite,
-    # the shelf takes the fizz off the distortion, and a short slap gives it a room
+    # the song already puts each line's consonants ahead of the beat; a slower attack keeps their bite.
+    # The top end stays (the sibilants carry the words) and nothing fills the gaps between syllables.
     vox = fx(stem("vox"), HighpassFilter(100), PeakFilter(300, -2.5, 1.0),
              Compressor(threshold_db=-22, ratio=4, attack_ms=8, release_ms=90),
-             PeakFilter(1800, 2.5, 1.0), HighShelfFilter(7000, -2.5), Delay(delay_seconds=0.089, feedback=0.0, mix=0.08),
-             Delay(delay_seconds=0.178, feedback=0.15, mix=0.1))
+             PeakFilter(1800, 2.5, 1.0), PeakFilter(3200, 2, 1.2), Delay(delay_seconds=0.178, feedback=0.15, mix=0.1))
     kick, snare, hat, cym = drums()
     kick = fx(kick, HighpassFilter(40), PeakFilter(70, 2, 1.2), PeakFilter(350, -6, 1.5), PeakFilter(4000, 5, 1.0))
     snare = fx(snare, HighpassFilter(90), PeakFilter(220, 3, 1.0), PeakFilter(6000, 2, 1.0), Reverb(room_size=0.35, wet_level=0.18, dry_level=0.9))
@@ -232,7 +231,8 @@ def main(out, parts_dir=None):
     # balance: each part's loudness while it plays (dB RMS)
     parts = {"gtrL": (gL, -20), "gtrR": (gR, -20), "bass": (bass, -21), "kit": (kit, -17.5), "vox": (vox, -19),
              "lead": (lead, -25), "fx": (sfx, -23), "real": (real, -27), "organ": (org, -26)}
-    mixd = ride(mono_lows(sum(level(x, t) for x, t in parts.values())))
+    # the voice isn't ridden: the breakdown's whispers have to carry over a quieter band
+    mixd = mono_lows(ride(sum(level(x, t) for n, (x, t) in parts.items() if n != "vox")) + level(vox, parts["vox"][1]))
     if parts_dir:                              # each part as it sits in the mix, for inspection
         os.makedirs(parts_dir, exist_ok=True)
         for name, (x, t) in parts.items():

@@ -116,6 +116,10 @@ sample that much early (`voice_in`, a negative `time_warp`). Accents are relativ
 around a vowel (the `!` stress adds a fixed +8 Hz, which is nearly two semitones on E2). For a
 double-track, render the line again with a slightly different voice and a few cents off
 (`DETUNE`), and play it 15 ms late, panned.
+Check intelligibility by ear and with a recognizer: Whisper (large-v3-turbo) heard the shouted
+verses better with vowel-on-beat and a double, but the sung chorus worse with either ("Mel over
+the" for "Lower the"), so the chorus keeps its consonants on the beat (`on_beat: false`) and one
+take. A slap echo on these short syllables also cost words; it's gone.
 
 ## Gotchas handled by sp-render
 

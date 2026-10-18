@@ -263,11 +263,13 @@ def onsets(syls, bpm)
   [slots, pre]
 end
 def lead(syls) = syls[0][3].sum { |p| CONS_MS[p] }
-def sing(syls, bpm = 168, map = ->(m) { m }, gate: nil, accent_from: A2)
+def sing(syls, bpm = 168, map = ->(m) { m }, gate: nil, accent_from: A2, on_beat: true)
   slots, pre = onsets(syls, bpm)
   syls.each_with_index.map do |(txt, n, nt, ons, vowel, post, o), i|
     o = { gate: gate }.merge(o || {}); o[:to] = map.(o[:to]) if o[:to]
-    syl_ms(slots[i], ons, vowel, post || [], pitch: map.(nt), pre_ms: pre[i], next_ms: (pre[i + 1] || []).sum,
+    nxt = (pre[i + 1] || []).sum
+    nxt, pre[i] = 0, nil unless on_beat                       # consonant on the beat, as sung before
+    syl_ms(on_beat ? slots[i] : slots[i] - ons.sum { |p| CONS_MS[p] }, ons, vowel, post || [], pitch: map.(nt), pre_ms: pre[i], next_ms: nxt,
            accent: !accent_from.nil? && nt >= accent_from, **o)
   end.join
 end
@@ -375,7 +377,7 @@ LYRICS.each_value.select { |l| l[:style] == :number }.each do |l|
 end
 VOICE = { shout: "g0.8 t0.35 h0.12 s0.97", under: "g0.7 t0.1 h0.2 s0.9", stuck: "g0.75 t0.3 h0.1",
           sung: "g0.55 t0.1 h0.06", ghost: "g0.4 h0.3 s1.15", whisper: "g0.25 h0.55 t-0.2", last: "g0.45 t-0.1 h0.08",
-          shout2: "g0.74 t0.28 h0.16 s1.01", sung2: "g0.5 t0.05 h0.1 s1.03" }
+          shout2: "g0.74 t0.28 h0.16 s1.01" }
 # Every grid-timed syllable is clipped short (vowel in ms), the rest of its slot left silent.
 GATE = { shout: 120, number: 110, sung: 150 }
 # the second takes: another throat (VOICE *2), a few cents off, played a little late and to the side
@@ -395,11 +397,11 @@ LYRICS.each do |name, l|
   when :sung
     at = 0; later = l[:syls].select { |s| (at += s[1]) > l[:ghost_from] }
     ghost_in = st(l[:ghost_from]) + lead(l[:syls]) - lead(later)
-    KLATT[name] = "#{VOICE[:sung]} #{sing(l[:syls], gate: GATE[:sung])} [voice=1] p#{ghost_in.round(1)} #{VOICE[:ghost]} #{sing(later, 168, method(:third_up), gate: GATE[:sung], accent_from: nil)}"
-    KLATT[:"#{name}_dbl"] = "#{VOICE[:sung2]} #{sing(l[:syls], 168, DETUNE.(-7), gate: GATE[:sung])}"
+    ghost_in = st(l[:ghost_from])
+    KLATT[name] = "#{VOICE[:sung]} #{sing(l[:syls], gate: GATE[:sung], on_beat: false)} [voice=1] p#{ghost_in.round(1)} #{VOICE[:ghost]} #{sing(later, 168, method(:third_up), gate: GATE[:sung], accent_from: nil, on_beat: false)}"
   when :whisper, :last then KLATT[name] = "#{VOICE[l[:style]]} #{speak(l[:pitch], l[:words])}"
   end
-  LEAD[name] = lead(l[:syls]) if l[:syls]
+  LEAD[name] = lead(l[:syls]) if l[:syls] && l[:style] != :sung
 end
 # ---- end klattsch voices
 def klatt(name) = "#{KDIR}/#{name}.wav"
@@ -427,10 +429,8 @@ end
 with_fx :reverb, room: 0.7, mix: 0.3 do
   with_fx :distortion, distort: 0.4, mix: 0.4 do
     layer(:vox) do |bar, i|
-      lines_at(bar, :sung).each_key do |name|
-        voice_in(name) { sample klatt(name), amp: 1.3, pan: -0.1 }
-        voice_in(name, 0.014) { sample klatt(:"#{name}_dbl"), amp: 0.65, pan: 0.5 }
-      end
+      # one take: a double here smeared the words (Whisper heard "Mel over the" for "Lower the")
+      lines_at(bar, :sung).each_key { |name| voice_in(name) { sample klatt(name), amp: 1.4 } }
     end
   end
 end
