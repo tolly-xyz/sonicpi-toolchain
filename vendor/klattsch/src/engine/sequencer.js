@@ -315,7 +315,8 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
   const emit = (target, transitionMs) => {
     schedule.push({
       atMs: timeMs,
-      target: { ...target, ...extras, ...stateExtras() },
+      // [AV=x] (sonicpi-toolchain patch): loudness multiplier, moved like any other parameter
+      target: { ...target, ...extras, ...stateExtras(), ...(extras.AV !== undefined ? { gain: 3.5 * extras.AV } : {}) },
       transitionMs,
     });
   };

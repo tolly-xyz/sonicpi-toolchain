@@ -26,7 +26,10 @@ export function words(text, rules = RULES) {
   return timeWords(lookup(text).map((w) => ({ ...w, syllables: syllabify(w.phones) })), rules);
 }
 
-// opts: { bank, transition, aspiration (true), accent (true), voice }
+// loudness by stress ([AV=x], a patch to the vendored klattsch): unstressed syllables recede, as in speech
+export const DYNAMICS = { 1: 1.0, 2: 0.8, 0: 0.55 };
+const av = (s, o) => (!o.dynamics ? '' : `[AV=${(o.dynamics === true ? DYNAMICS : o.dynamics)[s.stress] ?? 1}] `);
+// opts: { bank, transition, aspiration (true), accent (true), dynamics (true | {stress: gain}; off by default until voicelab says otherwise), voice }
 function prefix(o) {
   return [o.bank ? `[bank=${o.bank}]` : '', o.transition ? `[TR=${o.transition}]` : '', VOICES[o.voice] ?? o.voice ?? VOICES.speak]
     .filter(Boolean).join(' ');
@@ -39,6 +42,7 @@ export function speak(o) {
   ws.forEach((w, wi) => {
     w.syllables.forEach((s, si) => {
       const final = (w.punct !== '' || wi === ws.length - 1) && si === w.syllables.length - 1;
+      out += av(s, o);
       s.onset.forEach((p, i) => { out += `r${f1(s.onsetMs[i] * rate)} ${p} `; });
       out += asp(s, o);
       if (s.nucleus) {
@@ -74,7 +78,7 @@ export function sing(o) {
     let gate = extra.gate ?? o.gate;
     if (gate && (typeof len === 'number' ? len : 0) >= 6) gate = Math.max(gate, slot * (o.hold ?? 0.55));
     if (gate && v > gate) { rest = v - gate; v = gate; }
-    out += `v0 b${f1(hz(note))} `;
+    out += `v0 b${f1(hz(note))} ${av(s, o)}`;
     s.onset.forEach((p, j) => { out += `r${f1(ons[j])} ${p} `; });
     if (a) out += `r${f1(a)} HH `;
     const acc = o.accent !== false && s.stress === 1;
