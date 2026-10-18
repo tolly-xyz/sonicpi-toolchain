@@ -52,6 +52,13 @@ klattsch syntax: `b` pitch (Hz or note name), `r` ms per phoneme or per `( group
 `v`/`w` vibrato depth/rate, `h` breathiness, `g` effort, `t` tilt, `s` vocal-tract scale,
 `AY+20` / `AY(+20)` pitch glides, `[voice=N]` harmony. Full details: `vendor/klattsch/`.
 
+## klattsing: lyrics and notes in, klattsch out (`klattsing/`)
+
+A general front end for klattsch: CMUdict pronunciation, syllables and stress, Klatt/MITalk duration
+rules, speech and singing modes, and KLATT entries in songs that are just text plus notes. See
+`klattsing/README.md`. `tools/voicelab/` measures any voice setting for intelligibility (minimal word
+pairs per contrast class, Harvard sentences) with Whisper, against Kokoro TTS as the ceiling.
+
 ## Songs and projects
 
 | Song | Build |
