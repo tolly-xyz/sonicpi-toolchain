@@ -238,7 +238,7 @@ def main():
     n = int((max(stills) + 0.05 if stills else dur) * FPS); dt = 1 / FPS; t0 = time.time()
     ff = None if stills else subprocess.Popen(
         ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
-         "-i", audio, "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-preset", "medium", "-crf", "21", "-pix_fmt", "yuv420p",
+         "-i", audio, "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-preset", "medium", "-crf", "23", "-maxrate", "10M", "-bufsize", "20M", "-pix_fmt", "yuv420p",
          "-c:a", "aac", "-b:a", "256k", "-movflags", "+faststart", "-shortest", out], stdin=subprocess.PIPE)
     want = sorted(round(s * FPS) for s in stills) if stills else None
     for k in range(n):
