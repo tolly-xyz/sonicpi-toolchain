@@ -129,6 +129,12 @@ re-renders when one changes). `banks/silt-stops.json` moves the T/D bursts up to
 burst made "beat" read as "me"); with a 35 ms breath after P/T/K, Whisper went 66 -> 67/132 on the
 song, chorus 16 -> 18/21, and "still Sunday" heard for the first time. Measured vowel targets
 (`banks/kokoro-male-en.json`) scored no better than klattsch's own, so the song doesn't use them.
+Measuring: one Whisper pass on the full mix varies by about +-3 words per section with no change to
+that section (the same chorus scored 16 and 18), so differences under ~5/132 are ties. Since the
+stop bank, word timing (63, 65), 70 ms transitions everywhere (65) and per style (66) all tie with
+67. The song keeps 70 ms transitions (`[TR=70]`, closest to Kokoro in `tools/tts-measure/compare.py`)
+except in the chorus, and leaves word timing off. For finer calls, score the vocal stem alone, or
+several renders, or use minimal word pairs (Kent et al. 1989) instead of one pass over the mix.
 
 ## Gotchas handled by sp-render
 
