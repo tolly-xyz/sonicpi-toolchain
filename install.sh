@@ -11,5 +11,5 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
 python3 -m venv "$ROOT/.venv"
 "$ROOT/.venv/bin/pip" install --quiet pedalboard soundfile numpy scipy mido pycairo matplotlib pyloudnorm
 chmod +x "$ROOT"/bin/* "$ROOT"/projects/*/build.sh "$ROOT"/projects/*/*.py
-echo "done. Next: bin/sp-start, then e.g. bin/sp-render songs/demo.rb out/demo.mp3 -d 12"
 (cd "$(dirname "$0")/klattsing" && npm ci --silent)      # CMUdict for klattsing
+echo "done. Next: bin/sp-start, then e.g. bin/sp-render songs/demo.rb out/demo.mp3 -d 12"
