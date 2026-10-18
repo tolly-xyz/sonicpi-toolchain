@@ -24,7 +24,5 @@ fi
 ffmpeg -y -loglevel error -i "$ROOT/out/silt_psalm.wav" -b:a 320k "$ROOT/out/silt_psalm.mp3"
 echo "$ROOT/out/silt_psalm.mp3"
 if [ "${want[0]}" = video ] || [ "${VIDEO:-}" = 1 ]; then
-  # the on-screen words come from the same LYRICS data the voices are rendered from
-  ruby "$HERE/lyrics.rb" "$SONG" > "$W/lyrics.json"
   "$PY" "$HERE/draw.py" "$ROOT/out/silt_psalm.mp4"
 fi

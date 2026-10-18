@@ -59,7 +59,7 @@ klattsch syntax: `b` pitch (Hz or note name), `r` ms per phoneme or per `( group
 | `songs/demo.rb` | `bin/sp-render songs/demo.rb out/demo.mp3 -d 12` |
 | `songs/the_room.rb`: *The Room With The Crooked Clock* (7/8, D major) | `projects/the_room/build.sh` makes `out/the_room.mp3` and the video `out/the_room.mp4` |
 | `songs/radiator_teeth.rb`: *Radiator Teeth*, the instrumental, pure Sonic Pi | `bin/sp-render songs/radiator_teeth.rb out/radiator_teeth.mp3 -d 74 -t 5` |
-| `songs/silt_psalm.rb`: *Silt Psalm*, the same music with words: stems + mix + klattsch vocals | `projects/silt_psalm/build.sh` (all stems, ~9 min), `build.sh vox` (one stem), `build.sh mix` (remix only), `build.sh video` (remix + the video; still Radiator Teeth's radiator imagery), or `VIDEO=1 build.sh` for everything |
+| `songs/silt_psalm.rb`: *Silt Psalm*, the same music with words: stems + mix + klattsch vocals | `projects/silt_psalm/build.sh` (all stems, ~9 min), `build.sh vox` (one stem), `build.sh mix` (remix only), `build.sh video` (remix + the video, ~20 min), or `VIDEO=1 build.sh` for everything |
 
 **The Room** — `draw.py` reads the bar/note timeline exported from the song
 (`timeline.rb`) and draws every frame with cairo, piping them into ffmpeg with the
@@ -76,10 +76,14 @@ Hydrogen *Black Pearl* kit with velocity layers, recorded guitar strums from
 MuseScore soundfont, and mixes/masters everything with Spotify's `pedalboard`. Each part
 is leveled to a target loudness (`parts` in `mix.py`), so balance changes are one number.
 
-**Video** — `projects/silt_psalm/draw.py` (made for the Radiator Teeth lyrics): a photocopied-zine
-radiator whose jaw snaps on the kicks, ransom-note lyrics timed per word from klattsch's own
-compiler, the breakdown melting under a cathedral arch, a red strobe for the blast.
-`--still 8.3 46.8` writes PNGs for quick looks.
+**Video** — `projects/silt_psalm/draw.py`: one body of water for the whole song, simulated
+(a 2D stable-fluids solver carrying ~110k grains of silt) and driven by the score. Kicks stir
+vortices and snares shear; the voice lights the water; the stammering bars freeze it; the
+chorus lets everything settle onto a hidden arch; the breakdown dissolves it; the blast pulls
+the camera back a step per bar; the last verse turns gravity around; after the seizure one
+grain is left. The section-by-section plan is in the file's docstring. `--still 37 52` writes
+PNGs (it simulates from the start, so late stills take a couple of minutes). The previous
+zine-style renderer is in git history (commit 5105a00).
 
 ## Inspecting vocals (`tools/vox-inspect/`)
 
