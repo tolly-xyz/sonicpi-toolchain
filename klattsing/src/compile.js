@@ -4,6 +4,7 @@
 import { lookup } from './lexicon.js';
 import { syllabify } from './syllables.js';
 import { timeWords, RULES } from './durations.js';
+import { timeWordsV0 } from './durations_v0.js';
 
 const DIPH = { AY: ['AA', 'IY'], EY: ['EH', 'IY'], OW: ['AO', 'UW'], AW: ['AA', 'UW'], OY: ['AO', 'IY'] };
 const NOTE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -22,8 +23,9 @@ export const VOICES = {
   whisper: 'g0.25 h0.55 t-0.2',
 };
 
-export function words(text, rules = RULES) {
-  return timeWords(lookup(text).map((w) => ({ ...w, syllables: syllabify(w.phones) })), rules);
+export function words(text, rules, version) {
+  const ws = lookup(text).map((w) => ({ ...w, syllables: syllabify(w.phones) }));
+  return version === 'v0' ? timeWordsV0(ws, rules ?? undefined) : timeWords(ws, { ...RULES, ...(rules ?? {}) });
 }
 
 // loudness by stress ([AV=x], a patch to the vendored klattsch): unstressed syllables recede, as in speech
@@ -37,7 +39,7 @@ function prefix(o) {
 const asp = (s, o) => (o.aspiration !== false && s.aspMs ? `r${f1(s.aspMs)} HH ` : '');
 
 export function speak(o) {
-  const rate = o.rate ?? 1, base = hz(o.pitch ?? 'A2'), ws = words(o.text, o.rules);
+  const rate = o.rate ?? 1, base = hz(o.pitch ?? 'A2'), ws = words(o.text, o.rules, o.durations);
   let out = `${prefix(o)} b${f1(base)} `;
   ws.forEach((w, wi) => {
     w.syllables.forEach((s, si) => {
@@ -63,7 +65,7 @@ export function speak(o) {
 // long note (>= 6 sixteenths) held regardless of gate. Consonants sit on the beat.
 export function sing(o) {
   const bpm = o.bpm ?? 120, st = (n) => n * 15000 / bpm;
-  const syl = words(o.text, o.rules).flatMap((w) => w.syllables);
+  const syl = words(o.text, o.rules, o.durations).flatMap((w) => w.syllables);
   const notes = o.notes.filter((n) => n !== null);
   if (notes.length !== syl.length) throw new Error(`${syl.length} syllables but ${notes.length} notes in "${o.text}"`);
   let out = `${prefix({ voice: 'sing', ...o })} `;

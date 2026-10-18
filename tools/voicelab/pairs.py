@@ -2,7 +2,8 @@
 """Minimal-pair intelligibility for klattsing/klattsch voices, scored by Whisper.
 
 Monosyllabic words in contrast sets (after Kent, Weismer, Kent & Rosenbek 1989), each in the carrier
-"Say ___ again.", spoken or sung; 8 carriers per clip, transcribed by Whisper large-v3-turbo.
+"Say ___ again.", spoken or sung, one per Whisper (large-v3-turbo) call: packed together, Whisper
+collapses the repetitions ("Say that again." for eight of them).
 Reports accuracy per contrast class and what each missed word was heard as.
 
 usage: pairs.py CONFIGS.json [OUT.json]
@@ -54,7 +55,7 @@ def render(cfg, words, path):
         sf.write(path, np.concatenate(parts), sr); return
     specs = []
     for w in words:
-        base = {k: v for k, v in cfg.items() if k in ("bank", "transition", "aspiration", "voice", "rules", "accent", "gate", "hold")}
+        base = {k: v for k, v in cfg.items() if k in ("bank", "transition", "aspiration", "voice", "rules", "accent", "gate", "hold", "durations", "dynamics")}
         if cfg.get("mode", "speak") == "sing":
             notes = cfg.get("notes", ["E2", "G2", "F2", "E2"]); ln = cfg.get("len", [3, 6, 2, 6])
             specs.append({**base, "mode": "sing", "text": f"Say {w} again", "bpm": cfg.get("bpm", 120), "notes": [[n, l] for n, l in zip(notes, ln)]})
@@ -71,8 +72,8 @@ def main():
     its = items(); report = {}
     for cfg in cfgs:
         res = []
-        for i in range(0, len(its), 8):
-            chunk = its[i:i + 8]
+        for i in range(0, len(its), 1):                  # one carrier per call: Whisper collapses repeated phrases
+            chunk = its[i:i + 1]
             with tempfile.NamedTemporaryFile(suffix=".wav") as f:
                 render(cfg, [w for _, w in chunk], f.name); x, sr = sf.read(f.name)
             x = resample_poly(x, 16000, sr).astype("float32")
