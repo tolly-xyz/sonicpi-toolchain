@@ -213,12 +213,15 @@ def d(from, to) = format("%+.1f", hz(to) - hz(from))         # Hz glide from one
 # One syllable lasting exactly `ms`: consonants at natural length, the vowel takes the rest.
 #   pitch: the note   to: the note the vowel slides to   scoop: start this many semitones flat
 #   vib: a vibrato (about +-0.4 semitone) that blooms after the first third of a long vowel
-def syl_ms(ms, pre, vowel, post = [], pitch: nil, to: nil, scoop: 0, vib: false)
+#   gate: cut the vowel off after this many ms and rest for the rest of the slot (short, barked)
+def syl_ms(ms, pre, vowel, post = [], pitch: nil, to: nil, scoop: 0, vib: false, gate: nil)
   cons = (pre + post).map { |p| CONS_MS[p] }
   v = ms - cons.sum
   if v < 45                                                  # crowded: squeeze consonants, not the vowel
     k = [(ms - 45) / cons.sum.to_f, 0.5].max; cons = cons.map { |c| (c * k).round(1) }; v = ms - cons.sum
   end
+  rest = 0
+  if gate && v > gate then rest = v - gate; v = gate end
   out = +"v0 "
   out << "b#{hz(pitch - scoop)} " if pitch
   pre.each_with_index { |p, i| out << "r#{cons[i]} #{p} " }
@@ -236,14 +239,15 @@ def syl_ms(ms, pre, vowel, post = [], pitch: nil, to: nil, scoop: 0, vib: false)
     end
   end
   post.each_with_index { |p, i| out << "r#{cons[pre.size + i]} #{p} " }
+  out << "p#{rest.round(1)} " if rest > 0
   out
 end
 # A line on the beat grid is a list of syllables:
 #   [shown text, sixteenths, note, onset consonants, vowel, coda consonants, options]
 # Text ending in a space ends a word; "\n" ends a line on screen. `map` transposes the notes.
-def sing(syls, bpm = 168, map = ->(m) { m })
+def sing(syls, bpm = 168, map = ->(m) { m }, gate: nil)
   syls.map do |txt, n, nt, pre, vowel, post, o|
-    o = (o || {}).dup; o[:to] = map.(o[:to]) if o[:to]
+    o = { gate: gate }.merge(o || {}); o[:to] = map.(o[:to]) if o[:to]
     syl_ms(st(n, bpm), pre, vowel, post || [], pitch: map.(nt), **o)
   end.join
 end
@@ -298,18 +302,19 @@ LYRICS = {
   v2s2: { at: [:a2, 7], style: :stuck, syls: [
     STUTTER.("a-", F2, [], "AA"), STUTTER.("a-", G2, [], "AA"), STUTTER.("a-", A2, [], "AA"), STUTTER.("a-", B2, [], "AA"),
     ["a", 1, C3, [], "AA"], ["men.", 2, C3, %w[M], "EH", %w[N], { to: E2 }]] },
-  # chorus: sung, B1 to B2, a ghost a diatonic third above for the second half
+  # chorus: clipped syllables locked to the guitar's 3+3+3+3+4 hits (sixteenths 0 3 6 9 12 of
+  # each bar), the stresses on the group starts; a ghost a diatonic third above for the second half
   chorus: { at: [:b, 0], style: :sung, ghost_from: 64, syls: [
-    ["Low", 4, E2, %w[L], "OW", [], { scoop: 0.5, vib: true }], ["er ", 2, G2, [], "ER"], ["the ", 2, F2, %w[DH], "AH"],
-    ["buck", 6, A2, %w[B], "AH", %w[K], { scoop: 0.5, vib: true }], ["et, ", 2, G2, [], "IH", %w[T]], ["low", 4, F2, %w[L], "OW", [], { vib: true }],
-    ["er ", 2, E2, [], "ER"], ["the ", 2, D2, %w[DH], "AH"], ["bell,\n", 8, E2, %w[B], "EH", %w[L], { vib: true, to: F2 }],
-    ["down ", 4, B2, %w[D], "AW", %w[N], { scoop: 0.6, vib: true }], ["where ", 4, A2, %w[W], "EH", %w[R]], ["the ", 2, G2, %w[DH], "AH"],
-    ["hour ", 6, F2, [], "AW", %w[R], { vib: true }], ["is ", 2, E2, [], "IH", %w[Z]], ["drowned.\n", 14, E2, %w[D R], "AW", %w[N D], { vib: true, to: D2 }],
-    ["Ev", 2, E2, [], "EH", %w[V]], ["ery ", 2, F2, %w[R], "IY"], ["Sun", 6, A2, %w[S], "AH", %w[N], { scoop: 0.5, vib: true }],
-    ["day ", 4, G2, %w[D], "EY"], ["un", 4, F2, [], "AH", %w[N]], ["der ", 2, E2, %w[D], "ER"], ["the ", 2, F2, %w[DH], "AH"],
-    ["wa", 6, G2, %w[W], "AO", [], { vib: true }], ["ter\n", 4, F2, %w[T], "ER", [], { to: E2 }],
-    ["rings ", 8, B2, %w[R], "IH", %w[NG Z], { scoop: 0.6, vib: true }], ["with", 2, A2, %w[W], "IH", %w[DH]],
-    ["out ", 6, G2, [], "AW", %w[T], { vib: true }], ["a ", 2, F2, [], "AH"], ["sound.", 14, E2, %w[S], "AW", %w[N D], { vib: true, to: BB1 }]] },
+    ["Low", 3, E2, %w[L], "OW"], ["er ", 3, G2, [], "ER"], ["the ", 3, F2, %w[DH], "AH"], ["buck", 3, A2, %w[B], "AH", %w[K]],
+    ["et, ", 4, G2, [], "IH", %w[T]], ["low", 3, F2, %w[L], "OW"], ["er ", 3, E2, [], "ER"], ["the ", 6, D2, %w[DH], "AH"],
+    ["bell,\n", 4, E2, %w[B], "EH", %w[L], { to: F2 }],
+    ["down ", 3, B2, %w[D], "AW", %w[N]], ["where ", 3, A2, %w[W], "EH", %w[R]], ["the ", 3, G2, %w[DH], "AH"],
+    ["hour ", 3, F2, [], "AW", %w[R]], ["is ", 4, E2, [], "IH", %w[Z]], ["drowned.\n", 16, E2, %w[D R], "AW", %w[N D], { to: D2 }],
+    ["Ev", 3, E2, [], "EH", %w[V]], ["ery ", 3, F2, %w[R], "IY"], ["Sun", 3, A2, %w[S], "AH", %w[N]], ["day ", 3, G2, %w[D], "EY"],
+    ["un", 4, F2, [], "AH", %w[N]], ["der ", 3, E2, %w[D], "ER"], ["the ", 3, F2, %w[DH], "AH"], ["wa", 3, G2, %w[W], "AO"],
+    ["ter\n", 7, F2, %w[T], "ER", [], { to: E2 }],
+    ["rings ", 3, B2, %w[R], "IH", %w[NG Z]], ["with", 3, A2, %w[W], "IH", %w[DH]], ["out ", 3, G2, [], "AW", %w[T]],
+    ["a ", 3, F2, [], "AH"], ["sound.", 20, E2, %w[S], "AW", %w[N D], { to: BB1 }]] },
   # breakdown: breathy, free-timed, sinking G -> F -> E
   w1: { at: [:down, 1], style: :whisper, pitch: G1, words: [
     ["keep ", [[60, "K"], [180, "IY"], [50, "P"]]], ["your ", [[45, "Y"], [120, "ER"]]], ["voice ", [[55, "V"], [260, "OY#{d(G1, F1)}"], [90, "S"]]],
@@ -350,19 +355,21 @@ LYRICS.each_value.select { |l| l[:style] == :number }.each do |l|
 end
 VOICE = { shout: "g0.8 t0.35 h0.12 s0.97", under: "g0.7 t0.1 h0.2 s0.9", stuck: "g0.75 t0.3 h0.1",
           sung: "g0.55 t0.1 h0.06", ghost: "g0.4 h0.3 s1.15", whisper: "g0.25 h0.55 t-0.2", last: "g0.45 t-0.1 h0.08" }
+# Every grid-timed syllable is clipped short (vowel in ms), the rest of its slot left silent.
+GATE = { shout: 120, number: 110, sung: 150 }
 KLATT = {}
 LYRICS.each do |name, l|
   case l[:style]
   when :shout
-    KLATT[name] = "#{VOICE[:shout]} #{sing(l[:syls])}"
-    KLATT[:"#{name}_lo"] = "#{VOICE[:under]} #{sing(l[:syls], 168, UNDER5)}"
-  when :stuck then KLATT[name] = "#{VOICE[:stuck]} #{sing(l[:syls])}"
+    KLATT[name] = "#{VOICE[:shout]} #{sing(l[:syls], gate: GATE[:shout])}"
+    KLATT[:"#{name}_lo"] = "#{VOICE[:under]} #{sing(l[:syls], 168, UNDER5, gate: GATE[:shout])}"
+  when :stuck then KLATT[name] = "#{VOICE[:stuck]} #{sing(l[:syls], gate: GATE[:shout])}"
   when :number
-    KLATT[name] = "#{VOICE[:shout]} #{sing(l[:syls], 184)}"
-    KLATT[:"#{name}_lo"] = "#{VOICE[:under]} #{sing(l[:syls], 184, ->(m) { m - 12 })}"   # an octave under
+    KLATT[name] = "#{VOICE[:shout]} #{sing(l[:syls], 184, gate: GATE[:number])}"
+    KLATT[:"#{name}_lo"] = "#{VOICE[:under]} #{sing(l[:syls], 184, ->(m) { m - 12 }, gate: GATE[:number])}"   # an octave under
   when :sung
     at = 0; later = l[:syls].select { |s| (at += s[1]) > l[:ghost_from] }
-    KLATT[name] = "#{VOICE[:sung]} #{sing(l[:syls])} [voice=1] p#{st(l[:ghost_from])} #{VOICE[:ghost]} #{sing(later, 168, method(:third_up))}"
+    KLATT[name] = "#{VOICE[:sung]} #{sing(l[:syls], gate: GATE[:sung])} [voice=1] p#{st(l[:ghost_from])} #{VOICE[:ghost]} #{sing(later, 168, method(:third_up), gate: GATE[:sung])}"
   when :whisper, :last then KLATT[name] = "#{VOICE[l[:style]]} #{speak(l[:pitch], l[:words])}"
   end
 end
