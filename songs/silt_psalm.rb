@@ -193,6 +193,7 @@ end
 #        in our Sunday clothes, still wet.
 #   end  still Sunday.
 # ---- klattsch voices
+eval(File.read("#{SP_ROOT}/lib/worddict.rb"))
 KDIR = "#{defined?(SP_ROOT) ? SP_ROOT : Dir.pwd}/work/silt_psalm/kvox"
 def hz(m) = (440 * 2 ** ((m - 69) / 12.0)).round(1)
 def st(n, bpm = 168) = (n * 15000.0 / bpm).round(1)        # sixteenths -> ms
@@ -218,9 +219,9 @@ def d(from, to) = format("%+.1f", hz(to) - hz(from))         # Hz glide from one
 #   pitch: the note   to: the note the vowel slides to   scoop: start this many semitones flat
 #   vib: a vibrato (about +-0.4 semitone) that blooms after the first third of a long vowel
 #   gate: cut the vowel off after this many ms and rest for the rest of the slot (short, barked)
-def syl_ms(ms, pre, vowel, post = [], pitch: nil, to: nil, scoop: 0, vib: false, gate: nil, pre_ms: nil, next_ms: 0, accent: false)
+def syl_ms(ms, pre, vowel, post = [], pitch: nil, to: nil, scoop: 0, vib: false, gate: nil, pre_ms: nil, next_ms: 0, accent: false, post_x: [])
   pre_ms ||= pre.map { |p| CONS_MS[p] }
-  coda = post.map { |p| CONS_MS[p] }
+  coda = post.each_with_index.map { |p, j| CONS_MS[p] * (post_x[j] || 1) }
   avail = ms - next_ms
   v = avail - coda.sum
   if v < 45                                                  # crowded: squeeze consonants, not the vowel
@@ -272,17 +273,33 @@ def lead(syls) = syls[0][3].sum { |p| CONS_MS[p] }
 # gain from it in the verses and lost the chorus ("Mel over the" for "Lower the"), so it's off.
 ON_BEAT = false
 HOLD = 0.55
+# Each word's consonants, scaled by how a real voice times that word (lib/worddict.rb):
+# per syllable, [onset factors, coda factors]. WORD_TIMING = false uses CONS_MS as is.
+WORD_TIMING = true
+def word_shape(syls)
+  out = []; word = []
+  flush = lambda do
+    txt = word.map { |s| s[0] }.join; phones = word.flat_map { |s| s[3] + [s[4]] + (s[5] || []) }
+    f = WORD_TIMING ? word_factors(txt.strip, phones) : phones.map { nil }
+    word.each { |s| a = s[3].size; b = (s[5] || []).size; out << [f.shift(a), (f.shift; f.shift(b))] }
+    word = []
+  end
+  syls.each { |s| word << s; flush.() if s[0] =~ /[\s]\z/ }
+  flush.() unless word.empty?
+  out
+end
 def sing(syls, bpm = 168, map = ->(m) { m }, gate: nil, accent_from: A2, on_beat: ON_BEAT)
   slots, pre = onsets(syls, bpm)
+  shape = word_shape(syls)
   syls.each_with_index.map do |(txt, n, nt, ons, vowel, post, o), i|
     o = { gate: gate }.merge(o || {}); o[:to] = map.(o[:to]) if o[:to]
     o[:gate] = [o[:gate], slots[i] * HOLD].max if o[:gate] && n >= 6
     lx = o.delete(:onset_x) || 1                              # a held onset, so a line's first word reads
     acc = o.key?(:accent) ? o.delete(:accent) : !accent_from.nil? && nt >= accent_from
     nxt = (pre[i + 1] || []).sum
-    nxt, pre[i] = 0, ons.map { |p| CONS_MS[p] * lx } unless on_beat   # consonant on the beat
+    nxt, pre[i] = 0, ons.each_with_index.map { |p, j| CONS_MS[p] * lx * (shape[i][0][j] || 1) } unless on_beat   # consonant on the beat
     syl_ms(on_beat ? slots[i] : slots[i] - pre[i].sum, ons, vowel, post || [], pitch: map.(nt), pre_ms: pre[i], next_ms: nxt,
-           accent: acc, **o)
+           accent: acc, post_x: shape[i][1], **o)
   end.join
 end
 # Free-timed speech: [shown word, [[ms, phoneme], ...]], with , ; . as klattsch pauses.

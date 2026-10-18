@@ -280,7 +280,8 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
       timeMs += slotMs * 0.75;
       return slotMs;
     } else {
-      const trans = Math.min(DEFAULTS.defaultTransitionMs, slotMs * 0.4);
+      // [TR=ms] (sonicpi-toolchain patch): how long formants take to move into a phoneme
+      const trans = Math.min(extras.TR ?? DEFAULTS.defaultTransitionMs, slotMs * (extras.TR ? 0.9 : 0.4));
       emit(scaled(p, startF0), trans);
       timeMs += slotMs;
       return slotMs;

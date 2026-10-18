@@ -1,1 +1,2 @@
-tgies/klattsch @ 63dc2c6 (MIT), vendored unmodified
+tgies/klattsch @ 63dc2c6 (MIT), vendored with one patch:
+  src/engine/sequencer.js: [TR=ms] sets the formant transition into steady phonemes (default 35 ms, at most 40% of the phoneme; with TR, up to 90%)
