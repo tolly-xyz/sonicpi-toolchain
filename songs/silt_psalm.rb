@@ -263,7 +263,10 @@ def onsets(syls, bpm)
   [slots, pre]
 end
 def lead(syls) = syls[0][3].sum { |p| CONS_MS[p] }
-def sing(syls, bpm = 168, map = ->(m) { m }, gate: nil, accent_from: A2, on_beat: true)
+# ON_BEAT puts vowels on the beat (onsets borrowed from the slot before). Whisper heard no
+# gain from it in the verses and lost the chorus ("Mel over the" for "Lower the"), so it's off.
+ON_BEAT = false
+def sing(syls, bpm = 168, map = ->(m) { m }, gate: nil, accent_from: A2, on_beat: ON_BEAT)
   slots, pre = onsets(syls, bpm)
   syls.each_with_index.map do |(txt, n, nt, ons, vowel, post, o), i|
     o = { gate: gate }.merge(o || {}); o[:to] = map.(o[:to]) if o[:to]
@@ -396,12 +399,11 @@ LYRICS.each do |name, l|
     KLATT[:"#{name}_lo"] = "#{VOICE[:under]} #{sing(l[:syls], 184, ->(m) { m - 12 }, gate: GATE[:number], accent_from: nil)}"   # an octave under
   when :sung
     at = 0; later = l[:syls].select { |s| (at += s[1]) > l[:ghost_from] }
-    ghost_in = st(l[:ghost_from]) + lead(l[:syls]) - lead(later)
-    ghost_in = st(l[:ghost_from])
-    KLATT[name] = "#{VOICE[:sung]} #{sing(l[:syls], gate: GATE[:sung], on_beat: false)} [voice=1] p#{ghost_in.round(1)} #{VOICE[:ghost]} #{sing(later, 168, method(:third_up), gate: GATE[:sung], accent_from: nil, on_beat: false)}"
+    ghost_in = st(l[:ghost_from]) + (ON_BEAT ? lead(l[:syls]) - lead(later) : 0)
+    KLATT[name] = "#{VOICE[:sung]} #{sing(l[:syls], gate: GATE[:sung])} [voice=1] p#{ghost_in.round(1)} #{VOICE[:ghost]} #{sing(later, 168, method(:third_up), gate: GATE[:sung], accent_from: nil)}"
   when :whisper, :last then KLATT[name] = "#{VOICE[l[:style]]} #{speak(l[:pitch], l[:words])}"
   end
-  LEAD[name] = lead(l[:syls]) if l[:syls] && l[:style] != :sung
+  LEAD[name] = lead(l[:syls]) if ON_BEAT && l[:syls]
 end
 # ---- end klattsch voices
 def klatt(name) = "#{KDIR}/#{name}.wav"

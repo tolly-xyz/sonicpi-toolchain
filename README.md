@@ -118,8 +118,9 @@ double-track, render the line again with a slightly different voice and a few ce
 (`DETUNE`), and play it 15 ms late, panned.
 Check intelligibility by ear and with a recognizer: Whisper (large-v3-turbo) heard the shouted
 verses better with vowel-on-beat and a double, but the sung chorus worse with either ("Mel over
-the" for "Lower the"), so the chorus keeps its consonants on the beat (`on_beat: false`) and one
-take. A slap echo on these short syllables also cost words; it's gone.
+the" for "Lower the"). Consonants on the beat everywhere scored no worse in the verses, so
+`ON_BEAT` is off and the chorus is one take. A slap echo on these short syllables also cost
+words; it's gone.
 
 ## Gotchas handled by sp-render
 

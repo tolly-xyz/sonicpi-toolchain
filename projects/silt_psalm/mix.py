@@ -186,12 +186,13 @@ def duck(x, key, depth_db, attack_ms=2, release_ms=90, band=None):
     from scipy.signal import butter, sosfiltfilt
     b = sosfiltfilt(butter(2, band, "bandpass", fs=SR, output="sos"), x, axis=0).astype("float32")
     return x + b * g                                           # zero-phase band, so taking it away is clean
-def ride(x):
+RIDE = {"intro": 0, "a": 0, "a2": 0.5, "b": 1, "down": -6, "blast": 2, "a3": 1, "end": 0, "tail": -2}
+VOX_RIDE = {"down": -3, "blast": 2}            # the voice follows less far down: the whispers have to carry
+def ride(x, plan=RIDE):
     """Section-by-section level, so the song keeps its shape after the master squeezes it."""
-    plan = {"intro": 0, "a": 0, "a2": 0.5, "b": 1, "down": -6, "blast": 2, "a3": 1, "end": 0, "tail": -2}
     g = np.zeros(len(x), "float32")
     for b in BARS:
-        i = int(b["t"] * SR); g[i:] = plan[b["sec"]]
+        i = int(b["t"] * SR); g[i:] = plan.get(b["sec"], 0)
     g = np.convolve(g, np.ones(int(0.12 * SR)) / int(0.12 * SR), mode="same")   # 120 ms moves, no steps
     return x * db(g)[:, None]
 def mono_lows(x, hz=120):
@@ -231,8 +232,7 @@ def main(out, parts_dir=None):
     # balance: each part's loudness while it plays (dB RMS)
     parts = {"gtrL": (gL, -20), "gtrR": (gR, -20), "bass": (bass, -21), "kit": (kit, -17.5), "vox": (vox, -19),
              "lead": (lead, -25), "fx": (sfx, -23), "real": (real, -27), "organ": (org, -26)}
-    # the voice isn't ridden: the breakdown's whispers have to carry over a quieter band
-    mixd = mono_lows(ride(sum(level(x, t) for n, (x, t) in parts.items() if n != "vox")) + level(vox, parts["vox"][1]))
+    mixd = mono_lows(ride(sum(level(x, t) for n, (x, t) in parts.items() if n != "vox")) + ride(level(vox, parts["vox"][1]), VOX_RIDE))
     if parts_dir:                              # each part as it sits in the mix, for inspection
         os.makedirs(parts_dir, exist_ok=True)
         for name, (x, t) in parts.items():
