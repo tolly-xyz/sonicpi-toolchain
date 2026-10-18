@@ -1,0 +1,9 @@
+[
+ {"name": "kokoro am_onyx (ceiling)", "mode": "kokoro"},
+ {"name": "speak default", "mode": "speak", "pitch": "A2"},
+ {"name": "speak no-asp", "mode": "speak", "pitch": "A2", "aspiration": false},
+ {"name": "speak stops", "mode": "speak", "pitch": "A2", "bank": "silt-stops"},
+ {"name": "speak stops TR70", "mode": "speak", "pitch": "A2", "bank": "silt-stops", "transition": 70},
+ {"name": "sing E2 default", "mode": "sing"},
+ {"name": "sing E2 stops TR70", "mode": "sing", "bank": "silt-stops", "transition": 70}
+]

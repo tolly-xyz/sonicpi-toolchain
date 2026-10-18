@@ -1,0 +1,11 @@
+{
+  "name": "klattsing",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Singing and speech front end for klattsch: text -> phonemes, syllables, stress, durations, notes -> klattsch strings",
+  "license": "MIT",
+  "dependencies": {
+    "cmu-pronouncing-dictionary": "3.0.0"
+  }
+}
