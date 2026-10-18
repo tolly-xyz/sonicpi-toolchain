@@ -120,7 +120,9 @@ Check intelligibility by ear and with a recognizer: Whisper (large-v3-turbo) hea
 verses better with vowel-on-beat and a double, but the sung chorus worse with either ("Mel over
 the" for "Lower the"). Consonants on the beat everywhere scored no worse in the verses, so
 `ON_BEAT` is off and the chorus is one take. A slap echo on these short syllables also cost
-words; it's gone.
+words; it's gone. Two fixes that got the chorus opening heard: hold a line-initial consonant
+(`onset_x: 1.8` on "Low", with an accent) and put a consonant where it's said ("buh-ket", not
+"buck-et"); Whisper went from "I'm a lover, the butted lover" to "lower the bucket, lower the bell".
 
 ## Gotchas handled by sp-render
 

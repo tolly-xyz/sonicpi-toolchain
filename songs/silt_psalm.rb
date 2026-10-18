@@ -270,10 +270,12 @@ def sing(syls, bpm = 168, map = ->(m) { m }, gate: nil, accent_from: A2, on_beat
   slots, pre = onsets(syls, bpm)
   syls.each_with_index.map do |(txt, n, nt, ons, vowel, post, o), i|
     o = { gate: gate }.merge(o || {}); o[:to] = map.(o[:to]) if o[:to]
+    lx = o.delete(:onset_x) || 1                              # a held onset, so a line's first word reads
+    acc = o.key?(:accent) ? o.delete(:accent) : !accent_from.nil? && nt >= accent_from
     nxt = (pre[i + 1] || []).sum
-    nxt, pre[i] = 0, nil unless on_beat                       # consonant on the beat, as sung before
-    syl_ms(on_beat ? slots[i] : slots[i] - ons.sum { |p| CONS_MS[p] }, ons, vowel, post || [], pitch: map.(nt), pre_ms: pre[i], next_ms: nxt,
-           accent: !accent_from.nil? && nt >= accent_from, **o)
+    nxt, pre[i] = 0, ons.map { |p| CONS_MS[p] * lx } unless on_beat   # consonant on the beat
+    syl_ms(on_beat ? slots[i] : slots[i] - pre[i].sum, ons, vowel, post || [], pitch: map.(nt), pre_ms: pre[i], next_ms: nxt,
+           accent: acc, **o)
   end.join
 end
 # Free-timed speech: [shown word, [[ms, phoneme], ...]], with , ; . as klattsch pauses.
@@ -330,8 +332,8 @@ LYRICS = {
   # chorus: clipped syllables locked to the guitar's 3+3+3+3+4 hits (sixteenths 0 3 6 9 12 of
   # each bar), the stresses on the group starts; a ghost a diatonic third above for the second half
   chorus: { at: [:b, 0], style: :sung, ghost_from: 64, syls: [
-    ["Low", 3, E2, %w[L], "OW"], ["er ", 3, G2, [], "ER"], ["the ", 3, F2, %w[DH], "AH"], ["buck", 3, A2, %w[B], "AH", %w[K]],
-    ["et, ", 4, G2, [], "IH", %w[T]], ["low", 3, F2, %w[L], "OW"], ["er ", 3, E2, [], "ER"], ["the ", 6, D2, %w[DH], "AH"],
+    ["Low", 3, E2, %w[L], "OW", [], { onset_x: 1.8, accent: true }], ["er ", 3, G2, [], "ER"], ["the ", 3, F2, %w[DH], "AH"], ["buck", 3, A2, %w[B], "AH"],
+    ["et, ", 4, G2, %w[K], "IH", %w[T]], ["low", 3, F2, %w[L], "OW", [], { onset_x: 1.8, accent: true }], ["er ", 3, E2, [], "ER"], ["the ", 6, D2, %w[DH], "AH"],
     ["bell,\n", 4, E2, %w[B], "EH", %w[L], { to: F2 }],
     ["down ", 3, B2, %w[D], "AW", %w[N]], ["where ", 3, A2, %w[W], "EH", %w[R]], ["the ", 3, G2, %w[DH], "AH"],
     ["hour ", 3, F2, [], "AW", %w[R]], ["is ", 4, E2, [], "IH", %w[Z]], ["drowned.\n", 16, E2, %w[D R], "AW", %w[N D], { to: D2 }],
