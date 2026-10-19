@@ -84,7 +84,7 @@ def main(out, parts_dir=None):
     # vocals: each take rendered by klattsing, placed at its time, processed by role
     vbus = {k: silence(LEN) for k in ("lead", "gang", "mc")}
     for e in P["vox"]:
-        place(vbus[e["style"]], klattsing(e["spec"], f"{W}/vox"), e["t"], 1.0, e["pan"])
+        place(vbus[e["style"]], klattsing(e["spec"], f"{W}/vox"), e["t"], e.get("gain", 1.0), e["pan"])
     lead_v = fx(vbus["lead"], HighpassFilter(90), Compressor(threshold_db=-20, ratio=4, attack_ms=6, release_ms=90),
                 Distortion(drive_db=4), PeakFilter(2500, 3, 1.0), Reverb(room_size=0.35, wet_level=0.12, dry_level=0.9))
     gang = fx(vbus["gang"], HighpassFilter(110), Compressor(threshold_db=-20, ratio=4, attack_ms=5, release_ms=90),
