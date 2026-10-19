@@ -69,8 +69,10 @@ def main():
     import whisper, torch
     torch.set_num_threads(os.cpu_count())
     model = whisper.load_model(os.environ.get("WHISPER_MODEL", "/home/user/whisper/large-v3-turbo.pt"), device="cpu")
-    its = items(); report = {}
+    its = items()
+    report = json.load(open(out)) if out and os.path.exists(out) else {}   # resume: finished configs are kept
     for cfg in cfgs:
+        if cfg["name"] in report: print(f"{cfg['name']:28s} (done earlier)", flush=True); continue
         res = []
         for i in range(0, len(its), 1):                  # one carrier per call: Whisper collapses repeated phrases
             chunk = its[i:i + 1]
