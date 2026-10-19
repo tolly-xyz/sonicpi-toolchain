@@ -65,7 +65,10 @@ def main(out, parts_dir=None):
     gtr = fx(beat_wah(gtr), Compressor(threshold_db=-20, ratio=3, attack_ms=2, release_ms=50))
     organ = fx(fluid(P["organ"], 16, LEN, gain=0.8), HighpassFilter(120), Distortion(drive_db=4),
                Chorus(rate_hz=5.5, depth=0.35, mix=0.5), PeakFilter(400, -3, 1.0))
-    horns = fluid(P["horns"], 61, LEN, gain=0.8) + fluid(P["horns"], 66, LEN, gain=0.7)
+    def pan(x, p):
+        m = x.mean(1, keepdims=True); y = np.repeat(m, 2, 1)
+        y[:, 0] *= np.cos((p + 1) * np.pi / 4) * 1.414; y[:, 1] *= np.sin((p + 1) * np.pi / 4) * 1.414; return y
+    horns = pan(fluid(P["horns"], 61, LEN, gain=0.8), -0.4) + pan(fluid(P["horns"], 66, LEN, gain=0.7), 0.4)   # brass left, tenor right
     horns = fx(horns, HighpassFilter(140), Compressor(threshold_db=-18, ratio=3, attack_ms=8, release_ms=100),
                PeakFilter(2500, 2, 1.0), Reverb(room_size=0.5, wet_level=0.2, dry_level=0.85))
     pre = 4 * 60 / BPM
@@ -78,11 +81,8 @@ def main(out, parts_dir=None):
     env = uniform_filter1d(maximum_filter1d(np.abs(kick).max(1), int(0.08 * SR)), int(0.01 * SR)); env /= env.max() + 1e-9
     moog = moog * db(-3 * env)[:, None]
 
-    def pan(x, p):
-        m = x.mean(1, keepdims=True); y = np.repeat(m, 2, 1)
-        y[:, 0] *= np.cos((p + 1) * np.pi / 4) * 1.414; y[:, 1] *= np.sin((p + 1) * np.pi / 4) * 1.414; return y
-    parts = {"drums": (drums, -15.5), "perc": (perc, -25), "moog": (moog, -16.5), "clav": (pan(clav, -0.35), -22),
-             "gtr": (pan(gtr, 0.45), -24), "organ": (organ, -27), "horns": (horns, -21), "lead": (pan(lead, 0.15), -22)}
+    parts = {"drums": (drums, -15.5), "perc": (perc, -25), "moog": (moog, -16.5), "clav": (pan(clav, -0.65), -22),
+             "gtr": (pan(gtr, 0.7), -24), "organ": (organ, -27), "horns": (horns, -21), "lead": (pan(lead, 0.15), -22)}
     mixd = mono_lows(sum(level(x, t) for x, t in parts.values()))
     if parts_dir:
         os.makedirs(parts_dir, exist_ok=True)
