@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Singing and speech front end for klattsch: text -> phonemes, syllables, stress, durations, notes -> klattsch strings",
   "license": "MIT",
-  "scripts": { "test": "node --test test/" },
+  "scripts": { "test": "node --test" },
   "dependencies": {
     "cmu-pronouncing-dictionary": "3.0.0"
   }
