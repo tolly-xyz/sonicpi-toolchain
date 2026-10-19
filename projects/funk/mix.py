@@ -91,10 +91,10 @@ def main(out, parts_dir=None):
               Distortion(drive_db=6), PeakFilter(2200, 3, 1.0), Reverb(room_size=0.6, wet_level=0.25, dry_level=0.85))
     # the MC: a touch of telephone, but the words first (the heavy radio version lost them)
     mc = fx(vbus["mc"], HighpassFilter(150), LowpassFilter(7000), Distortion(drive_db=3), PeakFilter(1800, 3, 1.0),
-            Delay(delay_seconds=0.75 * 60 / BPM, feedback=0.25, mix=0.15))
+            Delay(delay_seconds=0.75 * 60 / BPM, feedback=0.12, mix=0.07))    # a hint: more smeared the calls
     # the band clears the voices' band while anyone sings or talks
     voices = lead_v + gang + mc
-    clav, gtr, horns, organ = (duck(p_, voices, 5, band=(1400, 4000)) for p_ in (clav, gtr, horns, organ))
+    clav, gtr, horns, organ, perc = (duck(p_, voices, 5, band=(1400, 4000)) for p_ in (clav, gtr, horns, organ, perc))
     parts = {"drums": (drums, -15.5), "perc": (perc, -25), "moog": (moog, -16.5), "clav": (pan(clav, -0.65), -22),
              "gtr": (pan(gtr, 0.7), -24), "organ": (organ, -27), "horns": (horns, -21), "lead": (pan(lead, 0.15), -22),
              "vox": (lead_v, -15), "gang": (gang, -16), "mc": (mc, -15.5)}
