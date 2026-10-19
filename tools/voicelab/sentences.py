@@ -43,8 +43,9 @@ def main():
     import whisper, torch
     torch.set_num_threads(os.cpu_count())
     model = whisper.load_model(os.environ.get("WHISPER_MODEL", "/home/user/whisper/large-v3-turbo.pt"), device="cpu")
-    report = {}
+    report = json.load(open(out)) if out and os.path.exists(out) else {}   # resume: finished configs are kept
     for cfg in cfgs:
+        if cfg["name"] in report: print(f"{cfg['name']:28s} (done earlier)", flush=True); continue
         errs = words = 0; rows = []
         for text in HARVARD:
             with tempfile.NamedTemporaryFile(suffix=".wav") as f:
@@ -58,7 +59,7 @@ def main():
         report[cfg["name"]] = {"wer": round(errs / words, 3), "heard": rows}
         print(f"{cfg['name']:28s} WER {errs / words:5.1%}", flush=True)
         for r in rows[:6]: print("   " + r, flush=True)
-    if out: json.dump(report, open(out, "w"), indent=1)
+        if out: json.dump(report, open(out, "w"), indent=1)
 
 if __name__ == "__main__":
     main()

@@ -98,7 +98,7 @@ def main():
                                "missed": [f"{w}->{h or '?'}" for _, w, h, g in res if not g]}
         print(f"{cfg['name']:28s} {total:5.0%}  " + "  ".join(f"{c[:8]} {np.mean(v):.0%}" for c, v in by.items()), flush=True)
         print("   missed: " + ", ".join(report[cfg['name']]["missed"]), flush=True)
-    if out: json.dump(report, open(out, "w"), indent=1)
+        if out: json.dump(report, open(out, "w"), indent=1)
 
 if __name__ == "__main__":
     main()
