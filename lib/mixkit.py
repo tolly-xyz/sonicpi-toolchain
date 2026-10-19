@@ -128,3 +128,16 @@ def master(x, lufs=-10.5, eq=None):
     y = fx(y, Limiter(threshold_db=-1.0, release_ms=120))
     peak = np.abs(y).max()
     return y * (db(-0.3) / peak if peak > db(-0.3) else 1.0)
+
+def klattsing(spec, cache_dir):
+    """Render a klattsing spec (klattsing/bin/klattsing.mjs) to stereo audio, cached by its content."""
+    import hashlib, json
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    banks = "".join(open(os.path.join(root, "banks", f)).read() for f in sorted(os.listdir(os.path.join(root, "banks"))))
+    key = hashlib.sha1((json.dumps(spec, sort_keys=True) + banks).encode()).hexdigest()[:16]
+    os.makedirs(cache_dir, exist_ok=True); path = os.path.join(cache_dir, f"{key}.wav")
+    if not os.path.exists(path):
+        subprocess.run(["node", os.path.join(root, "klattsing", "bin", "klattsing.mjs"), "-", path],
+                       input=json.dumps(spec), text=True, check=True)
+    x = load(path)
+    return x[: max(1, len(x) - int(0.6 * SR))]                  # the CLI pads 0.6 s after each line

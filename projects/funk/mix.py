@@ -7,7 +7,7 @@ from pedalboard import (Compressor, Distortion, Gain, HighpassFilter, LowpassFil
                         HighShelfFilter, Reverb, Delay, Chorus, LadderFilter)
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, f"{ROOT}/lib")
-from mixkit import SR, Kit, place, silence, fluid, stem, fx, level, active_rms_db, mono_lows, master, db
+from mixkit import SR, Kit, place, silence, fluid, stem, fx, level, active_rms_db, mono_lows, master, db, klattsing
 
 W = f"{ROOT}/work/funk"
 SC = json.load(open(f"{W}/score.json"))
@@ -81,8 +81,19 @@ def main(out, parts_dir=None):
     env = uniform_filter1d(maximum_filter1d(np.abs(kick).max(1), int(0.08 * SR)), int(0.01 * SR)); env /= env.max() + 1e-9
     moog = moog * db(-3 * env)[:, None]
 
+    # vocals: each take rendered by klattsing, placed at its time, processed by role
+    vbus = {k: silence(LEN) for k in ("lead", "gang", "mc")}
+    for e in P["vox"]:
+        place(vbus[e["style"]], klattsing(e["spec"], f"{W}/vox"), e["t"], 1.0, e["pan"])
+    lead_v = fx(vbus["lead"], HighpassFilter(90), Compressor(threshold_db=-20, ratio=4, attack_ms=6, release_ms=90),
+                Distortion(drive_db=4), PeakFilter(2500, 3, 1.0), Reverb(room_size=0.35, wet_level=0.12, dry_level=0.9))
+    gang = fx(vbus["gang"], HighpassFilter(110), Compressor(threshold_db=-20, ratio=4, attack_ms=5, release_ms=90),
+              Distortion(drive_db=6), PeakFilter(2200, 3, 1.0), Reverb(room_size=0.6, wet_level=0.25, dry_level=0.85))
+    mc = fx(vbus["mc"], HighpassFilter(250), LowpassFilter(4500), Distortion(drive_db=8), PeakFilter(1500, 4, 1.0),
+            Delay(delay_seconds=0.75 * 60 / BPM, feedback=0.35, mix=0.3))
     parts = {"drums": (drums, -15.5), "perc": (perc, -25), "moog": (moog, -16.5), "clav": (pan(clav, -0.65), -22),
-             "gtr": (pan(gtr, 0.7), -24), "organ": (organ, -27), "horns": (horns, -21), "lead": (pan(lead, 0.15), -22)}
+             "gtr": (pan(gtr, 0.7), -24), "organ": (organ, -27), "horns": (horns, -21), "lead": (pan(lead, 0.15), -22),
+             "vox": (lead_v, -18), "gang": (gang, -19), "mc": (mc, -19)}
     mixd = mono_lows(sum(level(x, t) for x, t in parts.values()))
     if parts_dir:
         os.makedirs(parts_dir, exist_ok=True)

@@ -122,6 +122,73 @@ for i, bar in enumerate(bars):
             note("lead", bar, s, scale[n], ln, 0.8, slide=rnd.random() < 0.4)
             s += ln
 
+# ---- vocals: klattsing specs placed in time (mix.py renders them with klattsing/bin/klattsing.mjs)
+import subprocess
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+def stresses(text):
+    """klattsing's syllables for a line: [stress, ...] (CMUdict stress, maximal-onset syllables)."""
+    js = ("import('%s/klattsing/src/compile.js').then(m => console.log(JSON.stringify("
+          "m.words(process.argv[1]).flatMap(w => w.syllables.map(s => s.stress)))))") % ROOT
+    return json.loads(subprocess.run(["node", "-e", js, text], capture_output=True, text=True, check=True).stdout)
+def bar_of(sec, k): return next(i for i, b in enumerate(bars) if b["sec"] == sec and b["k"] == k)
+def swung_ms(bar_i, step, length):
+    """ms of `length` 16ths starting at a bar's step, with the band's swing (no jitter)."""
+    def pos(st):
+        b, st = divmod(st, 16); beat, sub = divmod(st, 4); eighth, second = divmod(sub, 2)
+        return bars[bar_i]["t"] + (b * 4 + beat + eighth * 0.5 + (SWING * 0.5 if second else 0)) * BEAT
+    return (pos(step + length) - pos(step)) * 1000
+VOICE = {"lead": "g0.65 t0.2 h0.08 s0.98", "gangA": "g0.75 t0.3 h0.12 s0.94", "gangB": "g0.6 t0.15 h0.15 s1.02",
+         "gangC": "g0.7 t0.25 h0.1 s1.06", "mc": "g0.55 t0.05 h0.1 s0.92"}
+vox = []
+def chant(sec, k, step, text, style="lead", span=32, end_note=40, hi=47, lo=43, rest=2, bank="silt-stops"):
+    """A line chanted from a bar's step: unstressed syllables a 16th, stressed an 8th, the last held to
+    fill `span` 16ths (less `rest`); stressed syllables alternate hi/lo, the last lands on end_note."""
+    st = stresses(text); n = len(st)
+    lens = [1 if s == 0 else 2 for s in st[:-1]]
+    lens.append(max(2, span - rest - sum(lens)))
+    pitches, up = [], True
+    for s in st[:-1]:
+        if s: pitches.append(hi if up else lo); up = not up
+        else: pitches.append(lo)
+    pitches.append(end_note)
+    bi = bar_of(sec, k); pos = step; notes = []
+    for j, (p, ln) in enumerate(zip(pitches, lens)):
+        notes.append([p, {"ms": round(swung_ms(bi, pos, ln), 1)}] + ([{"gate": 420}] if j == n - 1 else [])); pos += ln
+    t0 = round(at(bars[bi], step, 0), 4)
+    takes = [("lead", 0.0, 0.0)] if style == "lead" else [("gangA", -0.5, 0.0), ("gangB", 0.0, 0.012), ("gangC", 0.5, 0.024)]
+    for v, pan, dt in takes:
+        vox.append({"t": round(t0 + dt, 4), "style": style, "pan": pan, "text": text,
+                    "spec": {"mode": "sing", "text": text, "notes": notes, "voice": VOICE[v], "bank": bank, "gate": 160, "hold": 0.6}})
+def say(sec, k, step, text, pitch="E2", rate=1.1):
+    bi = bar_of(sec, k)
+    vox.append({"t": round(at(bars[bi], step, 0), 4), "style": "mc", "pan": 0.0, "text": text,
+                "spec": {"mode": "speak", "text": text, "pitch": pitch, "rate": rate, "voice": VOICE["mc"], "bank": "silt-stops"}})
+
+say("intro", 0, 2, "Ladies, gentlemen, and everybody in between:")
+say("intro", 2, 4, "the floor has left the building.")
+V1 = ["Somebody opened the basement door,", "and the bottom fell out of the bottom floor.",
+      "Mister Landing in his rented shoes", "says come on down, you got nothing to lose."]
+V2 = ["Grandma's falling in a velvet chair,", "reading the paper in the open air.",
+      "The horns keep blowing at the passing ground,", "and the bass is the only one that still knows down."]
+for sec, lines in (("a1", V1), ("a2", V2)):
+    for i, line in enumerate(lines):
+        chant(sec, 2 * i, 1, line, end_note=45 if i % 2 == 0 else 40)
+for sec in ("b1", "b2"):
+    for k in (0, 1):
+        chant(sec, k, 0, "Ain't no floor!", span=8, rest=1, hi=47, lo=45, end_note=47)
+        chant(sec, k, 8, "ain't no floor!", "gang", span=8, rest=1, hi=47, lo=45, end_note=45)
+    chant(sec, 2, 0, "We ain't coming down, we ain't coming down.", "gang", span=32, hi=47, lo=43, end_note=40)
+for k, (call, resp) in enumerate([("Hey, Mister Landing!", "what?"), ("Where's the ground?", "we lost it!"),
+                                   ("Who's got the bottom?", "nobody!"), ("Then nobody lands!", None)]):
+    say("brk", k, 0, call, pitch="G2", rate=1.0)
+    if resp: chant("brk", k, 10, resp, "gang", span=6, rest=1, end_note=43)
+A3 = ["Fall in, fall out, fall up, fall down,", "fall in, fall out, fall all the way round."]
+for i in range(3):
+    chant("a3", 2 * i, 0, A3[i % 2], "gang" if i == 2 else "lead", end_note=45 if i % 2 == 0 else 40)
+chant("a3", 6, 0, "Nobody lands tonight.", "gang", span=24, end_note=40)
+chant("end", 0, 0, "Floor!", "gang", span=8, end_note=40)
+parts["vox"] = vox
+
 score = {"bpm": BPM, "swing": SWING, "total": round(TOTAL, 4), "bars": bars,
          "parts": {k: sorted(v, key=lambda e: e["t"]) for k, v in parts.items()}}
 out = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "work", "funk")
