@@ -104,12 +104,13 @@ for i, bar in enumerate(bars):
     if sec in ("a2", "b1", "b2", "a3"):
         for n in vo: note("organ", bar, 0, n, 16, 0.45 if sec in ("a2", "a3") else 0.6)
     # horns: stabs in the choruses, a riff in the last groove
-    if sec in ("b1", "b2"):
-        for s, ln in ((0, 2), (6, 1), (10, 1), (14, 2)):
+    if sec in ("b1", "b2"):                                     # stabs in the gaps between call and response
+        hits = ((6, 1), (15, 1)) if k < 2 else ((14, 2),) if k == 3 else ()
+        for s, ln in hits:
             for n in vo[1:]: note("horns", bar, s, n + 12, ln, 0.9)
-    if sec == "a3":
-        line = [(0, 71, 2), (3, 74, 1), (4, 76, 2), (7, 74, 1), (8, 71, 1), (10, 69, 1), (11, 67, 1), (12, 64, 4)] if k % 2 == 0 \
-            else [(12, 74, 1), (14, 76, 2)]
+    if sec == "a3":                                             # the horns answer: the voices take the even bars
+        line = [(0, 71, 2), (3, 74, 1), (4, 76, 2), (7, 74, 1), (8, 71, 1), (10, 69, 1), (11, 67, 1), (12, 64, 4)] if k % 2 == 1 \
+            else [(14, 76, 2)]
         for s, n, ln in line:
             note("horns", bar, s, n, ln, 0.9); note("horns", bar, s, n - 12, ln, 0.8)
     # lead: Worrell-style squiggles answering every other bar
