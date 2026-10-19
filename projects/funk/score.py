@@ -159,7 +159,7 @@ def chant(sec, k, step, text, style="lead", span=32, end_note=40, hi=47, lo=43, 
     for v, pan, dt in takes:
         vox.append({"t": round(t0 + dt, 4), "style": style, "pan": pan, "text": text,
                     "spec": {"mode": "sing", "text": text, "notes": notes, "voice": VOICE[v], "bank": bank, "gate": 160, "hold": 0.6}})
-def say(sec, k, step, text, pitch="E2", rate=1.1):
+def say(sec, k, step, text, pitch="A2", rate=1.0):
     bi = bar_of(sec, k)
     vox.append({"t": round(at(bars[bi], step, 0), 4), "style": "mc", "pan": 0.0, "text": text,
                 "spec": {"mode": "speak", "text": text, "pitch": pitch, "rate": rate, "voice": VOICE["mc"], "bank": "silt-stops"}})

@@ -141,3 +141,15 @@ def klattsing(spec, cache_dir):
                        input=json.dumps(spec), text=True, check=True)
     x = load(path)
     return x[: max(1, len(x) - int(0.6 * SR))]                  # the CLI pads 0.6 s after each line
+
+def duck(x, key, depth_db, attack_ms=5, release_ms=180, band=None):
+    """Pull x (or only its `band` = (lo, hi) Hz) down by up to depth_db while `key` sounds."""
+    from scipy.ndimage import maximum_filter1d, uniform_filter1d
+    from scipy.signal import butter, sosfiltfilt
+    a = np.abs(key).max(axis=1)
+    env = uniform_filter1d(maximum_filter1d(a, int(release_ms / 1000 * SR)), int(attack_ms / 1000 * SR) + 1)
+    k = np.clip(env / (np.percentile(env[env > 1e-4], 95) + 1e-9) if (env > 1e-4).any() else env, 0, 1)
+    g = (db(-depth_db * k) - 1)[:, None]
+    if band is None: return x * (1 + g)
+    b = sosfiltfilt(butter(2, band, "bandpass", fs=SR, output="sos"), x, axis=0).astype("float32")
+    return x + b * g                         # zero-phase band, so taking it away is clean

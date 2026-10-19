@@ -7,7 +7,7 @@ from pedalboard import (Compressor, Distortion, Gain, HighpassFilter, LowpassFil
                         HighShelfFilter, Reverb, Delay, Chorus, LadderFilter)
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, f"{ROOT}/lib")
-from mixkit import SR, Kit, place, silence, fluid, stem, fx, level, active_rms_db, mono_lows, master, db, klattsing
+from mixkit import SR, Kit, place, silence, fluid, stem, fx, level, active_rms_db, mono_lows, master, db, klattsing, duck
 
 W = f"{ROOT}/work/funk"
 SC = json.load(open(f"{W}/score.json"))
@@ -89,11 +89,15 @@ def main(out, parts_dir=None):
                 Distortion(drive_db=4), PeakFilter(2500, 3, 1.0), Reverb(room_size=0.35, wet_level=0.12, dry_level=0.9))
     gang = fx(vbus["gang"], HighpassFilter(110), Compressor(threshold_db=-20, ratio=4, attack_ms=5, release_ms=90),
               Distortion(drive_db=6), PeakFilter(2200, 3, 1.0), Reverb(room_size=0.6, wet_level=0.25, dry_level=0.85))
-    mc = fx(vbus["mc"], HighpassFilter(250), LowpassFilter(4500), Distortion(drive_db=8), PeakFilter(1500, 4, 1.0),
-            Delay(delay_seconds=0.75 * 60 / BPM, feedback=0.35, mix=0.3))
+    # the MC: a touch of telephone, but the words first (the heavy radio version lost them)
+    mc = fx(vbus["mc"], HighpassFilter(150), LowpassFilter(7000), Distortion(drive_db=3), PeakFilter(1800, 3, 1.0),
+            Delay(delay_seconds=0.75 * 60 / BPM, feedback=0.25, mix=0.15))
+    # the band clears the voices' band while anyone sings or talks
+    voices = lead_v + gang + mc
+    clav, gtr, horns, organ = (duck(p_, voices, 5, band=(1400, 4000)) for p_ in (clav, gtr, horns, organ))
     parts = {"drums": (drums, -15.5), "perc": (perc, -25), "moog": (moog, -16.5), "clav": (pan(clav, -0.65), -22),
              "gtr": (pan(gtr, 0.7), -24), "organ": (organ, -27), "horns": (horns, -21), "lead": (pan(lead, 0.15), -22),
-             "vox": (lead_v, -18), "gang": (gang, -19), "mc": (mc, -19)}
+             "vox": (lead_v, -15), "gang": (gang, -16), "mc": (mc, -15.5)}
     mixd = mono_lows(sum(level(x, t) for x, t in parts.values()))
     if parts_dir:
         os.makedirs(parts_dir, exist_ok=True)
