@@ -1,0 +1,12 @@
+[
+ {"name": "kokoro (ceiling)", "mode": "kokoro"},
+ {"name": "speak v0 rules", "mode": "speak", "durations": "v0"},
+ {"name": "speak MITalk rules", "mode": "speak"},
+ {"name": "speak +stop bank", "mode": "speak", "bank": "silt-stops"},
+ {"name": "speak +MITalk bursts", "mode": "speak", "bank": "mitalk-bursts"},
+ {"name": "speak +TR70", "mode": "speak", "transition": 70},
+ {"name": "speak +dynamics", "mode": "speak", "dynamics": true},
+ {"name": "speak slower (rate 1.3)", "mode": "speak", "rate": 1.3},
+ {"name": "sing E2 MITalk", "mode": "sing"},
+ {"name": "sing E2 +stop bank", "mode": "sing", "bank": "silt-stops"}
+]

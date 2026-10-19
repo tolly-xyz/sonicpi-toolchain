@@ -24,5 +24,5 @@ for wav in sys.argv[2:]:
         r = m.transcribe(seg, language="en", temperature=0, condition_on_previous_text=False, fp16=False)["text"].strip()
         R, H = norm(text), norm(r)
         h = sum(b.size for b in difflib.SequenceMatcher(None, R, H, autojunk=False).get_matching_blocks())
-        hit += h; tot += len(R); rows.append(f"  {h:2d}/{len(R):2d}  {text:52s} -> {r[:70]}")
-    print(f"{os.path.basename(wav)}: {hit}/{tot} words = {hit / tot:.0%}"); print("\n".join(rows), flush=True)
+        hit += h; tot += len(R); print(f"  {h:2d}/{len(R):2d}  {text:52s} -> {r[:70]}", flush=True)
+    print(f"{os.path.basename(wav)}: {hit}/{tot} words = {hit / tot:.0%}", flush=True)

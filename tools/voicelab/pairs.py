@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Minimal-pair intelligibility for klattsing/klattsch voices, scored by Whisper.
 
-Monosyllabic words in contrast sets (after Kent, Weismer, Kent & Rosenbek 1989), each in the carrier
-"Say, ___, again." (pauses keep Whisper from fusing carrier and word), spoken or sung, one per Whisper (large-v3-turbo) call: packed together, Whisper
-collapses the repetitions ("Say that again." for eight of them).
+Monosyllabic words in contrast sets (after Kent, Weismer, Kent & Rosenbek 1989), six per Whisper
+(large-v3-turbo) call in numbered carriers ("One: pat. Two: sip. ..."): identical carriers packed
+together get collapsed ("Say that again." for eight), numbered ones don't. A group never holds two
+words of one minimal set, and a word counts as heard if it appears anywhere in its group's transcript
+(Whisper fuses neighbours: "Sivan", "Save us").
 Reports accuracy per contrast class and what each missed word was heard as.
 
 usage: pairs.py CONFIGS.json [OUT.json]
@@ -37,8 +39,22 @@ def ok(want, got):
 def items():
     out = []
     for cls, sets in SETS.items():
-        for st in sets.split("|"):
-            for w in st.split(): out.append((cls, w))
+        for si, st in enumerate(sets.split("|")):
+            for w in st.split(): out.append((cls, w, f"{cls}{si}"))
+    return out
+
+PER = 6                                     # words per Whisper call
+NUM = ["one", "two", "three", "four", "five", "six", "seven", "eight"]
+def groups(its):
+    """Deterministic groups of PER words, never two from the same minimal set (a confusion inside a
+    group could otherwise read as a hit)."""
+    import random
+    pool = its[:]; random.Random(1).shuffle(pool); out = []
+    while pool:
+        g, used = [], set()
+        for it in pool[:]:
+            if it[2] not in used and len(g) < PER: g.append(it); used.add(it[2]); pool.remove(it)
+        out.append(g)
     return out
 
 KOKORO = None
@@ -49,18 +65,19 @@ def render(cfg, words, path):
         d = os.environ.get("KOKORO_DIR", "/home/user/tts")
         KOKORO = KOKORO or Kokoro(f"{d}/kokoro-v1.0.onnx", f"{d}/voices-v1.0.bin")
         parts = []
-        for w in words:
-            x, sr = KOKORO.create(f"Say, {w}, again.", voice=cfg.get("voice", "am_onyx"), speed=1.0, lang="en-us")
+        for i, w in enumerate(words):
+            x, sr = KOKORO.create(f"{NUM[i].capitalize()}: {w}.", voice=cfg.get("voice", "am_onyx"), speed=1.0, lang="en-us")
             parts += [x, np.zeros(int(sr * 0.6), "float32")]
         sf.write(path, np.concatenate(parts), sr); return
     specs = []
-    for w in words:
+    for i, w in enumerate(words):
         base = {k: v for k, v in cfg.items() if k in ("bank", "transition", "aspiration", "voice", "rules", "accent", "gate", "hold", "durations", "dynamics")}
         if cfg.get("mode", "speak") == "sing":
-            notes = cfg.get("notes", ["E2", "r", "G2", "r", "F2", "E2"]); ln = cfg.get("len", [3, 2, 6, 2, 2, 6])
-            specs.append({**base, "mode": "sing", "text": f"Say {w} again", "bpm": cfg.get("bpm", 120), "notes": [[n, l] for n, l in zip(notes, ln)]})
+            nsyl = 2 if NUM[i] == "seven" else 1
+            notes = [["E2", 4 // nsyl]] * nsyl + [["r", 2], ["G2", 8]]
+            specs.append({**base, "mode": "sing", "text": f"{NUM[i]} {w}", "bpm": cfg.get("bpm", 120), "notes": notes})
         else:
-            specs.append({**base, "mode": "speak", "text": f"Say, {w}, again.", "pitch": cfg.get("pitch", "A2"), "rate": cfg.get("rate", 1)})
+            specs.append({**base, "mode": "speak", "text": f"{NUM[i].capitalize()}: {w}.", "pitch": cfg.get("pitch", "A2"), "rate": cfg.get("rate", 1)})
     r = subprocess.run(["node", f"{ROOT}/klattsing/bin/klattsing.mjs", "-", path], input=json.dumps(specs), text=True, capture_output=True)
     if r.returncode: raise SystemExit(r.stderr)
 
@@ -73,30 +90,24 @@ def main():
     report = json.load(open(out)) if out and os.path.exists(out) else {}   # resume: finished configs are kept
     for cfg in cfgs:
         if cfg["name"] in report: print(f"{cfg['name']:28s} (done earlier)", flush=True); continue
-        res = []
-        for i in range(0, len(its), 1):                  # one carrier per call: Whisper collapses repeated phrases
-            chunk = its[i:i + 1]
+        res = []; heard_log = []
+        for chunk in groups(its):
             with tempfile.NamedTemporaryFile(suffix=".wav") as f:
-                render(cfg, [w for _, w in chunk], f.name); x, sr = sf.read(f.name)
+                render(cfg, [w for _, w, _ in chunk], f.name); x, sr = sf.read(f.name)
             x = resample_poly(x, 16000, sr).astype("float32")
             text = model.transcribe(x, language="en", temperature=0, condition_on_previous_text=False, fp16=False)["text"]
-            # Whisper runs carrier and word together ("Sivan again", "Save us again"), so a word counts
-            # as heard if it appears anywhere; what was heard instead is the transcript minus the carrier
             toks = re.findall(r"[a-z0-9']+", text.lower())
-            got = {}
-            for k, (cls, w) in enumerate(chunk):
+            for cls, w, _ in chunk:
                 hit = next((t for t in toks if ok(w, t)), None)
-                got[k] = hit or " ".join(t for t in toks if t not in ("say", "again")) or "?"
-            for k, (cls, w) in enumerate(chunk):
-                h = got.get(k, "")
-                res.append((cls, w, h, ok(w, h)))   # h is the matching token when heard
+                res.append((cls, w, hit or "?", hit is not None))
+            heard_log.append(text.strip())
         by = collections.defaultdict(list)
         for cls, w, h, good in res: by[cls].append(good)
         total = np.mean([g for *_, g in res])
         report[cfg["name"]] = {"total": round(float(total), 3), "classes": {c: round(float(np.mean(v)), 2) for c, v in by.items()},
-                               "missed": [f"{w}->{h or '?'}" for _, w, h, g in res if not g]}
+                               "missed": [w for _, w, h, g in res if not g], "heard": heard_log}
         print(f"{cfg['name']:28s} {total:5.0%}  " + "  ".join(f"{c[:8]} {np.mean(v):.0%}" for c, v in by.items()), flush=True)
-        print("   missed: " + ", ".join(report[cfg['name']]["missed"]), flush=True)
+        print("   missed: " + " ".join(report[cfg['name']]["missed"]), flush=True)
         if out: json.dump(report, open(out, "w"), indent=1)
 
 if __name__ == "__main__":
