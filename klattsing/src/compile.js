@@ -71,11 +71,18 @@ export function autoNotes(syl, { scale = ['E2', 'G2', 'A2', 'G2', 'F2'], long = 
 export function sing(o) {
   const bpm = o.bpm ?? 120, st = (n) => n * 15000 / bpm;
   const syl = words(o.text, o.rules, o.durations).flatMap((w) => w.syllables);
-  const notes = (o.notes === 'auto' || !o.notes ? autoNotes(syl, o.melody) : o.notes).filter((n) => n !== null);
-  if (notes.length !== syl.length) throw new Error(`${syl.length} syllables but ${notes.length} notes in "${o.text}"`);
+  // a note named 'r' (or 'rest') is a rest: [ 'r', sixteenths ]
+  const all = (o.notes === 'auto' || !o.notes ? autoNotes(syl, o.melody) : o.notes).filter((n) => n !== null);
+  const isRest = (n) => n[0] === 'r' || n[0] === 'rest';
+  const sung = all.filter((n) => !isRest(n));
+  if (sung.length !== syl.length) throw new Error(`${syl.length} syllables but ${sung.length} notes in "${o.text}"`);
   let out = `${prefix({ voice: 'sing', ...o })} `;
+  const restsBefore = []; let k = 0;
+  for (const n of all) { if (isRest(n)) (restsBefore[k] ??= []).push(n); else k++; }
+  const restMs = (n) => (typeof n[1] === 'object' ? n[1].ms : st(n[1]));
   syl.forEach((s, i) => {
-    const [note, len, extra = {}] = notes[i];
+    for (const r of restsBefore[i] ?? []) out += `p${f1(restMs(r))} `;
+    const [note, len, extra = {}] = sung[i];
     const slot = typeof len === 'object' ? len.ms : st(len);
     let ons = s.onsetMs.slice(), coda = s.codaMs.slice(), a = o.aspiration !== false ? s.aspMs : 0;
     let cons = ons.reduce((x, y) => x + y, 0) + coda.reduce((x, y) => x + y, 0) + a;
@@ -97,5 +104,6 @@ export function sing(o) {
     s.coda.forEach((p, j) => { out += `r${f1(coda[j])} ${p} `; });
     if (rest > 0) out += `p${f1(rest)} `;
   });
+  for (const r of restsBefore[syl.length] ?? []) out += `p${f1(restMs(r))} `;
   return out.trim();
 }

@@ -2,7 +2,7 @@
 """Minimal-pair intelligibility for klattsing/klattsch voices, scored by Whisper.
 
 Monosyllabic words in contrast sets (after Kent, Weismer, Kent & Rosenbek 1989), each in the carrier
-"Say ___ again.", spoken or sung, one per Whisper (large-v3-turbo) call: packed together, Whisper
+"Say, ___, again." (pauses keep Whisper from fusing carrier and word), spoken or sung, one per Whisper (large-v3-turbo) call: packed together, Whisper
 collapses the repetitions ("Say that again." for eight of them).
 Reports accuracy per contrast class and what each missed word was heard as.
 
@@ -50,17 +50,17 @@ def render(cfg, words, path):
         KOKORO = KOKORO or Kokoro(f"{d}/kokoro-v1.0.onnx", f"{d}/voices-v1.0.bin")
         parts = []
         for w in words:
-            x, sr = KOKORO.create(f"Say {w} again.", voice=cfg.get("voice", "am_onyx"), speed=1.0, lang="en-us")
+            x, sr = KOKORO.create(f"Say, {w}, again.", voice=cfg.get("voice", "am_onyx"), speed=1.0, lang="en-us")
             parts += [x, np.zeros(int(sr * 0.6), "float32")]
         sf.write(path, np.concatenate(parts), sr); return
     specs = []
     for w in words:
         base = {k: v for k, v in cfg.items() if k in ("bank", "transition", "aspiration", "voice", "rules", "accent", "gate", "hold", "durations", "dynamics")}
         if cfg.get("mode", "speak") == "sing":
-            notes = cfg.get("notes", ["E2", "G2", "F2", "E2"]); ln = cfg.get("len", [3, 6, 2, 6])
+            notes = cfg.get("notes", ["E2", "r", "G2", "r", "F2", "E2"]); ln = cfg.get("len", [3, 2, 6, 2, 2, 6])
             specs.append({**base, "mode": "sing", "text": f"Say {w} again", "bpm": cfg.get("bpm", 120), "notes": [[n, l] for n, l in zip(notes, ln)]})
         else:
-            specs.append({**base, "mode": "speak", "text": f"Say {w} again.", "pitch": cfg.get("pitch", "A2"), "rate": cfg.get("rate", 1)})
+            specs.append({**base, "mode": "speak", "text": f"Say, {w}, again.", "pitch": cfg.get("pitch", "A2"), "rate": cfg.get("rate", 1)})
     r = subprocess.run(["node", f"{ROOT}/klattsing/bin/klattsing.mjs", "-", path], input=json.dumps(specs), text=True, capture_output=True)
     if r.returncode: raise SystemExit(r.stderr)
 
@@ -80,19 +80,16 @@ def main():
                 render(cfg, [w for _, w in chunk], f.name); x, sr = sf.read(f.name)
             x = resample_poly(x, 16000, sr).astype("float32")
             text = model.transcribe(x, language="en", temperature=0, condition_on_previous_text=False, fp16=False)["text"]
-            heard = re.findall(r"say,?\s+([\w']+(?:\s+[\w']+)?)\s*,?\s+again", text, flags=re.I)
-            heard = [h.split()[0] if len(h.split()) == 1 else h.split()[-1] if h.split()[0].lower() in ("a", "the") else h.split()[0] for h in heard]
-            want = [w for _, w in chunk]
-            sm = difflib.SequenceMatcher(None, [h.lower() for h in heard], want, autojunk=False)
+            # Whisper runs carrier and word together ("Sivan again", "Save us again"), so a word counts
+            # as heard if it appears anywhere; what was heard instead is the transcript minus the carrier
+            toks = re.findall(r"[a-z0-9']+", text.lower())
             got = {}
-            # position-wise when counts match, else align
-            if len(heard) == len(want): got = dict(enumerate(heard))
-            else:
-                for a, b, n in sm.get_matching_blocks():
-                    for k in range(n): got[b + k] = heard[a + k]
+            for k, (cls, w) in enumerate(chunk):
+                hit = next((t for t in toks if ok(w, t)), None)
+                got[k] = hit or " ".join(t for t in toks if t not in ("say", "again")) or "?"
             for k, (cls, w) in enumerate(chunk):
                 h = got.get(k, "")
-                res.append((cls, w, h, ok(w, h)))
+                res.append((cls, w, h, ok(w, h)))   # h is the matching token when heard
         by = collections.defaultdict(list)
         for cls, w, h, good in res: by[cls].append(good)
         total = np.mean([g for *_, g in res])

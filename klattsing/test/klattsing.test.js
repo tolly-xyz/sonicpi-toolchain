@@ -74,3 +74,10 @@ test('project lexicon overrides CMUdict', () => {
   addLexicon(new URL('./lexicon.fixture.json', import.meta.url).pathname);
   assert.deepEqual(lookup('tomato')[0].phones.map((p) => p.p), ['T', 'AH', 'M', 'AA', 'T', 'OW']);
 });
+
+test('sing: rests take time but no syllable', () => {
+  const bpm = 120, notes = [['E2', 3], ['r', 2], ['G2', 6], ['r', 2], ['F2', 2], ['E2', 6]];
+  const s = sing({ text: 'Say van again', bpm, notes });
+  assert.equal((s.match(/ p250 /g) ?? []).length, 2);
+  assert.ok(Math.abs(compileString(s).totalMs - 150 - 21 * 15000 / bpm) < 2);
+});

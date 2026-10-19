@@ -1,9 +1,39 @@
 [
- {"name": "kokoro (ceiling)", "mode": "kokoro"},
- {"name": "speak v0 rules", "mode": "speak", "durations": "v0"},
- {"name": "speak MITalk rules", "mode": "speak"},
- {"name": "speak +stop bank", "mode": "speak", "bank": "silt-stops"},
- {"name": "speak +TR70", "mode": "speak", "transition": 70},
- {"name": "speak +dynamics", "mode": "speak", "dynamics": true},
- {"name": "sing E2 MITalk", "mode": "sing"}
+ {
+  "name": "kokoro (ceiling)",
+  "mode": "kokoro"
+ },
+ {
+  "name": "speak v0 rules",
+  "mode": "speak",
+  "durations": "v0"
+ },
+ {
+  "name": "speak MITalk rules",
+  "mode": "speak"
+ },
+ {
+  "name": "speak +stop bank",
+  "mode": "speak",
+  "bank": "silt-stops"
+ },
+ {
+  "name": "speak +TR70",
+  "mode": "speak",
+  "transition": 70
+ },
+ {
+  "name": "speak +dynamics",
+  "mode": "speak",
+  "dynamics": true
+ },
+ {
+  "name": "sing E2 MITalk",
+  "mode": "sing"
+ },
+ {
+  "name": "speak +MITalk bursts",
+  "mode": "speak",
+  "bank": "mitalk-bursts"
+ }
 ]
