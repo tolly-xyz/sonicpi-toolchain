@@ -35,6 +35,9 @@ export const INTONATION = { accent: 2, finalFall: 3, declination: 0, questionRis
 export const ACCENT_DELTA = { speak: { g: 0.1, t: 0 }, sing: { g: 0.15, t: 0.15 } };    // effort/tilt on stress 1
 export const PAUSE_MS = 250;   // speak: silence after a phrase's punctuation (times rate)
 export const BREATH_LEVEL = 1; // aspiration: "breath": klattsch aspiration (h) during the breath
+// glottal: the LF voice source (klattsch [GS=1], a patch): option field -> directive, and the values `true` gives
+export const GLOTTAL_KEYS = { rd: 'RD', rdEffort: 'RDE', tilt: 'TL', jitter: 'JIT', shimmer: 'SHIM', aspMod: 'AM', flutter: 'FL' };
+export const GLOTTAL = { rd: 1, rdEffort: 6, tilt: 0, jitter: 0.7, shimmer: 4, aspMod: 1, flutter: 0 };
 
 // lookup + syllables, cached per text: durationsOf sees the same sentences thousands of times
 const parsed = new Map();
@@ -78,9 +81,21 @@ const av = (s, o) => (!o.dynamics ? '' : `[AV=${(o.dynamics === true ? DYNAMICS 
 // opts: { bank (name or inline bank), bankPatch, transition, aspiration (true | false | "breath"), accent (true),
 // dynamics (true | {stress: gain}; off by default until voicelab says otherwise), voice }
 const voiceOf = (o) => VOICES[o.voice] ?? o.voice ?? VOICES.speak;
+// o.glottal: true (GLOTTAL) or { rd, rdEffort, tilt, jitter, shimmer, aspMod, flutter } over GLOTTAL -> klattsch directives
+export function glottalDirs(g) {
+  if (!g) return '';
+  if (g !== true && (typeof g !== 'object' || Array.isArray(g))) throw new Error(`glottal: expected true or an object, got ${JSON.stringify(g)}`);
+  const x = merged(GLOTTAL, g === true ? {} : g);
+  for (const k of Object.keys(x)) {
+    if (!(k in GLOTTAL_KEYS)) throw new Error(`glottal.${k}: unknown (${Object.keys(GLOTTAL_KEYS).join(', ')})`);
+    if (typeof x[k] !== 'number' || !Number.isFinite(x[k])) throw new Error(`glottal.${k}: expected a number, got ${JSON.stringify(x[k])}`);
+  }
+  const num = (v) => String(Math.round(v * 1e4) / 1e4);
+  return ['[GS=1]', ...Object.entries(GLOTTAL_KEYS).map(([k, d]) => `[${d}=${num(x[k])}]`)].join(' ');
+}
 function prefix(o) {
   const bank = bankName(o);
-  return [bank ? `[bank=${bank}]` : '', o.transition ? `[TR=${o.transition}]` : '', voiceOf(o)].filter(Boolean).join(' ');
+  return [bank ? `[bank=${bank}]` : '', o.transition ? `[TR=${o.transition}]` : '', glottalDirs(o.glottal), voiceOf(o)].filter(Boolean).join(' ');
 }
 const asp = (s, o) => (o.aspiration !== false && s.aspMs ? `r${f1(s.aspMs)} HH ` : '');
 // the klattsch aspiration (h) a voice string leaves set, so "breath" can restore it
