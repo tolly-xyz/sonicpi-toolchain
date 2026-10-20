@@ -19,7 +19,7 @@ export const RULES_V0 = {
 
 // words: [{ syllables: [{ onset, nucleus, coda, stress }], punct }] -> same, each syllable gets
 // { onsetMs: [], nucleusMs, codaMs: [], aspMs }
-export function timeWordsV0(words, rules = RULES_V0) {
+export function timeWordsV0(words, rules = RULES_V0, table = DUR) {
   words.forEach((w, wi) => {
     const syl = w.syllables;
     const phraseEnd = w.punct !== '' || wi === words.length - 1;
@@ -29,7 +29,7 @@ export function timeWordsV0(words, rules = RULES_V0) {
       const lastSyl = si === syl.length - 1;
       const stressed = s.stress > 0;
       const dur = (p, isVowel, inCoda) => {
-        const [inh, min0] = DUR[p] ?? [80, 40];
+        const [inh, min0] = table[p] ?? [80, 40];
         let k = 1, min = min0;
         const idx = pos;
         if (isVowel) {

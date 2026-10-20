@@ -1,0 +1,49 @@
+{
+  "about": "Search space for climb.py voice: klattsing speak options varied by the (1+lambda)-ES, on top of the base config (default klattsing/presets/kokoro-durations.json). Each param: name (a config path; voice.g/t/h compose the voice string, dynamics.0/2 the dynamics table, bankPatch.CODE.FIELD a field of the base bank's entry), type float (lo, hi, step: the mutation sd at sigma 1, res: rounding, default: the value klattsing uses when the option is absent, off_below: below it the option is left out) or choice (choices), weight (relative chance of being mutated, default 1), when ({param: value} it only matters under). x0 comes from the base config, else default (bank fields: the base bank's resolved entry).",
+  "params": [
+    {"name": "voice.t", "type": "float", "lo": -0.9, "hi": 0.6, "step": 0.15, "res": 0.01, "default": 0, "weight": 2},
+    {"name": "voice.g", "type": "float", "lo": 0.1, "hi": 0.95, "step": 0.1, "res": 0.01, "default": 0.5, "weight": 1.5},
+    {"name": "voice.h", "type": "float", "lo": 0, "hi": 0.3, "step": 0.04, "res": 0.005, "default": 0.05},
+    {"name": "transition", "type": "float", "lo": 0, "hi": 90, "step": 15, "res": 1, "default": 0, "off_below": 8, "weight": 1.5},
+    {"name": "intonation.accent", "type": "float", "lo": 0, "hi": 7, "step": 1, "res": 0.1, "default": 2, "weight": 1.5},
+    {"name": "intonation.finalFall", "type": "float", "lo": 0, "hi": 9, "step": 1.5, "res": 0.1, "default": 3, "weight": 1.5},
+    {"name": "intonation.declination", "type": "float", "lo": 0, "hi": 5, "step": 0.75, "res": 0.05, "default": 0, "weight": 1.5},
+    {"name": "accentDelta.g", "type": "float", "lo": 0, "hi": 0.35, "step": 0.05, "res": 0.005, "default": 0.1},
+    {"name": "accentDelta.t", "type": "float", "lo": -0.3, "hi": 0.3, "step": 0.08, "res": 0.005, "default": 0},
+    {"name": "functionWords", "type": "choice", "choices": [false, true], "default": false},
+    {"name": "aspiration", "type": "choice", "choices": [true, "breath"], "default": true},
+    {"name": "rules.aspirationMs", "type": "float", "lo": 5, "hi": 70, "step": 8, "res": 0.5, "default": 25, "weight": 0.5},
+    {"name": "breathLevel", "type": "float", "lo": 0.1, "hi": 1, "step": 0.2, "res": 0.01, "default": 1, "when": {"aspiration": "breath"}},
+    {"name": "breathVoicing", "type": "float", "lo": 0, "hi": 1, "step": 0.25, "res": 0.01, "default": 1, "when": {"aspiration": "breath"}},
+    {"name": "dynamics", "type": "choice", "choices": [false, true], "default": false},
+    {"name": "dynamics.0", "type": "float", "lo": 0.3, "hi": 1, "step": 0.1, "res": 0.01, "default": 0.55, "when": {"dynamics": true}},
+    {"name": "dynamics.2", "type": "float", "lo": 0.5, "hi": 1, "step": 0.1, "res": 0.01, "default": 0.8, "when": {"dynamics": true}}
+  ],
+  "bank": {
+    "about": "the worst-MCD phonemes in fidelity.py (G TH K S T L NG AH, 5.1-5.8 dB); ranges relative to (rel) or absolute (abs); weight per bank param",
+    "weight": 0.4,
+    "phonemes": {
+      "S": ["F2", "F3", "BW3", "A2", "A3"],
+      "T": ["F2", "F3", "BW3", "A2", "A3", "burstMs"],
+      "K": ["F2", "F3", "A2", "A3", "burstMs"],
+      "G": ["voicing", "F2", "F3", "A1", "A2", "A3", "burstMs"],
+      "TH": ["F2", "F3", "BW2", "BW3", "A2", "A3"],
+      "L": ["F1", "F2", "F3", "A2", "A3"],
+      "NG": ["F1", "F2", "F3", "A2", "A3"],
+      "AH": ["F1", "F2", "F3", "A2", "A3"]
+    },
+    "ranges": {
+      "F1": {"rel": [0.7, 1.4], "res": 1},
+      "F2": {"rel": [0.7, 1.35], "res": 1},
+      "F3": {"rel": [0.75, 1.35], "res": 1},
+      "BW1": {"rel": [0.5, 2.5], "res": 1},
+      "BW2": {"rel": [0.5, 3], "res": 1},
+      "BW3": {"rel": [0.4, 3], "res": 1},
+      "A1": {"abs": [0, 1.2], "res": 0.005},
+      "A2": {"abs": [0, 1.2], "res": 0.005},
+      "A3": {"abs": [0, 1.2], "res": 0.005},
+      "voicing": {"abs": [0, 1], "res": 0.01},
+      "burstMs": {"abs": [3, 60], "res": 0.5, "default": 25}
+    }
+  }
+}

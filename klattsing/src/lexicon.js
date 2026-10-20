@@ -4,8 +4,10 @@ import { readFileSync, existsSync } from 'node:fs';
 import { dictionary } from 'cmu-pronouncing-dictionary';
 
 const extra = {};
+let version = 0;                       // bumped by addLexicon, so callers can cache lookups
+export const lexiconVersion = () => version;
 export function addLexicon(path) {
-  if (existsSync(path)) Object.assign(extra, JSON.parse(readFileSync(path, 'utf8')));
+  if (existsSync(path)) { Object.assign(extra, JSON.parse(readFileSync(path, 'utf8'))); version++; }
 }
 
 // "Lower the bucket," -> [{ word: 'lower', punct: '', phones: [{ p: 'L', stress: null }, { p: 'OW', stress: 1 }, ...] }, ...]

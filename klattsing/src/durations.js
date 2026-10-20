@@ -22,8 +22,8 @@ export const RULES = {
 };
 
 // words: [{ syllables: [{ onset, nucleus, coda, stress }], punct }] -> each syllable gets
-// { onsetMs: [], nucleusMs, codaMs: [], aspMs }
-export function timeWords(words, rules = RULES) {
+// { onsetMs: [], nucleusMs, codaMs: [], aspMs }; table: the [inherent, minimum] ms per phoneme (phones.js DUR)
+export function timeWords(words, rules = RULES, table = DUR) {
   words.forEach((w, wi) => {
     const syl = w.syllables;
     const phraseEnd = w.punct !== '' || wi === words.length - 1;
@@ -34,7 +34,7 @@ export function timeWords(words, rules = RULES) {
       const finalSyl = phraseEnd && lastSyl;
       const unstressed = s.stress === 0;
       const dur = (p, isVowel, inCoda) => {
-        const [inh, min0] = DUR[p] ?? [80, 40];
+        const [inh, min0] = table[p] ?? [80, 40];
         let k = 1, min = min0;
         const idx = pos, prev = flat[idx - 1], next = flat[idx + 1];
         const isC = (x) => x && !VOWELS.has(x), isV = (x) => x && VOWELS.has(x);

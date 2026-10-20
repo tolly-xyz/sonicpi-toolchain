@@ -1,10 +1,14 @@
 // Text (+ notes) -> a klattsch string. Two modes:
 //   speak({ text, pitch, rate, voice })                  all durations from the rules, a simple intonation
 //   sing({ text, notes, bpm, voice, gate, hold, ... })   consonants keep their rule durations, vowels fill the notes
-import { lookup } from './lexicon.js';
+// durationsOf(spec): the per-phoneme durations either mode assigns, without building a string (fast, for optimizers)
+import { lookup, lexiconVersion } from './lexicon.js';
 import { syllabify } from './syllables.js';
 import { timeWords, RULES } from './durations.js';
 import { timeWordsV0 } from './durations_v0.js';
+import { FUNCTION_WORDS } from './function_words.js';
+import { bankName, BREATH_PREFIX } from './banks.js';
+import { DUR } from './phones.js';
 
 const DIPH = { AY: ['AA', 'IY'], EY: ['EH', 'IY'], OW: ['AO', 'UW'], AW: ['AA', 'UW'], OY: ['AO', 'IY'] };
 const NOTE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -15,6 +19,9 @@ export function midi(n) {
 }
 export const hz = (m) => 440 * 2 ** ((midi(m) - 69) / 12);
 const f1 = (x) => Math.round(x * 10) / 10;
+const signed = (v) => `${v > 0 ? '+' : ''}${v}`;
+// defaults overridden by the fields of x that are set (null and undefined keep the default)
+const merged = (def, x) => ({ ...def, ...Object.fromEntries(Object.entries(x ?? {}).filter(([, v]) => v != null)) });
 
 export const VOICES = {
   speak: 'g0.5 t0 h0.05',
@@ -23,38 +30,117 @@ export const VOICES = {
   whisper: 'g0.25 h0.55 t-0.2',
 };
 
-export function words(text, rules, version) {
-  const ws = lookup(text).map((w) => ({ ...w, syllables: syllabify(w.phones) }));
-  return version === 'v0' ? timeWordsV0(ws, rules ?? undefined) : timeWords(ws, { ...RULES, ...(rules ?? {}) });
+// Defaults of the opt-in options (each reproduces the output from before the option existed)
+export const INTONATION = { accent: 2, finalFall: 3, declination: 0, questionRise: 0 }; // semitones, st/s
+export const ACCENT_DELTA = { speak: { g: 0.1, t: 0 }, sing: { g: 0.15, t: 0.15 } };    // effort/tilt on stress 1
+export const PAUSE_MS = 250;   // speak: silence after a phrase's punctuation (times rate)
+export const BREATH_LEVEL = 1; // aspiration: "breath": klattsch aspiration (h) during the breath
+
+// lookup + syllables, cached per text: durationsOf sees the same sentences thousands of times
+const parsed = new Map();
+let parsedVersion = -1;
+function parse(text) {
+  if (parsedVersion !== lexiconVersion()) { parsed.clear(); parsedVersion = lexiconVersion(); }
+  let ws = parsed.get(text);
+  if (!ws) {
+    ws = lookup(text).map((w) => ({ ...w, syllables: syllabify(w.phones) }));
+    if (parsed.size >= 20000) parsed.clear();
+    parsed.set(text, ws);
+  }
+  return ws;
+}
+
+// o.phoneDur: { PHONE: [inherent, minimum] } (ms) over phones.js DUR, for the duration rules of either version
+export function durTable(phoneDur) {
+  if (!phoneDur) return undefined;
+  for (const [p, v] of Object.entries(phoneDur)) {
+    if (!Array.isArray(v) || v.length !== 2 || !v.every((x) => typeof x === 'number' && Number.isFinite(x) && x >= 0)) {
+      throw new Error(`phoneDur.${p}: expected [inherent, minimum] ms, got ${JSON.stringify(v)}`);
+    }
+  }
+  return { ...DUR, ...phoneDur };
+}
+
+// o.functionWords: true (FUNCTION_WORDS) or a list of words: one-syllable ones get stress 0 before the rules
+export function words(text, rules, version, o = {}) {
+  const fw = o.functionWords && (o.functionWords === true ? FUNCTION_WORDS : new Set(o.functionWords.map((x) => x.toLowerCase())));
+  const ws = parse(text).map((w) => {
+    const reduce = fw && w.syllables.length === 1 && fw.has(w.word);
+    return { ...w, syllables: w.syllables.map((s) => (reduce ? { ...s, stress: 0 } : { ...s })) };
+  });
+  const dur = durTable(o.phoneDur);
+  return version === 'v0' ? timeWordsV0(ws, rules ?? undefined, dur) : timeWords(ws, { ...RULES, ...(rules ?? {}) }, dur);
 }
 
 // loudness by stress ([AV=x], a patch to the vendored klattsch): unstressed syllables recede, as in speech
 export const DYNAMICS = { 1: 1.0, 2: 0.8, 0: 0.55 };
 const av = (s, o) => (!o.dynamics ? '' : `[AV=${(o.dynamics === true ? DYNAMICS : o.dynamics)[s.stress] ?? 1}] `);
-// opts: { bank, transition, aspiration (true), accent (true), dynamics (true | {stress: gain}; off by default until voicelab says otherwise), voice }
+// opts: { bank (name or inline bank), bankPatch, transition, aspiration (true | false | "breath"), accent (true),
+// dynamics (true | {stress: gain}; off by default until voicelab says otherwise), voice }
+const voiceOf = (o) => VOICES[o.voice] ?? o.voice ?? VOICES.speak;
 function prefix(o) {
-  return [o.bank ? `[bank=${o.bank}]` : '', o.transition ? `[TR=${o.transition}]` : '', VOICES[o.voice] ?? o.voice ?? VOICES.speak]
-    .filter(Boolean).join(' ');
+  const bank = bankName(o);
+  return [bank ? `[bank=${bank}]` : '', o.transition ? `[TR=${o.transition}]` : '', voiceOf(o)].filter(Boolean).join(' ');
 }
 const asp = (s, o) => (o.aspiration !== false && s.aspMs ? `r${f1(s.aspMs)} HH ` : '');
+// the klattsch aspiration (h) a voice string leaves set, so "breath" can restore it
+export function voiceAspiration(voice) {
+  let h = 0;
+  for (const m of voice.matchAll(/(?:^|\s)h(?:(=)?([+-]?\d+(?:\.\d+)?))?(?=\s|$)/g)) {
+    h = m[2] === undefined ? 0 : !m[1] && /^[+-]/.test(m[2]) ? h + Number(m[2]) : Number(m[2]);
+  }
+  return Math.round(h * 1e6) / 1e6;
+}
+// accent directives {g, t} -> [before the vowel, after it]
+function accentDirs(d) {
+  let up = '', down = '';
+  for (const k of ['g', 't']) if (d[k]) { up += `${k}${signed(d[k])} `; down += `${k}${signed(-d[k])} `; }
+  return [up, down];
+}
+// o.pauseMs: ms, or { ",": ms, ".": ms, ..., default: ms } by the phrase's punctuation
+function pauseOf(o, punct) {
+  const p = o.pauseMs ?? PAUSE_MS;
+  if (typeof p === 'number') return p;
+  for (const ch of punct) if (p[ch] !== undefined) return p[ch];
+  return p.default ?? PAUSE_MS;
+}
+const breathDirs = (o, voice) => [`h${o.breathLevel ?? BREATH_LEVEL} `, `h${voiceAspiration(voice)} `];
 
-export function speak(o) {
-  const rate = o.rate ?? 1, base = hz(o.pitch ?? 'A2'), ws = words(o.text, o.rules, o.durations);
-  let out = `${prefix(o)} b${f1(base)} `;
+// meta (optional array): one { word, syl, asp?, p? } per phoneme token, in string order (for timelines; p names
+// the vowel a BR<vowel> breath token belongs to)
+export function speak(o, meta) {
+  const m = Array.isArray(meta) ? meta : null;
+  const rate = o.rate ?? 1, base = hz(o.pitch ?? 'A2'), ws = words(o.text, o.rules, o.durations, o);
+  const I = merged(INTONATION, o.intonation);
+  const [accUp, accDown] = accentDirs(merged(ACCENT_DELTA.speak, o.accentDelta));
+  const breath = o.aspiration === 'breath', [hUp, hDown] = breathDirs(o, voiceOf(o));
+  let out = `${prefix(o)} b${f1(base)} `, t = 0, lastB = f1(base);   // t: ms since the sentence began (declination)
+  const ph = (ms, p, info, suffix = '') => { out += `r${f1(ms)} ${p}${suffix} `; m?.push(info); t += ms; };
   ws.forEach((w, wi) => {
     w.syllables.forEach((s, si) => {
       const final = (w.punct !== '' || wi === ws.length - 1) && si === w.syllables.length - 1;
+      const at = { word: wi, syl: si };
+      const b = I.declination ? base * 2 ** (-I.declination * t / 12000) : base;
+      if (I.declination && f1(b) !== lastB) { lastB = f1(b); out += `b${lastB} `; }
       out += av(s, o);
-      s.onset.forEach((p, i) => { out += `r${f1(s.onsetMs[i] * rate)} ${p} `; });
-      out += asp(s, o);
+      s.onset.forEach((p, i) => ph(s.onsetMs[i] * rate, p, at));
+      const breathHere = breath && s.nucleus && s.aspMs;
+      if (!breathHere && asp(s, o)) ph(s.aspMs, 'HH', { ...at, asp: true });
       if (s.nucleus) {
-        // pitch: a rise on primary stress, a fall at the end of a phrase
-        const delta = final ? f1(base * (2 ** (-3 / 12) - 1)) : s.stress === 1 ? f1(base * (2 ** (2 / 12) - 1)) : 0;
-        const acc = o.accent !== false && s.stress === 1 ? ['g+0.1 ', 'g-0.1 '] : ['', ''];
-        out += `${acc[0]}r${f1(s.nucleusMs * rate)} ${s.nucleus}${delta ? `(${delta > 0 ? '+' : ''}${delta})` : ''} ${acc[1]}`;
+        // pitch: a rise on primary stress, a fall at the end of a phrase (a rise, with questionRise, after '?')
+        const st = final ? (I.questionRise && w.punct.includes('?') ? I.questionRise : -I.finalFall) : s.stress === 1 ? I.accent : 0;
+        const delta = st ? f1(b * (2 ** (st / 12) - 1)) : 0;
+        const acc = o.accent !== false && s.stress === 1;
+        if (acc) out += accUp;
+        if (breathHere) { out += hUp; ph(s.aspMs, BREATH_PREFIX + s.nucleus, { ...at, asp: true, p: s.nucleus }); out += hDown; }
+        ph(s.nucleusMs * rate, s.nucleus, at, delta ? `(${delta > 0 ? '+' : ''}${delta})` : '');
+        if (acc) out += accDown;
       }
-      s.coda.forEach((p, i) => { out += `r${f1(s.codaMs[i] * rate)} ${p} `; });
-      if (final && w.punct) out += `p${Math.round(250 * rate)} `;
+      s.coda.forEach((p, i) => ph(s.codaMs[i] * rate, p, at));
+      if (final && w.punct) {
+        out += `p${Math.round(pauseOf(o, w.punct) * rate)} `;
+        t = /[.!?]/.test(w.punct) ? 0 : t + pauseOf(o, w.punct) * rate;
+      }
     });
   });
   return out.trim();
@@ -68,20 +154,21 @@ export function speak(o) {
 export function autoNotes(syl, { scale = ['E2', 'G2', 'A2', 'G2', 'F2'], long = 4, short = 2, last = 6 } = {}) {
   return syl.map((s, i) => [i === syl.length - 1 ? scale[0] : scale[i % scale.length], i === syl.length - 1 ? last : s.stress === 1 ? long : short]);
 }
-export function sing(o) {
+// sing's timing, shared by sing() and durationsOf(): per syllable { s, at, rests, note, ons, coda, a, parts, to, rest }
+function singPlan(o) {
   const bpm = o.bpm ?? 120, st = (n) => n * 15000 / bpm;
-  const syl = words(o.text, o.rules, o.durations).flatMap((w) => w.syllables);
+  const ws = words(o.text, o.rules, o.durations, o);
+  const syl = ws.flatMap((w) => w.syllables);
+  const where = ws.flatMap((w, wi) => w.syllables.map((_, si) => ({ word: wi, syl: si })));
   // a note named 'r' (or 'rest') is a rest: [ 'r', sixteenths ]
   const all = (o.notes === 'auto' || !o.notes ? autoNotes(syl, o.melody) : o.notes).filter((n) => n !== null);
   const isRest = (n) => n[0] === 'r' || n[0] === 'rest';
   const sung = all.filter((n) => !isRest(n));
   if (sung.length !== syl.length) throw new Error(`${syl.length} syllables but ${sung.length} notes in "${o.text}"`);
-  let out = `${prefix({ voice: 'sing', ...o })} `;
   const restsBefore = []; let k = 0;
   for (const n of all) { if (isRest(n)) (restsBefore[k] ??= []).push(n); else k++; }
   const restMs = (n) => (typeof n[1] === 'object' ? n[1].ms : st(n[1]));
-  syl.forEach((s, i) => {
-    for (const r of restsBefore[i] ?? []) out += `p${f1(restMs(r))} `;
+  const plan = syl.map((s, i) => {
     const [note, len, extra = {}] = sung[i];
     const slot = typeof len === 'object' ? len.ms : st(len);
     let ons = s.onsetMs.slice(), coda = s.codaMs.slice(), a = o.aspiration !== false ? s.aspMs : 0;
@@ -92,18 +179,76 @@ export function sing(o) {
     let gate = extra.gate ?? o.gate;
     if (gate && (typeof len === 'number' ? len : 0) >= 6) gate = Math.max(gate, slot * (o.hold ?? 0.55));
     if (gate && v > gate) { rest = v - gate; v = gate; }
-    out += `v0 b${f1(hz(note))} ${av(s, o)}`;
-    s.onset.forEach((p, j) => { out += `r${f1(ons[j])} ${p} `; });
-    if (a) out += `r${f1(a)} HH `;
-    const acc = o.accent !== false && s.stress === 1;
-    if (acc) out += 'g+0.15 t+0.15 ';
     const to = extra.to !== undefined ? f1(hz(extra.to) - hz(note)) : 0;
     const parts = DIPH[s.nucleus] && v > 200 ? [[DIPH[s.nucleus][0], v * 0.8], [DIPH[s.nucleus][1], v * 0.2]] : [[s.nucleus, v]];
-    parts.forEach(([ph, len2], j) => { out += `r${f1(len2)} ${ph}${to && j === parts.length - 1 ? `${to > 0 ? '+' : ''}${to}` : ''} `; });
-    if (acc) out += 'g-0.15 t-0.15 ';
-    s.coda.forEach((p, j) => { out += `r${f1(coda[j])} ${p} `; });
-    if (rest > 0) out += `p${f1(rest)} `;
+    return { s, at: where[i], rests: (restsBefore[i] ?? []).map(restMs), note, ons, coda, a, parts, to, rest };
   });
-  for (const r of restsBefore[syl.length] ?? []) out += `p${f1(restMs(r))} `;
+  return { ws, plan, tail: (restsBefore[syl.length] ?? []).map(restMs) };
+}
+export function sing(o, meta) {
+  const m = Array.isArray(meta) ? meta : null;
+  const { plan, tail } = singPlan(o);
+  const vo = { voice: 'sing', ...o };
+  const [accUp, accDown] = accentDirs(merged(ACCENT_DELTA.sing, o.accentDelta));
+  const breath = o.aspiration === 'breath', [hUp, hDown] = breathDirs(o, voiceOf(vo));
+  let out = `${prefix(vo)} `;
+  const ph = (ms, p, info, suffix = '') => { out += `r${f1(ms)} ${p}${suffix} `; m?.push(info); };
+  for (const x of plan) {
+    const { s, at } = x;
+    for (const r of x.rests) out += `p${f1(r)} `;
+    out += `v0 b${f1(hz(x.note))} ${av(s, o)}`;
+    s.onset.forEach((p, j) => ph(x.ons[j], p, at));
+    if (x.a && !breath) ph(x.a, 'HH', { ...at, asp: true });
+    const acc = o.accent !== false && s.stress === 1;
+    if (acc) out += accUp;
+    if (x.a && breath) { out += hUp; ph(x.a, BREATH_PREFIX + x.parts[0][0], { ...at, asp: true, p: x.parts[0][0] }); out += hDown; }
+    x.parts.forEach(([p, len2], j) => ph(len2, p, at, x.to && j === x.parts.length - 1 ? `${x.to > 0 ? '+' : ''}${x.to}` : ''));
+    if (acc) out += accDown;
+    s.coda.forEach((p, j) => ph(x.coda[j], p, at));
+    if (x.rest > 0) out += `p${f1(x.rest)} `;
+  }
+  for (const r of tail) out += `p${f1(r)} `;
   return out.trim();
+}
+
+// a spec (mode "speak" or "sing") -> its klattsch string
+export const toKlattsch = (spec, meta) => (spec.mode === 'sing' ? sing(spec, meta) : speak(spec, meta));
+
+// The durations klattsing assigns before klattsch, per phoneme in lexical order:
+//   { text, words: [word], totalMs, phones: [{ p, ms, word, syl, stress, asp? }] }
+// ms is unrounded (the klattsch string rounds to 0.1 ms) and includes rate; asp (on a vowel) is the
+// aspiration before it (an HH segment, or the breath with aspiration: "breath"); { p: "pau", ms } is a
+// silence (speak: after punctuation; sing: rests and gated note ends). totalMs = sum of ms + asp.
+// An array of specs gives an array of results.
+export function durationsOf(spec) {
+  if (Array.isArray(spec)) return spec.map((x) => durationsOf(x));
+  const o = spec, phones = [];
+  let ws;
+  if (o.mode === 'sing') {
+    const r = singPlan(o);
+    ws = r.ws;
+    for (const x of r.plan) {
+      const info = { word: x.at.word, syl: x.at.syl, stress: x.s.stress };
+      for (const ms of x.rests) phones.push({ p: 'pau', ms });
+      x.s.onset.forEach((p, j) => phones.push({ p, ms: x.ons[j], ...info }));
+      if (x.s.nucleus) phones.push({ p: x.s.nucleus, ms: x.parts.reduce((a, q) => a + q[1], 0), ...info, ...(x.a ? { asp: x.a } : {}) });
+      x.s.coda.forEach((p, j) => phones.push({ p, ms: x.coda[j], ...info }));
+      if (x.rest > 0) phones.push({ p: 'pau', ms: x.rest });
+    }
+    for (const ms of r.tail) phones.push({ p: 'pau', ms });
+  } else {
+    const rate = o.rate ?? 1;
+    ws = words(o.text, o.rules, o.durations, o);
+    ws.forEach((w, wi) => w.syllables.forEach((s, si) => {
+      const info = { word: wi, syl: si, stress: s.stress };
+      const a = o.aspiration !== false && s.aspMs ? s.aspMs : 0;
+      s.onset.forEach((p, i) => phones.push({ p, ms: s.onsetMs[i] * rate, ...info }));
+      if (s.nucleus) phones.push({ p: s.nucleus, ms: s.nucleusMs * rate, ...info, ...(a ? { asp: a } : {}) });
+      else if (a) phones.push({ p: 'HH', ms: a, ...info });
+      s.coda.forEach((p, i) => phones.push({ p, ms: s.codaMs[i] * rate, ...info }));
+      if (si === w.syllables.length - 1 && w.punct) phones.push({ p: 'pau', ms: Math.round(pauseOf(o, w.punct) * rate) });
+    }));
+  }
+  const totalMs = phones.reduce((a, x) => a + x.ms + (x.asp ?? 0), 0);
+  return { text: o.text, words: ws.map((w) => w.word), totalMs, phones };
 }

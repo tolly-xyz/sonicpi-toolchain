@@ -105,7 +105,8 @@ def main():
         for cls, w, h, good in res: by[cls].append(good)
         total = np.mean([g for *_, g in res])
         report[cfg["name"]] = {"total": round(float(total), 3), "classes": {c: round(float(np.mean(v)), 2) for c, v in by.items()},
-                               "missed": [w for _, w, h, g in res if not g], "heard": heard_log}
+                               "missed": [w for _, w, h, g in res if not g], "heard": heard_log,
+                               "results": [[w, bool(g)] for _, w, h, g in res]}       # per word, for stats.py
         print(f"{cfg['name']:28s} {total:5.0%}  " + "  ".join(f"{c[:8]} {np.mean(v):.0%}" for c, v in by.items()), flush=True)
         print("   missed: " + " ".join(report[cfg['name']]["missed"]), flush=True)
         if out: json.dump(report, open(out, "w"), indent=1)
