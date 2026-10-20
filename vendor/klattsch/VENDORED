@@ -7,4 +7,5 @@ tgies/klattsch @ 63dc2c6 (MIT), vendored with patches:
   src/engine/sequencer.js: [TC=n] gives every event that curve; [CO=x] coarticulation: formants move in their own events, a vowel starts at
     and ends toward each neighbouring consonant's locus-equation value F + x (k F + c - F) ([COR=x] at VC; [COCV=ms], [COVC=ms]; [TCF=n]
     the formant events' curve), from bank fields vowel, locus {F1..F3: [k, c]}, locusVC, locusBurst (a stop's burst at the vowel's onset
-    formants), transparent (HH: the next vowel's formants), smooth (liquids: no step); without [CO]/[TC] the schedule is unchanged
+    formants), transparent (HH: the next vowel's formants), smooth (liquids: no step); under [CO] formant events never go back in
+    time and the schedule is sorted by time (stably); without [CO]/[TC] the schedule is unchanged

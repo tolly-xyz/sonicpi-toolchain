@@ -28,7 +28,10 @@
 // degree 2 (the default) pulls twice as far as those fits: the 25 ms analysis window 5 ms into the vowel
 // averages the boundary with the vowel, and Kokoro's connected-speech vowels undershoot more than the
 // equations alone give. voicelab fidelity (BASE = kokoro-durations + mitalk-bursts) peaks there:
-// degree 1 0.70, 1.5 0.74, 2 0.76, 2.5 0.74 (BASE 0.37).
+// degree 1 0.70, 1.5 0.74, 2 0.76, 2.5 0.74 (BASE 0.37). The loci and the degree were fitted on all 100 am_onyx
+// sentences; the gain holds on climb.py's 20 held-out sentences (BASE 0.21 -> 0.54) and on the other voice,
+// am_michael (0.44 -> 0.82). Of the 0.39: the ease-out curve alone (klattsch [TC=2], no loci) 0.19, the loci alone
+// (all transitions linear) 0.21; the VC transitions are worth 0.13 (codaDegree 0: 0.63), liquids/glides 0.08, HH 0.02.
 import { VOWELS } from './phones.js';
 
 export const LOCI = {
