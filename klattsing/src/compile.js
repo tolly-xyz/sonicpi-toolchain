@@ -36,8 +36,8 @@ export const ACCENT_DELTA = { speak: { g: 0.1, t: 0 }, sing: { g: 0.15, t: 0.15 
 export const PAUSE_MS = 250;   // speak: silence after a phrase's punctuation (times rate)
 export const BREATH_LEVEL = 1; // aspiration: "breath": klattsch aspiration (h) during the breath
 // glottal: the LF voice source (klattsch [GS=1], a patch): option field -> directive, and the values `true` gives
-export const GLOTTAL_KEYS = { rd: 'RD', rdEffort: 'RDE', tilt: 'TL', jitter: 'JIT', shimmer: 'SHIM', aspMod: 'AM', flutter: 'FL' };
-export const GLOTTAL = { rd: 1, rdEffort: 6, tilt: 0, jitter: 0.7, shimmer: 4, aspMod: 1, flutter: 0 };
+export const GLOTTAL_KEYS = { rd: 'RD', rdEffort: 'RDE', tilt: 'TL', jitter: 'JIT', shimmer: 'SHIM', aspMod: 'AM', flutter: 'FL', aspTilt: 'AT', noiseTilt: 'NT' };
+export const GLOTTAL = { rd: 1, rdEffort: 6, tilt: 0, jitter: 0.5, shimmer: 5, aspMod: 1, flutter: 0, aspTilt: 0, noiseTilt: 15 };
 
 // lookup + syllables, cached per text: durationsOf sees the same sentences thousands of times
 const parsed = new Map();
@@ -81,7 +81,7 @@ const av = (s, o) => (!o.dynamics ? '' : `[AV=${(o.dynamics === true ? DYNAMICS 
 // opts: { bank (name or inline bank), bankPatch, transition, aspiration (true | false | "breath"), accent (true),
 // dynamics (true | {stress: gain}; off by default until voicelab says otherwise), voice }
 const voiceOf = (o) => VOICES[o.voice] ?? o.voice ?? VOICES.speak;
-// o.glottal: true (GLOTTAL) or { rd, rdEffort, tilt, jitter, shimmer, aspMod, flutter } over GLOTTAL -> klattsch directives
+// o.glottal: true (GLOTTAL) or { rd, rdEffort, tilt, jitter, shimmer, aspMod, flutter, aspTilt, noiseTilt } over GLOTTAL -> klattsch directives
 export function glottalDirs(g) {
   if (!g) return '';
   if (g !== true && (typeof g !== 'object' || Array.isArray(g))) throw new Error(`glottal: expected true or an object, got ${JSON.stringify(g)}`);

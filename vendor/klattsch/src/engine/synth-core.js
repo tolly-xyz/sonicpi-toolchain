@@ -129,14 +129,16 @@ export class FormantSynth {
   //   AM    aspiration noise modulated by the glottal flow, 0..1 (0 steady, 1 noise follows the flow), default 0
   //   FL    flutter, Klatt & Klatt 1990: slow F0 wander (FL/50)(F0/100)(sum of 12.7, 7.1, 4.7 Hz sines) Hz, default 0
   resetSource() {
-    this.src = { GS: 0, RD: 1, RDE: 6, TL: 0, JIT: 0, SHIM: 0, AM: 0, FL: 0 };
+    this.src = { GS: 0, RD: 1, RDE: 6, TL: 0, JIT: 0, SHIM: 0, AM: 0, FL: 0, AT: 0, NT: 0 };
     this.lfCache = this.lfCache ?? new Map();
     this.lf = null;          // the current cycle's shape
     this.cycleAmp = 1;       // shimmer factor of the current cycle
-    this.cycleRate = 1;      // jitter factor of the current cycle (phase speed)
+    this.cycleRate = 1;      // jitter factor of the current closure-to-closure period (phase speed)
     this.flow = 0;           // running glottal flow in the cycle (for pitch-synchronous noise)
     this.tlA = 0;            // TL one-pole coefficient
     this.tlPrev = 0;
+    this.atA = 0; this.atPrev = 0;   // AT: aspiration-noise low-pass
+    this.ntA = 0; this.ntPrev = 0;   // NT: frication-noise low-pass
     this.jrng = 0x2545F491 | 0;
   }
 
@@ -151,6 +153,9 @@ export class FormantSynth {
     s.AM = t.AM === undefined ? 0 : t.AM < 0 ? 0 : t.AM > 1 ? 1 : t.AM;
     s.FL = t.FL ?? 0;
     this.tlA = tiltCoef(s.TL, 3000, this.sr);
+    s.AT = t.AT ?? 0; s.NT = t.NT ?? 0;
+    this.atA = tiltCoef(s.AT, 3000, this.sr);
+    this.ntA = tiltCoef(s.NT, 3000, this.sr);
   }
 
   lfShapeFor(effort) {
@@ -169,17 +174,25 @@ export class FormantSynth {
     return x * 0.8660254037844386;   // sqrt(3/4): var of a sum of 4 U(-1,1) is 4/3
   }
 
-  // a new glottal cycle: shape from the current effort, jitter and shimmer drawn per period. A local jitter of
-  // J% needs a per-period sd of J / 1.128 % (mean |d1 - d2| of two iid normals = 1.128 sd); likewise shimmer.
+  // A new glottal cycle (phase 0, where the flow derivative is 0): its shape from the current effort and its
+  // shimmer. A local shimmer of S% needs a per-period sd of S / 1.128 % (mean |d1 - d2| of two iid normals is
+  // 1.128 sd); likewise jitter.
   newCycle(cur) {
     const s = this.src;
     this.lf = this.lfShapeFor(cur.effort);
-    const sj = s.JIT / 112.8, ss = s.SHIM / 112.8;
-    const g1 = sj ? Math.max(-3, Math.min(3, this.gauss())) : 0;
-    const g2 = ss ? Math.max(-3, Math.min(3, this.gauss())) : 0;
-    this.cycleRate = 1 / (1 + sj * g1);
-    this.cycleAmp = Math.max(0, 1 + ss * g2);
+    const ss = s.SHIM / 112.8;
+    const g = ss ? Math.max(-3, Math.min(3, this.gauss())) : 0;
+    this.cycleAmp = Math.max(0, 1 + ss * g);
     this.flow = 0;
+  }
+
+  // Jitter: a new phase speed at each glottal closure (te, the main excitation), so the closure-to-closure
+  // intervals, the periods an analysis (Praat's) measures, are the perturbed ones. Drawn at the cycle start
+  // instead, each closure interval would mix two periods ((1 - te) T_i + te T_i+1) and measure ~half the jitter.
+  newRate() {
+    const sj = this.src.JIT / 112.8;
+    const g = sj ? Math.max(-3, Math.min(3, this.gauss())) : 0;
+    this.cycleRate = 1 / (1 + sj * g);
   }
 
   lfSample(cur, effF0, v, voicedGain, noiseSample) {
@@ -193,8 +206,11 @@ export class FormantSynth {
     const raw = lfPulse(this.glottalPhase, this.lf);
     let voiced = raw * this.cycleAmp;
     if (this.tlA) { voiced = (1 - this.tlA) * voiced + this.tlA * this.tlPrev; this.tlPrev = voiced; }
-    let asp = cur.aspiration * noiseSample * 0.5;
-    let fric = (1 - v) * noiseSample * 0.35;
+    let nA = noiseSample, nF = noiseSample;
+    if (this.atA) { this.atPrev = (1 - this.atA) * noiseSample + this.atA * this.atPrev; nA = this.atPrev; }
+    if (this.ntA) { this.ntPrev = (1 - this.ntA) * noiseSample + this.ntA * this.ntPrev; nF = this.ntPrev; }
+    let asp = cur.aspiration * nA * 0.5;
+    let fric = (1 - v) * nF * 0.35;
     // pitch-synchronous noise: while the folds vibrate (v > 0) turbulence follows the glottal flow, so both noise
     // sources are scaled by (1 - a) + a u (u = flow / peak flow, 0 in the closed phase) at depth a = AM v, normalised
     // to the same mean power (Klatt 1980 and KLSYN88 halve the noise in the second half of each voiced period;
@@ -208,7 +224,9 @@ export class FormantSynth {
     }
     const dphase = f0 * this.cycleRate / this.sr;
     this.flow += raw * dphase;
+    const before = this.glottalPhase;
     this.glottalPhase += dphase;
+    if (before < this.lf.te && this.glottalPhase >= this.lf.te) this.newRate();
     if (this.glottalPhase >= 1) {
       this.glottalPhase -= Math.floor(this.glottalPhase);
       this.newCycle(cur);
