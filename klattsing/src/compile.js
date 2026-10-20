@@ -9,6 +9,7 @@ import { timeWordsV0 } from './durations_v0.js';
 import { FUNCTION_WORDS } from './function_words.js';
 import { bankName, BREATH_PREFIX } from './banks.js';
 import { DUR } from './phones.js';
+import { coartOptions, coartDirectives } from './coarticulation.js';
 
 const DIPH = { AY: ['AA', 'IY'], EY: ['EH', 'IY'], OW: ['AO', 'UW'], AW: ['AA', 'UW'], OY: ['AO', 'IY'] };
 const NOTE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -79,8 +80,8 @@ const av = (s, o) => (!o.dynamics ? '' : `[AV=${(o.dynamics === true ? DYNAMICS 
 // dynamics (true | {stress: gain}; off by default until voicelab says otherwise), voice }
 const voiceOf = (o) => VOICES[o.voice] ?? o.voice ?? VOICES.speak;
 function prefix(o) {
-  const bank = bankName(o);
-  return [bank ? `[bank=${bank}]` : '', o.transition ? `[TR=${o.transition}]` : '', voiceOf(o)].filter(Boolean).join(' ');
+  const bank = bankName(o), co = coartOptions(o.coarticulation);
+  return [bank ? `[bank=${bank}]` : '', o.transition ? `[TR=${o.transition}]` : '', co ? coartDirectives(co) : '', voiceOf(o)].filter(Boolean).join(' ');
 }
 const asp = (s, o) => (o.aspiration !== false && s.aspMs ? `r${f1(s.aspMs)} HH ` : '');
 // the klattsch aspiration (h) a voice string leaves set, so "breath" can restore it

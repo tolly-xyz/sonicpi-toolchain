@@ -42,6 +42,23 @@ export const DEFAULT = {
   effort: 0.5,
 };
 
+// (sonicpi-toolchain patch) shaped, per-parameter transitions. A schedule event may carry
+//   curve:  1 raised cosine (0.5 - 0.5 cos(pi u)), 2 ease-out (u (2 - u): fast at first, settling, like
+//           the formant movement after a consonant release), 0 or absent linear
+//   params: the parameters it moves (absent: all of them, as before); the others keep their own transitions
+// A schedule whose events carry neither renders through the original linear code, sample for sample.
+export const CURVES = {
+  1: (u) => 0.5 - 0.5 * Math.cos(Math.PI * u),
+  2: (u) => u * (2 - u),
+};
+const isShaped = (events) => events.some((e) => e.curve || e.params);
+const toEvents = (events, sr) => events.map((e) => ({
+  atSample: Math.floor((e.atMs ?? 0) * sr / 1000),
+  target: e.target,
+  transitionSamples: Math.max(1, Math.floor((e.transitionMs ?? 30) * sr / 1000)),
+  ...(e.curve || e.params ? { curve: e.curve ?? 0, params: e.params ?? null } : {}),
+}));
+
 export class FormantSynth {
   constructor({ sampleRate, initialTarget, schedule } = {}) {
     if (!sampleRate || sampleRate <= 0) {
@@ -63,19 +80,54 @@ export class FormantSynth {
     this.bp2 = new BandpassBiquad();
     this.bp3 = new BandpassBiquad();
 
-    this.schedule = (schedule ?? []).map(e => ({
-      atSample: Math.floor((e.atMs ?? 0) * this.sr / 1000),
-      target: e.target,
-      transitionSamples: Math.max(1, Math.floor((e.transitionMs ?? 30) * this.sr / 1000)),
-    }));
+    this.schedule = toEvents(schedule ?? [], this.sr);
     this.scheduleIdx = 0;
     this.sampleCounter = 0;
+    this.shaped = isShaped(this.schedule);
+    this.moves = [];        // shaped mode: running transitions { n, N, shape, keys, from, to }
+    this.mover = {};        // shaped mode: param -> the transition moving it
+  }
+
+  // shaped mode: start moving `params` (default all) toward target over N samples along curve
+  startMove(target, N, curve = 0, params = null) {
+    const keys = [];
+    const move = { n: 0, N, shape: CURVES[curve] ?? null, keys, from: {}, to: {} };
+    for (const k of params ?? PARAMS) {
+      if (k in target) this.target[k] = target[k];
+      const old = this.mover[k];
+      if (old) old.keys.splice(old.keys.indexOf(k), 1);
+      this.mover[k] = move;
+      keys.push(k);
+      move.from[k] = this.current[k];
+      move.to[k] = this.target[k];
+    }
+    this.moves.push(move);
+  }
+
+  // shaped mode: advance every running transition one sample
+  stepMoves() {
+    const cur = this.current;
+    let done = 0;
+    for (const m of this.moves) {
+      m.n++;
+      if (m.n >= m.N) {
+        for (const k of m.keys) { cur[k] = m.to[k]; this.mover[k] = undefined; }
+        m.keys.length = 0;
+        done++;
+        continue;
+      }
+      const u = m.n / m.N, w = m.shape ? m.shape(u) : u;
+      for (const k of m.keys) cur[k] = m.from[k] + (m.to[k] - m.from[k]) * w;
+      if (!m.keys.length) done++;
+    }
+    if (done) this.moves = this.moves.filter((m) => m.keys.length && m.n < m.N);
   }
 
   // Schedule a new target. transitionMs samples are linearly interpolated
   // from current state to the new target
   setTarget(target, transitionMs = 30) {
     const N = Math.max(1, Math.floor(transitionMs * this.sr / 1000));
+    if (this.shaped) { this.startMove(target, N); return; }
     this.transitionSamples = N;
     for (const k of PARAMS) {
       if (k in target) this.target[k] = target[k];
@@ -86,13 +138,15 @@ export class FormantSynth {
   // startCounter presets the schedule clock: negative delays the first event,
   // positive drains already-past events on the first process() call.
   queueSchedule(events, startCounter = 0) {
-    this.schedule = events.map(e => ({
-      atSample: Math.floor((e.atMs ?? 0) * this.sr / 1000),
-      target: e.target,
-      transitionSamples: Math.max(1, Math.floor((e.transitionMs ?? 30) * this.sr / 1000)),
-    }));
+    this.schedule = toEvents(events, this.sr);
     this.scheduleIdx = 0;
     this.sampleCounter = startCounter;
+    if (isShaped(this.schedule) && !this.shaped) {
+      // switching to shaped mode mid-flight: carry the linear transition that is running
+      this.shaped = true;
+      if (this.transitionSamples > 0) this.startMove({}, this.transitionSamples);
+      this.transitionSamples = 0;
+    }
   }
 
   reset(initialTarget) {
@@ -112,12 +166,25 @@ export class FormantSynth {
     this.schedule = [];
     this.scheduleIdx = 0;
     this.sampleCounter = 0;
+    this.shaped = false;
+    this.moves = [];
+    this.mover = {};
   }
 
   // Render `out.length` samples into the given Float32Array
   process(out) {
     const cur = this.current;
     for (let i = 0; i < out.length; i++) {
+      if (this.shaped) {
+        // (sonicpi-toolchain patch) shaped, per-parameter transitions
+        while (this.scheduleIdx < this.schedule.length
+            && this.schedule[this.scheduleIdx].atSample <= this.sampleCounter) {
+          const evt = this.schedule[this.scheduleIdx++];
+          this.startMove(evt.target, evt.transitionSamples, evt.curve, evt.params);
+        }
+        this.sampleCounter++;
+        if (this.moves.length) this.stepMoves();
+      } else {
       // Drain any baked-in schedule events whose time has arrived
       while (this.scheduleIdx < this.schedule.length
           && this.schedule[this.scheduleIdx].atSample <= this.sampleCounter) {
@@ -137,6 +204,7 @@ export class FormantSynth {
         if (this.transitionSamples === 0) {
           for (const k of PARAMS) cur[k] = this.target[k];
         }
+      }
       }
 
       // Vibrato LFO modulates F0 around its target value

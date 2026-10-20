@@ -71,7 +71,8 @@ def render(cfg, words, path):
         sf.write(path, np.concatenate(parts), sr); return
     specs = []
     for i, w in enumerate(words):
-        base = {k: v for k, v in cfg.items() if k in ("bank", "transition", "aspiration", "voice", "rules", "accent", "gate", "hold", "durations", "dynamics")}
+        base = {k: v for k, v in cfg.items() if k in ("bank", "transition", "aspiration", "voice", "rules", "accent", "gate", "hold", "durations", "dynamics",
+                                                      "coarticulation")}
         if cfg.get("mode", "speak") == "sing":
             nsyl = 2 if NUM[i] == "seven" else 1
             notes = [["E2", 4 // nsyl]] * nsyl + [["r", 2], ["G2", 8]]

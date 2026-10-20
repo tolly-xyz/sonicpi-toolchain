@@ -26,7 +26,7 @@ per syllable, or `"auto"`), `bpm`, `melody` (auto: `scale`, `long`, `short`, `la
 (formant glide ms, a klattsch patch), `aspiration` (breath after P/T/K, default on), `accent`,
 `dynamics` (loudness by stress, a klattsch patch; off by default), `durations` (`"v0"` for the first
 reconstruction), `rules`; and the opt-in options below (`bankPatch`, `functionWords`, `intonation`,
-`breathLevel`, `breathVoicing`, `pauseMs`, `accentDelta`).
+`breathLevel`, `breathVoicing`, `pauseMs`, `accentDelta`, `phoneDur`, `coarticulation`).
 
 ## Options for optimizers (all opt-in; leaving them out gives exactly the strings from before)
 
@@ -42,6 +42,7 @@ reconstruction), `rules`; and the opt-in options below (`bankPatch`, `functionWo
 | `pauseMs` | `250`, or `{",": ms, ".": ms, ..., default: 250}` | speak: silence after a phrase's punctuation (times `rate`) |
 | `accentDelta` | speak `{g: 0.1, t: 0}`, sing `{g: 0.15, t: 0.15}` | effort (`g`) and tilt (`t`) added over a stressed vowel (with `accent`) |
 | `phoneDur` | `{PHONE: [inherent, minimum]}` ms (`src/phones.js` `DUR`) | the duration table per call, merged over `DUR` (either `durations` version, speak and sing); `tools/voicelab/climb.py durations` fits it with `rules` |
+| `coarticulation` | `true` or `{degree: 2, codaDegree: (degree), curve: "out", formantCurve: (curve), cv: 60, vc: 50, burst: true, hh: true, sonorants: true, loci: {PHONE: {F1/F2/F3: [k, c]}}}` (off) | context-dependent formant trajectories (klattsch's `[CO=x]` patch, `src/coarticulation.js`): a vowel starts at each neighbouring consonant's locus-equation value `F + degree (k F + c - F)` (loci per place fitted to Kokoro; Sussman et al. 1991) and moves to its target over `cv` ms, and moves toward the next consonant's value over its last `vc` ms (`codaDegree`); HH takes the next vowel's formants (`hh`), velar bursts front before front vowels (`burst`), liquids and glides glide (`sonorants`); every transition eased out (`curve`: `out`, `cos`, `linear`). A generated bank `<base>--co<hash>` carries the loci. Timings and the string's phonemes are unchanged |
 
 Presets fitted against Kokoro by `tools/voicelab/climb.py` are spec fragments in `presets/` (merge one into a spec:
 `{"mode": "speak", "text": ..., ...preset}`): `kokoro-durations.json` (`rules`, `phoneDur`, `functionWords`) and
