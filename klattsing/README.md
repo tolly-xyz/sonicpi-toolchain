@@ -86,7 +86,9 @@ the highs move; timing and the string's phonemes are unchanged. On the 100-sente
 mcd_cmn 3.73 -> 3.66, mcd_static 2.95 -> 1.50; vowels at 2-4 / 4-8 kHz +3.5 / +4.9 dB over Kokoro instead of +12.5 /
 +14.4. Of that, the LF pulse alone (`noiseTilt: 0`) gives 0.575 (MCD 4.37, but mcd_cmn 3.88: darker vowels next to
 klattsch's bright noise widen the vowel-consonant contrast); the noise tilt brings the consonants along. F and SH,
-already dark in the banks, get worse (per-phone MCD +0.6 / +1.1 dB); S, T, K, P, HH, DH, V improve.
+already dark in the banks, get worse (per-phone MCD +0.6 / +1.1 dB); S, T, K, P, HH, DH, V improve. Whisper minimal
+pairs (`tools/voicelab/pairs.py`, 139 words): 46.8% -> 46.0%, McNemar p = 1 (10 vs 9 discordant; fricatives 15% ->
+15% with none discordant); an earlier LF-only version also tied (46.8% both).
 
 Presets fitted against Kokoro by `tools/voicelab/climb.py` are spec fragments in `presets/` (merge one into a spec:
 `{"mode": "speak", "text": ..., ...preset}`): `kokoro-durations.json` (`rules`, `phoneDur`, `functionWords`) and
