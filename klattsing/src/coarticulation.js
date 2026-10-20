@@ -32,6 +32,9 @@
 // sentences; the gain holds on climb.py's 20 held-out sentences (BASE 0.21 -> 0.54) and on the other voice,
 // am_michael (0.44 -> 0.82). Of the 0.39: the ease-out curve alone (klattsch [TC=2], no loci) 0.19, the loci alone
 // (all transitions linear) 0.21; the VC transitions are worth 0.13 (codaDegree 0: 0.63), liquids/glides 0.08, HH 0.02.
+// Whisper minimal pairs (tools/voicelab/pairs.py, BASE vs BASE + "coarticulation": true): 46.8% -> 69.1%, McNemar
+// p = 1.6e-6 (6 words lost, 37 gained); fricatives 15 -> 62%, liquids/glides 45 -> 82%, place of stops 36 -> 64%,
+// vowels 73 -> 67% (one word, n.s.).
 import { VOWELS } from './phones.js';
 
 export const LOCI = {
