@@ -40,6 +40,49 @@ export class BandpassBiquad {
   }
 }
 
+// (sonicpi-toolchain patch) Klatt (1980) digital resonator and antiresonator, both with unity gain at 0 Hz:
+//   resonator      y[n] = A x[n] + B y[n-1] + C y[n-2]   C = -exp(-2 pi BW T), B = 2 exp(-pi BW T) cos(2 pi F T), A = 1 - B - C
+//   antiresonator  y[n] = A' x[n] + B' x[n-1] + C' x[n-2]   A' = 1/A, B' = -B/A, C' = -C/A (A, B, C of a resonator at F, BW)
+// A resonator and an antiresonator at the same F and BW cancel exactly (Klatt's FNP = FNZ for non-nasal sounds).
+// Coefficients are recomputed only when frequency or bandwidth changes. Used only by the nasal path (synth-core).
+function klattCoefs(f, bw, sr) {
+  f = Math.max(0, Math.min(sr * 0.45, f));
+  bw = Math.max(1, bw);
+  const T = 1 / sr;
+  const C = -Math.exp(-2 * Math.PI * bw * T);
+  const B = 2 * Math.exp(-Math.PI * bw * T) * Math.cos(2 * Math.PI * f * T);
+  return [1 - B - C, B, C];
+}
+export class KlattResonator {
+  constructor() { this.y1 = 0; this.y2 = 0; this.a = 1; this.b = 0; this.c = 0; this.lastF = -1; this.lastBW = -1; }
+  setFreq(f, bw, sr) {
+    if (f === this.lastF && bw === this.lastBW) return;
+    this.lastF = f; this.lastBW = bw;
+    [this.a, this.b, this.c] = klattCoefs(f, bw, sr);
+  }
+  process(x) {
+    const y = this.a * x + this.b * this.y1 + this.c * this.y2;
+    this.y2 = this.y1; this.y1 = y;
+    return y;
+  }
+  reset() { this.y1 = 0; this.y2 = 0; }
+}
+export class KlattAntiresonator {
+  constructor() { this.x1 = 0; this.x2 = 0; this.a = 1; this.b = 0; this.c = 0; this.lastF = -1; this.lastBW = -1; }
+  setFreq(f, bw, sr) {
+    if (f === this.lastF && bw === this.lastBW) return;
+    this.lastF = f; this.lastBW = bw;
+    const [A, B, C] = klattCoefs(f, bw, sr);
+    this.a = 1 / A; this.b = -B / A; this.c = -C / A;
+  }
+  process(x) {
+    const y = this.a * x + this.b * this.x1 + this.c * this.x2;
+    this.x2 = this.x1; this.x1 = x;
+    return y;
+  }
+  reset() { this.x1 = 0; this.x2 = 0; }
+}
+
 // Derivative of the Rosenberg glottal pulse. Phase normalized to [0, 1).
 // Peak |value| is pi / (2·Tn) ~= 9.82, so we divide by 10 to keep amplitude
 // near unity.

@@ -10,7 +10,7 @@
 // `schedule` is an array of { atMs, target, transitionMs } events; the synth
 // applies them in time order. Or drive it live with setTarget()
 
-import { BandpassBiquad, glottalPulse, xorshift, softClip, lfShape, lfPulse, tiltCoef } from './dsp.js';
+import { BandpassBiquad, KlattResonator, KlattAntiresonator, glottalPulse, xorshift, softClip, lfShape, lfPulse, tiltCoef } from './dsp.js';
 
 export const PARAMS = [
   'F0', 'voicing',
@@ -26,6 +26,20 @@ export const PARAMS = [
   'tilt',           // -0.95..0.95 spectral tilt (positive = brighter)
   'effort',         // 0..1 glottal pulse shape (0=lax, 1=tense)
 ];
+
+// (sonicpi-toolchain patch) Nasal parameters (Klatt 1980 names): a nasal pole-zero pair FNP/BNP, FNZ/BNZ in
+// cascade with the excitation (resonator then antiresonator, each unity gain at 0 Hz; they cancel when FNP = FNZ
+// and BNP = BNZ), a second pair FNP2/BNP2, FNZ2/BNZ2 (the murmur's place-dependent oral side-branch zero), and
+// AN, a parallel nasal formant at FNP (fed by the excitation, like A1-A3). The nasal path runs only once a target
+// (schedule event, setTarget, initialTarget) has carried one of these keys; until then every sample is computed
+// exactly as before. Nasal parameters glide linearly on their own clock (in both the linear and the shaped mode),
+// so an event may move only them ({ nasalOnly: true }) without retiming the other parameters' transitions.
+export const NASAL_PARAMS = ['FNP', 'BNP', 'FNZ', 'BNZ', 'AN', 'FNP2', 'BNP2', 'FNZ2', 'BNZ2'];
+export const NASAL_DEFAULT = Object.freeze({
+  FNP: 250, BNP: 100, FNZ: 250, BNZ: 100, AN: 0,
+  FNP2: 1500, BNP2: 100, FNZ2: 1500, BNZ2: 100,
+});
+const hasNasal = (t) => { for (const k of NASAL_PARAMS) if (k in t) return true; return false; };
 
 export const DEFAULT = {
   F0: 120, voicing: 0,
@@ -62,6 +76,7 @@ const toEvents = (events, sr) => events.map((e) => ({
   target: e.target,
   transitionSamples: Math.max(1, Math.floor((e.transitionMs ?? 30) * sr / 1000)),
   ...(e.curve || e.params ? { curve: e.curve ?? 0, params: e.params ?? null } : {}),
+  ...(e.nasalOnly ? { nasalOnly: true } : {}),
 }));
 
 export class FormantSynth {
@@ -85,6 +100,7 @@ export class FormantSynth {
     this.bp2 = new BandpassBiquad();
     this.bp3 = new BandpassBiquad();
     this.resetSource();
+    this.initNasal(init);
 
     this.schedule = toEvents(schedule ?? [], this.sr);
     this.scheduleIdx = 0;
@@ -129,11 +145,44 @@ export class FormantSynth {
     if (done) this.moves = this.moves.filter((m) => m.keys.length && m.n < m.N);
   }
 
+  // (sonicpi-toolchain patch) nasal path state; this.nasal turns on with the first target that has a nasal key
+  initNasal(init) {
+    this.nasal = hasNasal(init);
+    for (const k of NASAL_PARAMS) if (!(k in this.current)) { this.current[k] = NASAL_DEFAULT[k]; this.target[k] = NASAL_DEFAULT[k]; }
+    this.nasalSamples = 0;
+    this.nasalIncrement = {};
+    for (const k of NASAL_PARAMS) this.nasalIncrement[k] = 0;
+    this.rnp = new KlattResonator();
+    this.rnz = new KlattAntiresonator();
+    this.rnp2 = new KlattResonator();
+    this.rnz2 = new KlattAntiresonator();
+    this.bpn = new BandpassBiquad();
+  }
+
+  // move the nasal parameters a target names to it over N samples (their own clock)
+  retargetNasal(target, N) {
+    if (!hasNasal(target)) return;
+    this.nasal = true;
+    this.nasalSamples = N;
+    for (const k of NASAL_PARAMS) {
+      if (k in target) this.target[k] = target[k];
+      this.nasalIncrement[k] = (this.target[k] - this.current[k]) / N;
+    }
+  }
+
+  // advance the nasal parameters one sample
+  stepNasal() {
+    const cur = this.current;
+    for (const k of NASAL_PARAMS) cur[k] += this.nasalIncrement[k];
+    if (--this.nasalSamples === 0) for (const k of NASAL_PARAMS) cur[k] = this.target[k];
+  }
+
   // Schedule a new target. transitionMs samples are linearly interpolated
   // from current state to the new target
   setTarget(target, transitionMs = 30) {
     if ('GS' in target) this.setSource(target);
     const N = Math.max(1, Math.floor(transitionMs * this.sr / 1000));
+    this.retargetNasal(target, N);
     if (this.shaped) { this.startMove(target, N); return; }
     this.transitionSamples = N;
     for (const k of PARAMS) {
@@ -169,6 +218,7 @@ export class FormantSynth {
     const init = initialTarget ?? {};
     this.current = { ...DEFAULT, ...init };
     this.target = { ...this.current };
+    this.initNasal(init);
     for (const k of PARAMS) this.increment[k] = 0;
     this.transitionSamples = 0;
     this.schedule = [];
@@ -308,6 +358,8 @@ export class FormantSynth {
         while (this.scheduleIdx < this.schedule.length
             && this.schedule[this.scheduleIdx].atSample <= this.sampleCounter) {
           const evt = this.schedule[this.scheduleIdx++];
+          this.retargetNasal(evt.target, evt.transitionSamples);
+          if (evt.nasalOnly) continue;      // (sonicpi-toolchain patch) moves the nasal parameters alone
           if (sourceEvent(evt.target, this.src.GS)) this.setSource(evt.target);   // the voice source in shaped mode too
           this.startMove(evt.target, evt.transitionSamples, evt.curve, evt.params);
         }
@@ -318,6 +370,8 @@ export class FormantSynth {
       while (this.scheduleIdx < this.schedule.length
           && this.schedule[this.scheduleIdx].atSample <= this.sampleCounter) {
         const evt = this.schedule[this.scheduleIdx++];
+        this.retargetNasal(evt.target, evt.transitionSamples);
+        if (evt.nasalOnly) continue;        // (sonicpi-toolchain patch) moves the nasal parameters alone
         if (sourceEvent(evt.target, this.src.GS)) this.setSource(evt.target);
         const N = evt.transitionSamples;
         this.transitionSamples = N;
@@ -336,6 +390,7 @@ export class FormantSynth {
         }
       }
       }
+      if (this.nasalSamples > 0) this.stepNasal();
 
       // Vibrato LFO modulates F0 around its target value
       this.vibratoPhase += 2 * Math.PI * cur.vibratoRate / this.sr;
@@ -367,9 +422,24 @@ export class FormantSynth {
       this.bp2.setFreq(cur.F2, cur.BW2, this.sr);
       this.bp3.setFreq(cur.F3, cur.BW3, this.sr);
 
-      const y = (this.bp1.process(exc) * cur.A1
-              +  this.bp2.process(exc) * cur.A2
-              +  this.bp3.process(exc) * cur.A3) * cur.gain * tremoloMod;
+      let y;
+      if (!this.nasal) {
+        y = (this.bp1.process(exc) * cur.A1
+          +  this.bp2.process(exc) * cur.A2
+          +  this.bp3.process(exc) * cur.A3) * cur.gain * tremoloMod;
+      } else {
+        // (sonicpi-toolchain patch) nasal pole-zero pairs in cascade before the parallel formants, AN in parallel
+        this.rnp.setFreq(cur.FNP, cur.BNP, this.sr);
+        this.rnz.setFreq(cur.FNZ, cur.BNZ, this.sr);
+        this.rnp2.setFreq(cur.FNP2, cur.BNP2, this.sr);
+        this.rnz2.setFreq(cur.FNZ2, cur.BNZ2, this.sr);
+        this.bpn.setFreq(cur.FNP, cur.BNP, this.sr);
+        const en = this.rnz2.process(this.rnp2.process(this.rnz.process(this.rnp.process(exc))));
+        y = (this.bp1.process(en) * cur.A1
+          +  this.bp2.process(en) * cur.A2
+          +  this.bp3.process(en) * cur.A3
+          +  this.bpn.process(exc) * cur.AN) * cur.gain * tremoloMod;
+      }
 
       const tilted = y - cur.tilt * this.tiltPrev;
       this.tiltPrev = y;
