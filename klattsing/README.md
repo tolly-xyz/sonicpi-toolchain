@@ -42,33 +42,51 @@ reconstruction), `rules`; and the opt-in options below (`bankPatch`, `functionWo
 | `pauseMs` | `250`, or `{",": ms, ".": ms, ..., default: 250}` | speak: silence after a phrase's punctuation (times `rate`) |
 | `accentDelta` | speak `{g: 0.1, t: 0}`, sing `{g: 0.15, t: 0.15}` | effort (`g`) and tilt (`t`) added over a stressed vowel (with `accent`) |
 | `phoneDur` | `{PHONE: [inherent, minimum]}` ms (`src/phones.js` `DUR`) | the duration table per call, merged over `DUR` (either `durations` version, speak and sing); `tools/voicelab/climb.py durations` fits it with `rules` |
-| `glottal` | `true`, or `{rd: 1, rdEffort: 6, tilt: 0, jitter: 0.7, shimmer: 4, aspMod: 1, flutter: 0}` (fields over these) (off) | an LF voice source instead of klattsch's Rosenberg pulse (a klattsch patch, below): `[GS=1] [RD=..] [RDE=..] [TL=..] [JIT=..] [SHIM=..] [AM=..] [FL=..]` after the bank and `TR`, before the voice |
+| `glottal` | `true`, or `{rd: 1, rdEffort: 6, tilt: 0, jitter: 0.5, shimmer: 5, aspMod: 1, flutter: 0, aspTilt: 0, noiseTilt: 15}` (fields over these; `null` keeps one) (off) | an LF voice source instead of klattsch's Rosenberg pulse, with Klatt's low-passed noise (a klattsch patch, below): `[GS=1] [RD=..] [RDE=..] [TL=..] [JIT=..] [SHIM=..] [AM=..] [FL=..] [AT=..] [NT=..]` after the bank and `TR`, before the voice |
 
 ### The LF voice source (`glottal`)
 
 klattsch's Rosenberg pulse closes abruptly, so its spectrum falls only ~6 dB/oct and the voice is buzzy and too
-bright (vowels 5-13 dB over Kokoro at 1-6 kHz, after levelling 200-1000 Hz). `glottal` switches the engine to a
-Liljencrants-Fant flow derivative (Fant, Liljencrants & Lin 1985) whose exponential return phase rolls the source
-off above Fa = F0 / (2 pi Ra): ~-12 dB/oct over 1-4 kHz at Rd >= 0.7. Fields (directive; engine default):
+bright; its noise is white, so fricatives, bursts and HH are brighter still. On the Kokoro corpus (long-term
+spectra of aligned phones, each class levelled at 200-1000 Hz) the base voice's vowels are 12.5 dB over Kokoro at
+2-4 kHz and 14.4 dB at 4-8 kHz, and against the vowels its fricatives are 15-19 dB too strong at 2-8 kHz, its stops up to 19.
+`glottal` switches the engine to a Liljencrants-Fant flow derivative (Fant, Liljencrants & Lin 1985) whose
+exponential return phase rolls the source off above Fa = F0 / (2 pi Ra): ~-12 dB/oct over 1-4 kHz at Rd >= 0.7, and
+low-passes the frication noise as Klatt's synthesizers do. Fields (directive; engine default when absent):
 
 - `rd` (`RD`; 1): Fant's (1995) shape parameter at effort 0.5, which sets Ra, Rk, Rg (0.3 pressed .. 1 modal ..
-  2.7 lax/breathy). Lower is brighter: relative to 200-1000 Hz, Rd 0.5 is ~6-7 dB brighter above 2 kHz than Rd 1.
+  2.7 lax/breathy). Lower is brighter: relative to 200-1000 Hz, Rd 0.5 is ~8 dB brighter at 2-4 kHz than Rd 1 (and
+  the Rosenberg pulse 12 dB). Above ~1.3 the pulse gets weaker against the breath noise, so the voice does not get
+  darker in practice.
 - `rdEffort` (`RDE`; 6): octaves Rd falls per unit of klattsch effort (`g`) above 0.5. The speak voice is g0.5 and
   accents add g0.1, so stressed vowels get Rd 0.66: a flatter tilt on stress (spectral balance as a stress cue,
   Sluijter & van Heuven 1996); shout (g0.8) is pressed, whisper (g0.25) lax. 0 decouples it.
 - `tilt` (`TL`; 0): extra tilt of the voiced source in dB at 3 kHz, a one-pole low-pass (KLSYN88's TL, Klatt &
   Klatt 1990).
 - `jitter`, `shimmer` (`JIT`, `SHIM`; 0): local cycle-to-cycle perturbation of period and amplitude in % (per-
-  period normal draws with sd = value / 1.128, so the mean absolute difference of neighbours is the value).
-- `aspMod` (`AM`; 0): pitch-synchronous aspiration: the `h` noise is scaled by the glottal flow (1 = none while
-  the glottis is closed, as Klatt & Klatt 1990 modulate breath noise), at the same mean power.
+  period normal draws with sd = value / 1.128, so the mean absolute difference of neighbours is the value). The
+  period is drawn at each glottal closure, so the closure-to-closure periods (what Praat measures) carry it:
+  Praat's local jitter / shimmer of a steady AA (h0.05) is 0.45 / 5.5 % at the defaults 0.5 / 5 (0.6 / 4.6 % at 0.7 / 4;
+  without them 0.11 / 1.9 %). Inside the corpus vowels (Praat, middle 80%) Kokoro measures 1.27 / 8.1 %, klattsch
+  1.74 / 4.2 % with none (its in-vowel F0 glides) and 1.76 / 6.2 % at 0.7 / 4, hence a low jitter and a shimmer at
+  the top of the usual 3-5 %.
+- `aspMod` (`AM`; 0): pitch-synchronous noise: while voiced, the noise (the `h` aspiration, and the frication of a
+  voiced fricative) is scaled by (1 - a) + a u, u the glottal flow over its peak and a = `aspMod` x voicing, at the
+  same mean power (Klatt 1980 and KLSYN88 halve the noise in the second half of each voiced period; turbulence follows
+  the flow). Voiceless noise (HH, S, bursts) stays steady.
 - `flutter` (`FL`; 0): KLSYN88's slow F0 wander, (FL/50)(F0/100)(sum of 12.7, 7.1, 4.7 Hz sines) Hz.
+- `noiseTilt` (`NT`; 0): the frication noise (klattsch's `(1 - voicing)` noise: fricatives, bursts, HH) through a
+  one-pole low-pass, dB down at 3 kHz (unity at DC). Klatt's noise generator "tilts down the noise spectrum by a
+  soft low-pass filter" (y = x + 0.75 y1 at 10 kHz, ~15 dB down at 3 kHz; Klatt 1980, KLSYN88); klattsch's is white.
+- `aspTilt` (`AT`; 0): the same for the aspiration (`h`) noise; left at 0 (tilting it made vowels less Kokoro-like).
 
 The pulse is scaled to the Rosenberg pulse's peak flow, so low frequencies (loudness) stay where they were and only
-the highs move; frication noise, timing and the string's phonemes are unchanged. On the 100-sentence Kokoro corpus
-(`fidelity.py --audio`, durations preset + `mitalk-bursts`): score 0.37 -> 0.56, MCD 4.79 -> 4.36 dB, mcd_static
-2.95 -> 2.07; mcd_cmn 3.73 -> 3.88 is worse (vowels now match Kokoro's tilt while stops and fricatives keep
-klattsch's bright noise, so the vowel-consonant contrast is larger than Kokoro's).
+the highs move; timing and the string's phonemes are unchanged. On the 100-sentence Kokoro corpus (`fidelity.py
+--audio`, durations preset + `mitalk-bursts`): score 0.367 -> 1.039 (spec -0.26 -> +1.65), MCD 4.79 -> 3.98 dB,
+mcd_cmn 3.73 -> 3.66, mcd_static 2.95 -> 1.50; vowels at 2-4 / 4-8 kHz +3.5 / +4.9 dB over Kokoro instead of +12.5 /
++14.4. Of that, the LF pulse alone (`noiseTilt: 0`) gives 0.575 (MCD 4.37, but mcd_cmn 3.88: darker vowels next to
+klattsch's bright noise widen the vowel-consonant contrast); the noise tilt brings the consonants along. F and SH,
+already dark in the banks, get worse (per-phone MCD +0.6 / +1.1 dB); S, T, K, P, HH, DH, V improve.
 
 Presets fitted against Kokoro by `tools/voicelab/climb.py` are spec fragments in `presets/` (merge one into a spec:
 `{"mode": "speak", "text": ..., ...preset}`): `kokoro-durations.json` (`rules`, `phoneDur`, `functionWords`) and

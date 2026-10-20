@@ -84,27 +84,45 @@ test('dsp: the LF pulse falls ~12 dB/oct above 1 kHz (the Rosenberg pulse ~6); t
   assert.equal(tiltCoef(0, 3000, 48000), 0); assert.equal(tiltCoef(-3, 3000, 48000), 0);
 });
 
-// a synth on a steady voiced target with the source directives; newCycle is wrapped to log each period
+const local = (xs) => xs.slice(1).reduce((a, x, i) => a + Math.abs(x - xs[i]), 0) / (xs.length - 1) / (xs.reduce((a, b) => a + b) / xs.length);
+// the bare excitation (v 1, no noise) at 48 kHz, F0 100: the glottal closures (where the phase crosses te, from
+// newRate's call) and each cycle's negative peak, the excitation an analysis sees
+function closures(src, secs = 3) {
+  const syn = new FormantSynth({ sampleRate: 48000 });
+  syn.setSource({ GS: 1, ...src });
+  const cur = { effort: 0.5, aspiration: 0 }, t = [], x = [];
+  let i = 0;
+  const orig = syn.newRate.bind(syn);
+  syn.newRate = () => { t.push(i + 1 - (syn.glottalPhase - syn.lf.te) / (100 * syn.cycleRate / 48000)); orig(); };
+  for (; i < 48000 * secs; i++) x.push(syn.lfSample(cur, 100, 1, 1, 0));
+  const T = t.slice(2).map((v, k) => v - t[k + 1]);
+  const peaks = [];
+  for (let k = 1; k + 1 < x.length; k++) if (x[k] < x[k - 1] && x[k] <= x[k + 1] && x[k] < -0.5 * syn.lf.Ee) peaks.push(-x[k]);
+  return { T, peaks: peaks.slice(1) };
+}
+test('engine: JIT and SHIM are local (cycle-to-cycle) jitter and shimmer in %, of the closure-to-closure periods', () => {
+  const c = closures({ JIT: 1, SHIM: 4 });
+  assert.ok(c.T.length > 250 && Math.abs(c.peaks.length - c.T.length) <= 3, `${c.T.length} periods, ${c.peaks.length} peaks`);
+  const j = 100 * local(c.T), s = 100 * local(c.peaks);
+  assert.ok(Math.abs(c.T.reduce((a, b) => a + b) / c.T.length / 480 - 1) < 0.01, 'mean period 10 ms');
+  assert.ok(j > 0.85 && j < 1.15, `jitter ${j}%`);
+  assert.ok(s > 3.4 && s < 4.8, `shimmer ${s}%`);
+  const z = closures({}, 1);
+  assert.ok(z.T.every((x) => Math.abs(x - 480) < 1e-6), 'no jitter by default');
+  assert.ok(100 * local(z.peaks) < 0.5, `no shimmer by default (${100 * local(z.peaks)}%: sampling the peak)`);
+  // the same input gives the same perturbations (deterministic renders)
+  assert.deepEqual(closures({ JIT: 1, SHIM: 4 }, 0.5), closures({ JIT: 1, SHIM: 4 }, 0.5));
+});
+
+// a synth on a steady voiced target with the source directives; newCycle is wrapped to log each cycle's shape
 function cycles(extra, ms = 3000, F0 = 100) {
   const target = { F0, voicing: 1, F1: 500, A1: 1, F2: 1500, A2: 0.5, F3: 2500, A3: 0.3, GS: 1, ...extra };
   const syn = new FormantSynth({ sampleRate: 16000, schedule: [{ atMs: 0, target, transitionMs: 1 }] });
   const log = [], orig = syn.newCycle.bind(syn);
-  syn.newCycle = (cur) => { orig(cur); log.push({ T: 1 / (F0 * syn.cycleRate), A: syn.cycleAmp, rd: syn.lf.Rd }); };
+  syn.newCycle = (cur) => { orig(cur); log.push({ A: syn.cycleAmp, rd: syn.lf.Rd }); };
   syn.process(new Float32Array(16 * ms));
   return log.slice(1);
 }
-const local = (xs) => xs.slice(1).reduce((a, x, i) => a + Math.abs(x - xs[i]), 0) / (xs.length - 1) / (xs.reduce((a, b) => a + b) / xs.length);
-test('engine: JIT and SHIM are local (cycle-to-cycle) jitter and shimmer in %', () => {
-  const c = cycles({ JIT: 1, SHIM: 4 });
-  assert.ok(c.length > 250);
-  const j = 100 * local(c.map((x) => x.T)), s = 100 * local(c.map((x) => x.A));
-  assert.ok(j > 0.85 && j < 1.15, `jitter ${j}%`);
-  assert.ok(s > 3.4 && s < 4.6, `shimmer ${s}%`);
-  const z = cycles({});
-  assert.ok(z.every((x) => x.A === 1 && Math.abs(x.T - 0.01) < 1e-12), 'none by default');
-  // the same input gives the same perturbations (deterministic renders)
-  assert.deepEqual(cycles({ JIT: 1, SHIM: 4 }, 500), cycles({ JIT: 1, SHIM: 4 }, 500));
-});
 
 test('engine: effort moves Rd by RDE octaves per unit (RD at effort 0.5)', () => {
   const rd = (extra) => cycles(extra, 200)[3].rd;
@@ -139,12 +157,31 @@ test('engine: AM gates the noise by the glottal flow while voiced, at the same m
   assert.ok(run({ effort: 0.5, aspiration: 1 }, 1).every((x) => x === 0.5), 'AM 0: steady');
 });
 
+test('engine: NT and AT low-pass the frication and the aspiration noise (dB at 3 kHz, unity at DC)', () => {
+  const syn = new FormantSynth({ sampleRate: 48000 });
+  // a tone of noise at f through lfSample (voicedGain 0): its gain after the noise filters, in dB
+  const gain = (src, f, v, h) => {
+    syn.resetSource(); syn.setSource({ GS: 1, ...src });
+    const cur = { effort: 0.5, aspiration: h }, n = 48000, xs = [];
+    for (let i = 0; i < n; i++) xs.push(syn.lfSample(cur, 100, v, 0, Math.cos(2 * Math.PI * f * i / 48000)));
+    const ref = (1 - v) * 0.35 + h * 0.5, tail = xs.slice(n / 2);
+    return 10 * Math.log10(tail.reduce((a, x) => a + x * x, 0) / tail.length / (ref * ref / 2));
+  };
+  assert.ok(Math.abs(gain({ NT: 15 }, 3000, 0, 0) + 15) < 0.05, 'frication: NT dB down at 3 kHz');
+  assert.ok(Math.abs(gain({ NT: 15 }, 20, 0, 0)) < 0.05, 'frication: unity at low frequencies');
+  assert.ok(Math.abs(gain({ NT: 15 }, 3000, 1, 1)) < 0.05, 'NT leaves the aspiration (h) noise alone');
+  assert.ok(Math.abs(gain({ AT: 10 }, 3000, 1, 1) + 10) < 0.05, 'aspiration: AT dB down at 3 kHz');
+  assert.ok(Math.abs(gain({ AT: 10 }, 3000, 0, 0)) < 0.05, 'AT leaves the frication alone');
+  assert.ok(Math.abs(gain({}, 3000, 0, 0)) < 0.05 && Math.abs(gain({}, 3000, 1, 1)) < 0.05, 'white by default');
+});
+
 test('glottal option: directives, defaults, validation; durations and timing unchanged', () => {
   const d = glottalDirs(true);
-  assert.equal(d, '[GS=1] [RD=1] [RDE=6] [TL=0] [JIT=0.7] [SHIM=4] [AM=1] [FL=0]');
-  assert.deepEqual(GLOTTAL, { rd: 1, rdEffort: 6, tilt: 0, jitter: 0.7, shimmer: 4, aspMod: 1, flutter: 0 });
-  assert.equal(glottalDirs({ rd: 1.2, tilt: 3, jitter: 0 }), '[GS=1] [RD=1.2] [RDE=6] [TL=3] [JIT=0] [SHIM=4] [AM=1] [FL=0]');
-  assert.equal(glottalDirs({ rd: 1 / 3 }), '[GS=1] [RD=0.3333] [RDE=6] [TL=0] [JIT=0.7] [SHIM=4] [AM=1] [FL=0]');
+  assert.equal(d, '[GS=1] [RD=1] [RDE=6] [TL=0] [JIT=0.5] [SHIM=5] [AM=1] [FL=0] [AT=0] [NT=15]');
+  assert.deepEqual(GLOTTAL, { rd: 1, rdEffort: 6, tilt: 0, jitter: 0.5, shimmer: 5, aspMod: 1, flutter: 0, aspTilt: 0, noiseTilt: 15 });
+  assert.equal(glottalDirs({ rd: 1.2, tilt: 3, jitter: 0, noiseTilt: 0 }), '[GS=1] [RD=1.2] [RDE=6] [TL=3] [JIT=0] [SHIM=5] [AM=1] [FL=0] [AT=0] [NT=0]');
+  assert.equal(glottalDirs({ rd: 1 / 3 }), '[GS=1] [RD=0.3333] [RDE=6] [TL=0] [JIT=0.5] [SHIM=5] [AM=1] [FL=0] [AT=0] [NT=15]');
+  assert.equal(glottalDirs({ rd: null }), d, 'null keeps the default');
   assert.equal(glottalDirs(false), ''); assert.equal(glottalDirs(undefined), '');
   assert.throws(() => glottalDirs({ rdd: 1 }), /glottal.rdd: unknown/);
   assert.throws(() => glottalDirs({ rd: '1' }), /glottal.rd: expected a number/);
@@ -155,7 +192,7 @@ test('glottal option: directives, defaults, validation; durations and timing unc
   assert.equal(speak({ ...spec, glottal: false }), plain);
   const c = compileString(g);
   assert.deepEqual(c.warnings, []);
-  assert.ok(c.schedule.every((e) => e.target.GS === 1 && e.target.RDE === 6 && e.target.SHIM === 4), 'rides in every target');
+  assert.ok(c.schedule.every((e) => e.target.GS === 1 && e.target.RDE === 6 && e.target.SHIM === 5 && e.target.NT === 15), 'rides in every target');
   assert.deepEqual(durationsOf({ ...spec, glottal: true }), durationsOf(spec));
   assert.deepEqual(timelineOf({ ...spec, glottal: true }).phones, timelineOf(spec).phones);
   const sg = { mode: 'sing', text: 'Lower the bucket', bpm: 120, notes: 'auto' };

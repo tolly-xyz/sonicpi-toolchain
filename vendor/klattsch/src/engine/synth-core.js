@@ -118,16 +118,19 @@ export class FormantSynth {
   }
 
   // (sonicpi-toolchain patch) the [GS=1] voice source: an LF glottal flow derivative (dsp.js lfShape) with
-  // KLSYN88-style spectral tilt, jitter, shimmer, flutter and pitch-synchronous aspiration noise. Its settings
+  // KLSYN88-style spectral tilt, jitter, shimmer, flutter, pitch-synchronous noise and low-passed noise. Its settings
   // ride in the schedule targets as extended directives (absent = default); without GS the synth is untouched.
   //   GS    1 = LF source (0 or absent: the Rosenberg pulse, glottalPulse)
   //   RD    LF shape Rd at effort 0.5 (Fant 1995; 0.3 tense .. 1 modal .. 2.7 lax), default 1
   //   RDE   octaves Rd falls per unit of effort above 0.5 (effort g and accents move the tilt), default 6
   //   TL    extra tilt of the voiced source, dB down at 3 kHz (KLSYN88 TL; one-pole low-pass), default 0
-  //   JIT   jitter: local (cycle-to-cycle) period perturbation in %, default 0
+  //   JIT   jitter: local (cycle-to-cycle) perturbation of the closure-to-closure period in %, default 0
   //   SHIM  shimmer: local cycle-to-cycle amplitude perturbation in %, default 0
-  //   AM    aspiration noise modulated by the glottal flow, 0..1 (0 steady, 1 noise follows the flow), default 0
+  //   AM    noise modulated by the glottal flow while voiced, 0..1 (0 steady; depth AM * voicing), default 0
   //   FL    flutter, Klatt & Klatt 1990: slow F0 wander (FL/50)(F0/100)(sum of 12.7, 7.1, 4.7 Hz sines) Hz, default 0
+  //   NT    frication noise ((1 - voicing) noise: fricatives, bursts, HH) low-passed, dB down at 3 kHz, default 0
+  //         (Klatt's noise generator: "a soft low-pass filter", y = x + 0.75 y1 at 10 kHz, ~15 dB at 3 kHz)
+  //   AT    aspiration (h) noise low-passed, dB down at 3 kHz, default 0
   resetSource() {
     this.src = { GS: 0, RD: 1, RDE: 6, TL: 0, JIT: 0, SHIM: 0, AM: 0, FL: 0, AT: 0, NT: 0 };
     this.lfCache = this.lfCache ?? new Map();
@@ -137,8 +140,8 @@ export class FormantSynth {
     this.flow = 0;           // running glottal flow in the cycle (for pitch-synchronous noise)
     this.tlA = 0;            // TL one-pole coefficient
     this.tlPrev = 0;
-    this.atA = 0; this.atPrev = 0;   // AT: aspiration-noise low-pass
-    this.ntA = 0; this.ntPrev = 0;   // NT: frication-noise low-pass
+    this.atA = 0; this.atPrev = 0;   // AT: aspiration-noise one-pole low-pass (coefficient, state)
+    this.ntA = 0; this.ntPrev = 0;   // NT: frication-noise one-pole low-pass
     this.jrng = 0x2545F491 | 0;
   }
 
