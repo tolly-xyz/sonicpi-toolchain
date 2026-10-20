@@ -1,0 +1,556 @@
+diff --git a/klattsing/README.md b/klattsing/README.md
+index 1d9ccc6..591693f 100644
+--- a/klattsing/README.md
++++ b/klattsing/README.md
+@@ -26,7 +26,7 @@ per syllable, or `"auto"`), `bpm`, `melody` (auto: `scale`, `long`, `short`, `la
+ (formant glide ms, a klattsch patch), `aspiration` (breath after P/T/K, default on), `accent`,
+ `dynamics` (loudness by stress, a klattsch patch; off by default), `durations` (`"v0"` for the first
+ reconstruction), `rules`; and the opt-in options below (`bankPatch`, `functionWords`, `intonation`,
+-`breathLevel`, `breathVoicing`, `pauseMs`, `accentDelta`).
++`breathLevel`, `breathVoicing`, `pauseMs`, `accentDelta`, `phoneDur`, `glottal`).
+ 
+ ## Options for optimizers (all opt-in; leaving them out gives exactly the strings from before)
+ 
+@@ -42,6 +42,33 @@ reconstruction), `rules`; and the opt-in options below (`bankPatch`, `functionWo
+ | `pauseMs` | `250`, or `{",": ms, ".": ms, ..., default: 250}` | speak: silence after a phrase's punctuation (times `rate`) |
+ | `accentDelta` | speak `{g: 0.1, t: 0}`, sing `{g: 0.15, t: 0.15}` | effort (`g`) and tilt (`t`) added over a stressed vowel (with `accent`) |
+ | `phoneDur` | `{PHONE: [inherent, minimum]}` ms (`src/phones.js` `DUR`) | the duration table per call, merged over `DUR` (either `durations` version, speak and sing); `tools/voicelab/climb.py durations` fits it with `rules` |
++| `glottal` | `true`, or `{rd: 1, rdEffort: 6, tilt: 0, jitter: 0.7, shimmer: 4, aspMod: 1, flutter: 0}` (fields over these) (off) | an LF voice source instead of klattsch's Rosenberg pulse (a klattsch patch, below): `[GS=1] [RD=..] [RDE=..] [TL=..] [JIT=..] [SHIM=..] [AM=..] [FL=..]` after the bank and `TR`, before the voice |
++
++### The LF voice source (`glottal`)
++
++klattsch's Rosenberg pulse closes abruptly, so its spectrum falls only ~6 dB/oct and the voice is buzzy and too
++bright (vowels 5-13 dB over Kokoro at 1-6 kHz, after levelling 200-1000 Hz). `glottal` switches the engine to a
++Liljencrants-Fant flow derivative (Fant, Liljencrants & Lin 1985) whose exponential return phase rolls the source
++off above Fa = F0 / (2 pi Ra): ~-12 dB/oct over 1-4 kHz at Rd >= 0.7. Fields (directive; engine default):
++
++- `rd` (`RD`; 1): Fant's (1995) shape parameter at effort 0.5, which sets Ra, Rk, Rg (0.3 pressed .. 1 modal ..
++  2.7 lax/breathy). Lower is brighter: relative to 200-1000 Hz, Rd 0.5 is ~6-7 dB brighter above 2 kHz than Rd 1.
++- `rdEffort` (`RDE`; 6): octaves Rd falls per unit of klattsch effort (`g`) above 0.5. The speak voice is g0.5 and
++  accents add g0.1, so stressed vowels get Rd 0.66: a flatter tilt on stress (spectral balance as a stress cue,
++  Sluijter & van Heuven 1996); shout (g0.8) is pressed, whisper (g0.25) lax. 0 decouples it.
++- `tilt` (`TL`; 0): extra tilt of the voiced source in dB at 3 kHz, a one-pole low-pass (KLSYN88's TL, Klatt &
++  Klatt 1990).
++- `jitter`, `shimmer` (`JIT`, `SHIM`; 0): local cycle-to-cycle perturbation of period and amplitude in % (per-
++  period normal draws with sd = value / 1.128, so the mean absolute difference of neighbours is the value).
++- `aspMod` (`AM`; 0): pitch-synchronous aspiration: the `h` noise is scaled by the glottal flow (1 = none while
++  the glottis is closed, as Klatt & Klatt 1990 modulate breath noise), at the same mean power.
++- `flutter` (`FL`; 0): KLSYN88's slow F0 wander, (FL/50)(F0/100)(sum of 12.7, 7.1, 4.7 Hz sines) Hz.
++
++The pulse is scaled to the Rosenberg pulse's peak flow, so low frequencies (loudness) stay where they were and only
++the highs move; frication noise, timing and the string's phonemes are unchanged. On the 100-sentence Kokoro corpus
++(`fidelity.py --audio`, durations preset + `mitalk-bursts`): score 0.37 -> 0.56, MCD 4.79 -> 4.36 dB, mcd_static
++2.95 -> 2.07; mcd_cmn 3.73 -> 3.88 is worse (vowels now match Kokoro's tilt while stops and fricatives keep
++klattsch's bright noise, so the vowel-consonant contrast is larger than Kokoro's).
+ 
+ Presets fitted against Kokoro by `tools/voicelab/climb.py` are spec fragments in `presets/` (merge one into a spec:
+ `{"mode": "speak", "text": ..., ...preset}`): `kokoro-durations.json` (`rules`, `phoneDur`, `functionWords`) and
+diff --git a/klattsing/src/compile.js b/klattsing/src/compile.js
+index c9fb08b..92db304 100644
+--- a/klattsing/src/compile.js
++++ b/klattsing/src/compile.js
+@@ -35,6 +35,9 @@ export const INTONATION = { accent: 2, finalFall: 3, declination: 0, questionRis
+ export const ACCENT_DELTA = { speak: { g: 0.1, t: 0 }, sing: { g: 0.15, t: 0.15 } };    // effort/tilt on stress 1
+ export const PAUSE_MS = 250;   // speak: silence after a phrase's punctuation (times rate)
+ export const BREATH_LEVEL = 1; // aspiration: "breath": klattsch aspiration (h) during the breath
++// glottal: the LF voice source (klattsch [GS=1], a patch): option field -> directive, and the values `true` gives
++export const GLOTTAL_KEYS = { rd: 'RD', rdEffort: 'RDE', tilt: 'TL', jitter: 'JIT', shimmer: 'SHIM', aspMod: 'AM', flutter: 'FL' };
++export const GLOTTAL = { rd: 1, rdEffort: 6, tilt: 0, jitter: 0.7, shimmer: 4, aspMod: 1, flutter: 0 };
+ 
+ // lookup + syllables, cached per text: durationsOf sees the same sentences thousands of times
+ const parsed = new Map();
+@@ -78,9 +81,21 @@ const av = (s, o) => (!o.dynamics ? '' : `[AV=${(o.dynamics === true ? DYNAMICS
+ // opts: { bank (name or inline bank), bankPatch, transition, aspiration (true | false | "breath"), accent (true),
+ // dynamics (true | {stress: gain}; off by default until voicelab says otherwise), voice }
+ const voiceOf = (o) => VOICES[o.voice] ?? o.voice ?? VOICES.speak;
++// o.glottal: true (GLOTTAL) or { rd, rdEffort, tilt, jitter, shimmer, aspMod, flutter } over GLOTTAL -> klattsch directives
++export function glottalDirs(g) {
++  if (!g) return '';
++  if (g !== true && (typeof g !== 'object' || Array.isArray(g))) throw new Error(`glottal: expected true or an object, got ${JSON.stringify(g)}`);
++  const x = merged(GLOTTAL, g === true ? {} : g);
++  for (const k of Object.keys(x)) {
++    if (!(k in GLOTTAL_KEYS)) throw new Error(`glottal.${k}: unknown (${Object.keys(GLOTTAL_KEYS).join(', ')})`);
++    if (typeof x[k] !== 'number' || !Number.isFinite(x[k])) throw new Error(`glottal.${k}: expected a number, got ${JSON.stringify(x[k])}`);
++  }
++  const num = (v) => String(Math.round(v * 1e4) / 1e4);
++  return ['[GS=1]', ...Object.entries(GLOTTAL_KEYS).map(([k, d]) => `[${d}=${num(x[k])}]`)].join(' ');
++}
+ function prefix(o) {
+   const bank = bankName(o);
+-  return [bank ? `[bank=${bank}]` : '', o.transition ? `[TR=${o.transition}]` : '', voiceOf(o)].filter(Boolean).join(' ');
++  return [bank ? `[bank=${bank}]` : '', o.transition ? `[TR=${o.transition}]` : '', glottalDirs(o.glottal), voiceOf(o)].filter(Boolean).join(' ');
+ }
+ const asp = (s, o) => (o.aspiration !== false && s.aspMs ? `r${f1(s.aspMs)} HH ` : '');
+ // the klattsch aspiration (h) a voice string leaves set, so "breath" can restore it
+diff --git a/klattsing/test/glottal.test.js b/klattsing/test/glottal.test.js
+new file mode 100644
+index 0000000..8f070c4
+--- /dev/null
++++ b/klattsing/test/glottal.test.js
+@@ -0,0 +1,161 @@
++// glottal: the opt-in LF voice source (klattsch [GS=1] and its directives, a patch to the vendored engine) and the
++// klattsing option that writes them. Without GS the engine renders exactly what it rendered before the patch.
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { readFileSync } from 'node:fs';
++import { createHash } from 'node:crypto';
++import { speak, sing, toKlattsch, glottalDirs, GLOTTAL, durationsOf } from '../src/compile.js';
++import { timelineOf } from '../src/timeline.js';
++import { compileString, renderToBuffer, FormantSynth } from '../../vendor/klattsch/src/engine/index.js';
++import { lfShape, lfPulse, glottalPulse, tiltCoef } from '../../vendor/klattsch/src/engine/dsp.js';
++
++const REF = JSON.parse(readFileSync(new URL('./reference.fixture.json', import.meta.url), 'utf8'));
++const render = (s, sr = 16000) => { const c = compileString(s); return renderToBuffer({ sampleRate: sr, schedule: c.schedule, totalMs: c.totalMs }); };
++const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
++
++// sha1 of the 16 kHz Float32 renders of every fixture string (all voices; banks/*.json registered, as importing
++// timeline.js does), captured with the engine before the patch (HEAD e0351f1)
++const AUDIO_BEFORE = 'b169fd9582a85fb4ee7834428f4ba4a19b51e49a';
++test('engine: without GS every fixture string renders the same samples as before the patch', () => {
++  const h = createHash('sha1');
++  for (const { out } of REF) {
++    const c = compileString(out);
++    for (const v of c.voices) {
++      if (!v.schedule.length) continue;
++      h.update(Buffer.from(renderToBuffer({ sampleRate: 16000, schedule: v.schedule, totalMs: v.totalMs }).buffer));
++    }
++  }
++  assert.equal(h.digest('hex'), AUDIO_BEFORE);
++});
++
++test('engine: [GS=0], and [GS=1] reset by a bare [GS], fall back to the Rosenberg pulse', () => {
++  const s = 'b110 r120 L OW ER DH AH B AH K AH T';
++  const plain = render(s);
++  assert.ok(same(render(`[GS=0] [RD=0.5] [JIT=3] ${s}`), plain), '[GS=0] is inert');
++  const lf = render(`[GS=1] ${s}`);
++  assert.ok(!same(lf, plain), 'GS=1 changes the sound');
++  // LF for the first phoneme only, then back: identical to plain from shortly after the switch
++  const mixed = render(`[GS=1] b110 r120 L [GS] OW ER DH AH B AH K AH T`);
++  assert.equal(mixed.length, plain.length);
++  assert.ok(!same(mixed.subarray(0, 1000), plain.subarray(0, 1000)));
++});
++
++test('dsp: LF shapes (Fant, Liljencrants & Lin 1985; Rd after Fant 1995)', () => {
++  for (const rd of [0.3, 0.5, 0.7, 1, 1.5, 2, 2.7]) {
++    const s = lfShape(rd), N = 20000;
++    let flow = 0, peak = 0, minE = 0;
++    for (let i = 0; i < N; i++) { const e = lfPulse((i + 0.5) / N, s); flow += e / N; peak = Math.max(peak, flow); minE = Math.min(minE, e); }
++    assert.ok(Math.abs(flow) < 1e-6, `Rd ${rd}: no net flow (${flow})`);
++    assert.ok(Math.abs(peak - 0.1) < 1e-3, `Rd ${rd}: peak flow 0.1 like glottalPulse (${peak})`);
++    // the negative peak is Ee at te (for lax shapes, Rk > 0.5, the open-phase sine bottoms out just before te)
++    assert.ok(-minE >= s.Ee * (1 - 1e-3) && -minE < s.Ee * (rd > 2 ? 1.05 : 1.001), `Rd ${rd}: negative peak ${-minE} vs Ee ${s.Ee}`);
++    assert.ok(Math.abs(lfPulse(s.te, s) + s.Ee) < 1e-9 * s.Ee && Math.abs(lfPulse(s.te - 1e-12, s) + s.Ee) < 1e-6 * s.Ee, 'continuous at te');
++    // Rd = U0 / (Ee T0) / 0.11 (Fant 1995; his Ra/Rk/Rg regressions hold it within ~15%)
++    const rdBack = (0.1 / s.Ee) / 0.11;
++    assert.ok(Math.abs(rdBack / rd - 1) < 0.15, `Rd ${rd}: U0/Ee gives Rd ${rdBack}`);
++    assert.ok(s.tp < s.te && s.te < 1 && s.ta > 0, `Rd ${rd}: timing`);
++    assert.ok(Math.abs(lfPulse(0, s)) < 1e-12 && Math.abs(lfPulse(1 - 1e-9, s)) < 1e-6 * s.Ee, 'starts and ends at 0');
++  }
++  const m = lfShape(1);
++  assert.ok(Math.abs(m.tp - 0.484) < 0.002 && Math.abs(m.te - 0.65) < 0.002 && Math.abs(m.ta - 0.038) < 1e-6, JSON.stringify(m));
++  assert.equal(lfShape(0.1).Rd, 0.3); assert.equal(lfShape(9).Rd, 2.7);
++});
++
++// harmonic slope of one period of a pulse between 1 and 4 kHz at F0 = 100 Hz, dB per octave
++function slope(f) {
++  const N = 4096, xs = [], ys = [];
++  for (let k = 10; k <= 40; k++) {
++    let re = 0, im = 0;
++    for (let i = 0; i < N; i++) { const t = (i + 0.5) / N, v = f(t); re += v * Math.cos(2 * Math.PI * k * t); im -= v * Math.sin(2 * Math.PI * k * t); }
++    xs.push(Math.log2(k)); ys.push(10 * Math.log10(re * re + im * im));
++  }
++  const mx = xs.reduce((a, b) => a + b) / xs.length, my = ys.reduce((a, b) => a + b) / ys.length;
++  let sxy = 0, sxx = 0; xs.forEach((x, i) => { sxy += (x - mx) * (ys[i] - my); sxx += (x - mx) ** 2; });
++  return sxy / sxx;
++}
++test('dsp: the LF pulse falls ~12 dB/oct above 1 kHz (the Rosenberg pulse ~6); tiltCoef gives TL dB at 3 kHz', () => {
++  assert.ok(Math.abs(slope((t) => glottalPulse(t, 0.5)) + 6) < 1.5);
++  for (const rd of [0.7, 1, 2]) { const s = lfShape(rd), d = slope((t) => lfPulse(t, s)); assert.ok(d < -10.5 && d > -13.5, `Rd ${rd}: ${d}`); }
++  for (const [db, sr] of [[3, 48000], [10, 48000], [20, 16000]]) {
++    const a = tiltCoef(db, 3000, sr), w = 2 * Math.PI * 3000 / sr;
++    const g = (1 - a) ** 2 / (1 - 2 * a * Math.cos(w) + a * a);
++    assert.ok(Math.abs(-10 * Math.log10(g) - db) < 1e-9 && a > 0 && a < 1, `${db} dB at ${sr}`);
++  }
++  assert.equal(tiltCoef(0, 3000, 48000), 0); assert.equal(tiltCoef(-3, 3000, 48000), 0);
++});
++
++// a synth on a steady voiced target with the source directives; newCycle is wrapped to log each period
++function cycles(extra, ms = 3000, F0 = 100) {
++  const target = { F0, voicing: 1, F1: 500, A1: 1, F2: 1500, A2: 0.5, F3: 2500, A3: 0.3, GS: 1, ...extra };
++  const syn = new FormantSynth({ sampleRate: 16000, schedule: [{ atMs: 0, target, transitionMs: 1 }] });
++  const log = [], orig = syn.newCycle.bind(syn);
++  syn.newCycle = (cur) => { orig(cur); log.push({ T: 1 / (F0 * syn.cycleRate), A: syn.cycleAmp, rd: syn.lf.Rd }); };
++  syn.process(new Float32Array(16 * ms));
++  return log.slice(1);
++}
++const local = (xs) => xs.slice(1).reduce((a, x, i) => a + Math.abs(x - xs[i]), 0) / (xs.length - 1) / (xs.reduce((a, b) => a + b) / xs.length);
++test('engine: JIT and SHIM are local (cycle-to-cycle) jitter and shimmer in %', () => {
++  const c = cycles({ JIT: 1, SHIM: 4 });
++  assert.ok(c.length > 250);
++  const j = 100 * local(c.map((x) => x.T)), s = 100 * local(c.map((x) => x.A));
++  assert.ok(j > 0.85 && j < 1.15, `jitter ${j}%`);
++  assert.ok(s > 3.4 && s < 4.6, `shimmer ${s}%`);
++  const z = cycles({});
++  assert.ok(z.every((x) => x.A === 1 && Math.abs(x.T - 0.01) < 1e-12), 'none by default');
++  // the same input gives the same perturbations (deterministic renders)
++  assert.deepEqual(cycles({ JIT: 1, SHIM: 4 }, 500), cycles({ JIT: 1, SHIM: 4 }, 500));
++});
++
++test('engine: effort moves Rd by RDE octaves per unit (RD at effort 0.5)', () => {
++  const rd = (extra) => cycles(extra, 200)[3].rd;
++  assert.equal(rd({ effort: 0.5 }), 1);
++  assert.ok(Math.abs(rd({ effort: 0.6 }) - 2 ** -0.6) < 1e-3);
++  assert.ok(Math.abs(rd({ effort: 0.6, RDE: 2, RD: 1.5 }) - 1.5 * 2 ** -0.2) < 1e-3);
++  assert.equal(rd({ effort: 0.9, RDE: 0, RD: 0.8 }), 0.8);
++  assert.equal(rd({ effort: 1 }), 0.3, 'clamped to the LF range');
++});
++
++test('engine: AM gates the aspiration noise by the glottal flow, at the same mean power', () => {
++  // voicing 0 and constant "noise" 1: lfSample returns the noise terms only
++  const syn = new FormantSynth({ sampleRate: 48000 });
++  syn.setSource({ GS: 1, AM: 1 });
++  const cur = { effort: 0.5, aspiration: 1 }, n = 48000 / 100;
++  const asp = [];
++  for (let i = 0; i < 4 * n; i++) asp.push(syn.lfSample(cur, 100, 0, 1, 1) - 0.35);
++  const last = asp.slice(3 * n), L = syn.lf;
++  const ms = last.reduce((a, x) => a + x * x, 0) / n;
++  assert.ok(Math.abs(ms - 0.25) < 0.01, `mean square ${ms} (0.5^2 unmodulated)`);
++  const closed = last.slice(Math.ceil((L.te + 5 * L.ta) * n));
++  assert.ok(closed.every((x) => Math.abs(x) < 0.02), 'no noise in the closed phase');
++  syn.setSource({ GS: 1, AM: 0 });
++  assert.equal(syn.lfSample(cur, 100, 0, 1, 1) - 0.35, 0.5, 'AM 0: steady');
++});
++
++test('glottal option: directives, defaults, validation; durations and timing unchanged', () => {
++  const d = glottalDirs(true);
++  assert.equal(d, '[GS=1] [RD=1] [RDE=6] [TL=0] [JIT=0.7] [SHIM=4] [AM=1] [FL=0]');
++  assert.deepEqual(GLOTTAL, { rd: 1, rdEffort: 6, tilt: 0, jitter: 0.7, shimmer: 4, aspMod: 1, flutter: 0 });
++  assert.equal(glottalDirs({ rd: 1.2, tilt: 3, jitter: 0 }), '[GS=1] [RD=1.2] [RDE=6] [TL=3] [JIT=0] [SHIM=4] [AM=1] [FL=0]');
++  assert.equal(glottalDirs({ rd: 1 / 3 }), '[GS=1] [RD=0.3333] [RDE=6] [TL=0] [JIT=0.7] [SHIM=4] [AM=1] [FL=0]');
++  assert.equal(glottalDirs(false), ''); assert.equal(glottalDirs(undefined), '');
++  assert.throws(() => glottalDirs({ rdd: 1 }), /glottal.rdd: unknown/);
++  assert.throws(() => glottalDirs({ rd: '1' }), /glottal.rd: expected a number/);
++  assert.throws(() => glottalDirs([1]), /expected true or an object/);
++  const spec = { mode: 'speak', text: 'Lower the bucket, please.', bank: 'mitalk-bursts', transition: 60 };
++  const plain = speak(spec), g = speak({ ...spec, glottal: true });
++  assert.equal(g, plain.replace('[TR=60] ', `[TR=60] ${d} `), 'after the bank and TR, before the voice');
++  assert.equal(speak({ ...spec, glottal: false }), plain);
++  const c = compileString(g);
++  assert.deepEqual(c.warnings, []);
++  assert.ok(c.schedule.every((e) => e.target.GS === 1 && e.target.RDE === 6 && e.target.SHIM === 4), 'rides in every target');
++  assert.deepEqual(durationsOf({ ...spec, glottal: true }), durationsOf(spec));
++  assert.deepEqual(timelineOf({ ...spec, glottal: true }).phones, timelineOf(spec).phones);
++  const sg = { mode: 'sing', text: 'Lower the bucket', bpm: 120, notes: 'auto' };
++  assert.ok(sing({ ...sg, glottal: { rd: 1.4 } }).startsWith('[GS=1] [RD=1.4] '));
++  for (const { spec: s, out } of REF.slice(0, 20)) assert.equal(toKlattsch({ ...s, glottal: false }), out);
++  // renders, differs from the Rosenberg voice, and keeps a similar level
++  const a = render(plain, 16000), b = render(g, 16000);
++  const rms = (x) => Math.sqrt(x.reduce((s, v) => s + v * v, 0) / x.length);
++  assert.equal(a.length, b.length);
++  assert.ok(!same(a, b) && Math.abs(20 * Math.log10(rms(b) / rms(a))) < 3, `${rms(a)} ${rms(b)}`);
++});
+diff --git a/tools/voicelab/pairs.py b/tools/voicelab/pairs.py
+index d47ac62..b5f5f37 100644
+--- a/tools/voicelab/pairs.py
++++ b/tools/voicelab/pairs.py
+@@ -71,7 +71,7 @@ def render(cfg, words, path):
+         sf.write(path, np.concatenate(parts), sr); return
+     specs = []
+     for i, w in enumerate(words):
+-        base = {k: v for k, v in cfg.items() if k in ("bank", "transition", "aspiration", "voice", "rules", "accent", "gate", "hold", "durations", "dynamics")}
++        base = {k: v for k, v in cfg.items() if k in ("bank", "transition", "aspiration", "voice", "rules", "accent", "gate", "hold", "durations", "dynamics", "glottal")}
+         if cfg.get("mode", "speak") == "sing":
+             nsyl = 2 if NUM[i] == "seven" else 1
+             notes = [["E2", 4 // nsyl]] * nsyl + [["r", 2], ["G2", 8]]
+diff --git a/vendor/klattsch/VENDORED b/vendor/klattsch/VENDORED
+index a49c071..c3d67a3 100644
+--- a/vendor/klattsch/VENDORED
++++ b/vendor/klattsch/VENDORED
+@@ -2,3 +2,4 @@ tgies/klattsch @ 63dc2c6 (MIT), vendored with patches:
+   src/engine/sequencer.js: [TR=ms] sets the formant transition into steady phonemes (default 35 ms, at most 40% of the phoneme; with TR, up to 90%)
+   src/engine/sequencer.js: [AV=x] scales loudness (the synth's gain, default 3.5) and glides with the phoneme's transition
+   src/engine/sequencer.js: a stop's bank entry may set burstMs (default 25 ms for all)
++  src/engine/dsp.js, src/engine/synth-core.js: [GS=1] an LF (Liljencrants-Fant) voice source instead of the Rosenberg pulse: lfShape(Rd) (Fant 1995), [RD=x] [RDE=oct/effort] shape and its effort coupling, [TL=dB at 3 kHz] one-pole tilt, [JIT=%] [SHIM=%] local jitter/shimmer, [AM=0..1] aspiration noise scaled by the glottal flow, [FL=x] flutter (Klatt & Klatt 1990); without GS (or GS=0) every sample is as before
+diff --git a/vendor/klattsch/src/engine/dsp.js b/vendor/klattsch/src/engine/dsp.js
+index 9631806..5ff03e3 100644
+--- a/vendor/klattsch/src/engine/dsp.js
++++ b/vendor/klattsch/src/engine/dsp.js
+@@ -60,6 +60,95 @@ export function glottalPulse(phase, effort = 0.5) {
+   return 0;
+ }
+ 
++// (sonicpi-toolchain patch) Liljencrants-Fant glottal flow derivative, used only with [GS=1].
++//
++// Fant, Liljencrants & Lin (1985), "A four-parameter model of glottal flow", STL-QPSR 26(4): over one period
++// (time t in periods, T0 = 1)
++//   open phase    0 <= t < te:  E(t) = E0 exp(alpha t) sin(pi t / tp)
++//   return phase te <= t < 1:   E(t) = -(Ee / (eps ta)) (exp(-eps (t - te)) - exp(-eps (1 - te)))
++// with eps ta = 1 - exp(-eps (1 - te)) and alpha such that the flow returns to zero (no net flow per period).
++// The return phase is a first-order low-pass on the source spectrum above Fa = F0 / (2 pi ta): the LF pulse's
++// spectral tilt. The timing comes from one shape parameter, Rd (Fant 1995, "The LF-model revisited", STL-QPSR
++// 36(2-3), eqs. for Ra, Rk, Rg; valid 0.3..2.7): Rd ~0.3-0.7 tense/pressed, ~1 modal, 2-2.7 lax/breathy.
++//   Ra = (-1 + 4.8 Rd) / 100, Rk = (22.4 + 11.8 Rd) / 100, Rg = Rk / (4 (0.11 Rd / (0.5 + 1.2 Rk) - Ra))
++//   tp = 1 / (2 Rg), te = tp (1 + Rk), ta = Ra
++// The pulse is scaled to a peak flow of 0.1 per period, the peak flow of glottalPulse() above, so low frequencies
++// keep about the Rosenberg pulse's level and Rd moves the highs. Also returned: mean and mean square of the
++// normalized flow u = U / U0 over a period (for pitch-synchronous noise), and the shape's timing.
++export const LF_RD_MIN = 0.3, LF_RD_MAX = 2.7;
++export function lfShape(rd) {
++  const Rd = rd < LF_RD_MIN ? LF_RD_MIN : rd > LF_RD_MAX ? LF_RD_MAX : rd;
++  const Ra = (-1 + 4.8 * Rd) / 100;
++  const Rk = (22.4 + 11.8 * Rd) / 100;
++  const Rg = Rk / (4 * (0.11 * Rd / (0.5 + 1.2 * Rk) - Ra));
++  const tp = 1 / (2 * Rg), te = tp * (1 + Rk), ta = Ra, tr = 1 - te;
++  const wg = Math.PI / tp;
++  // eps: eps ta = 1 - exp(-eps tr) (Newton from 1/ta; converges in a few steps)
++  let eps = 1 / ta;
++  for (let i = 0; i < 50; i++) {
++    const ex = Math.exp(-eps * tr);
++    const f = eps * ta - 1 + ex, d = ta - tr * ex;
++    const step = f / d;
++    eps -= step;
++    if (Math.abs(step) < 1e-12 * eps) break;
++  }
++  // with Ee = 1: flow removed by the return phase, and the flow at te left by the open phase (a function of alpha)
++  const exr = Math.exp(-eps * tr);
++  const retFlow = (1 / (eps * ta)) * ((1 - exr) / eps - tr * exr);
++  const sinTe = Math.sin(wg * te), cosTe = Math.cos(wg * te);
++  const openFlow = (a) => {
++    const e0 = -1 / (Math.exp(a * te) * sinTe);
++    return e0 * (Math.exp(a * te) * (a * sinTe - wg * cosTe) + wg) / (a * a + wg * wg);
++  };
++  // openFlow falls as alpha grows: bisection on a bracket around the root
++  let lo = -20, hi = 20;
++  while (openFlow(lo) < retFlow && lo > -1e4) lo *= 2;
++  while (openFlow(hi) > retFlow && hi < 1e4) hi *= 2;
++  for (let i = 0; i < 200; i++) {
++    const mid = 0.5 * (lo + hi);
++    if (openFlow(mid) > retFlow) lo = mid; else hi = mid;
++    if (hi - lo < 1e-12) break;
++  }
++  const alpha = 0.5 * (lo + hi);
++  const E0 = -1 / (Math.exp(alpha * te) * sinTe);
++  const U0 = E0 * wg * (Math.exp(alpha * tp) + 1) / (alpha * alpha + wg * wg);   // the flow at tp, its peak
++  const k = 0.1 / U0;
++  const s = { Rd, tp, te, ta, eps, alpha, wg, E0: E0 * k, Ee: k, retTail: exr, uMean: 0, uSq: 0 };
++  // flow statistics by the analytic flow (open phase) and its return-phase decay, 2000 points
++  const N = 2000;
++  let m = 0, q = 0;
++  const Ute = openFlow(alpha) * k;
++  for (let i = 0; i < N; i++) {
++    const t = (i + 0.5) / N;
++    let U;
++    if (t < te) U = s.E0 * (Math.exp(alpha * t) * (alpha * Math.sin(wg * t) - wg * Math.cos(wg * t)) + wg) / (alpha * alpha + wg * wg);
++    else {
++      const x = t - te;
++      U = Ute - (k / (eps * ta)) * ((1 - Math.exp(-eps * x)) / eps - x * exr);
++    }
++    const u = U < 0 ? 0 : U / 0.1;
++    m += u; q += u * u;
++  }
++  s.uMean = m / N; s.uSq = q / N;
++  return s;
++}
++
++// The LF flow derivative at phase t (0..1) of a shape from lfShape()
++export function lfPulse(t, s) {
++  if (t < s.te) return s.E0 * Math.exp(s.alpha * t) * Math.sin(s.wg * t);
++  return -(s.Ee / (s.eps * s.ta)) * (Math.exp(-s.eps * (t - s.te)) - s.retTail);
++}
++
++// One-pole low-pass coefficient a (y = (1 - a) x + a y1, unity gain at DC) that attenuates by `db` at `hz`:
++// KLSYN88's spectral tilt TL, "dB down at 3 kHz" (Klatt & Klatt 1990). 0 for db <= 0.
++export function tiltCoef(db, hz, sr) {
++  if (!(db > 0)) return 0;
++  const G = Math.pow(10, -db / 10), c = Math.cos(2 * Math.PI * Math.min(hz, sr * 0.49) / sr);
++  // (1 - a)^2 = G (1 - 2 a c + a^2)  ->  (1 - G) a^2 - 2 (1 - G c) a + (1 - G) = 0, smaller root
++  const A = 1 - G, B = 1 - G * c;
++  return (B - Math.sqrt(Math.max(0, B * B - A * A))) / A;
++}
++
+ // 32-bit xorshift LFSR
+ export function xorshift(state) {
+   let x = state | 0;
+diff --git a/vendor/klattsch/src/engine/index.js b/vendor/klattsch/src/engine/index.js
+index cbb18b7..ce90ca8 100644
+--- a/vendor/klattsch/src/engine/index.js
++++ b/vendor/klattsch/src/engine/index.js
+@@ -17,7 +17,7 @@
+ //   ./sequencer.js    - text-to-schedule compiler
+ //   ./wav.js          - WAV encoder
+ 
+-export { BandpassBiquad, glottalPulse, xorshift, softClip } from './dsp.js';
++export { BandpassBiquad, glottalPulse, xorshift, softClip, lfShape, lfPulse, tiltCoef } from './dsp.js';
+ export { FormantSynth, PARAMS, DEFAULT, renderToBuffer } from './synth-core.js';
+ export { phonemes, PHONEME_KEYS } from './phonemes.js';
+ export { tokenize, compile, compileString } from './sequencer.js';
+diff --git a/vendor/klattsch/src/engine/synth-core.js b/vendor/klattsch/src/engine/synth-core.js
+index 6decea1..7ea7e08 100644
+--- a/vendor/klattsch/src/engine/synth-core.js
++++ b/vendor/klattsch/src/engine/synth-core.js
+@@ -10,7 +10,7 @@
+ // `schedule` is an array of { atMs, target, transitionMs } events; the synth
+ // applies them in time order. Or drive it live with setTarget()
+ 
+-import { BandpassBiquad, glottalPulse, xorshift, softClip } from './dsp.js';
++import { BandpassBiquad, glottalPulse, xorshift, softClip, lfShape, lfPulse, tiltCoef } from './dsp.js';
+ 
+ export const PARAMS = [
+   'F0', 'voicing',
+@@ -62,6 +62,7 @@ export class FormantSynth {
+     this.bp1 = new BandpassBiquad();
+     this.bp2 = new BandpassBiquad();
+     this.bp3 = new BandpassBiquad();
++    this.resetSource();
+ 
+     this.schedule = (schedule ?? []).map(e => ({
+       atSample: Math.floor((e.atMs ?? 0) * this.sr / 1000),
+@@ -75,6 +76,7 @@ export class FormantSynth {
+   // Schedule a new target. transitionMs samples are linearly interpolated
+   // from current state to the new target
+   setTarget(target, transitionMs = 30) {
++    if ('GS' in target) this.setSource(target);
+     const N = Math.max(1, Math.floor(transitionMs * this.sr / 1000));
+     this.transitionSamples = N;
+     for (const k of PARAMS) {
+@@ -104,6 +106,7 @@ export class FormantSynth {
+     this.bp1.reset();
+     this.bp2.reset();
+     this.bp3.reset();
++    this.resetSource();
+     const init = initialTarget ?? {};
+     this.current = { ...DEFAULT, ...init };
+     this.target = { ...this.current };
+@@ -114,6 +117,99 @@ export class FormantSynth {
+     this.sampleCounter = 0;
+   }
+ 
++  // (sonicpi-toolchain patch) the [GS=1] voice source: an LF glottal flow derivative (dsp.js lfShape) with
++  // KLSYN88-style spectral tilt, jitter, shimmer, flutter and pitch-synchronous aspiration noise. Its settings
++  // ride in the schedule targets as extended directives (absent = default); without GS the synth is untouched.
++  //   GS    1 = LF source (0 or absent: the Rosenberg pulse, glottalPulse)
++  //   RD    LF shape Rd at effort 0.5 (Fant 1995; 0.3 tense .. 1 modal .. 2.7 lax), default 1
++  //   RDE   octaves Rd falls per unit of effort above 0.5 (effort g and accents move the tilt), default 6
++  //   TL    extra tilt of the voiced source, dB down at 3 kHz (KLSYN88 TL; one-pole low-pass), default 0
++  //   JIT   jitter: local (cycle-to-cycle) period perturbation in %, default 0
++  //   SHIM  shimmer: local cycle-to-cycle amplitude perturbation in %, default 0
++  //   AM    aspiration noise modulated by the glottal flow, 0..1 (0 steady, 1 noise follows the flow), default 0
++  //   FL    flutter, Klatt & Klatt 1990: slow F0 wander (FL/50)(F0/100)(sum of 12.7, 7.1, 4.7 Hz sines) Hz, default 0
++  resetSource() {
++    this.src = { GS: 0, RD: 1, RDE: 6, TL: 0, JIT: 0, SHIM: 0, AM: 0, FL: 0 };
++    this.lfCache = this.lfCache ?? new Map();
++    this.lf = null;          // the current cycle's shape
++    this.cycleAmp = 1;       // shimmer factor of the current cycle
++    this.cycleRate = 1;      // jitter factor of the current cycle (phase speed)
++    this.flow = 0;           // running glottal flow in the cycle (for pitch-synchronous noise)
++    this.tlA = 0;            // TL one-pole coefficient
++    this.tlPrev = 0;
++    this.jrng = 0x2545F491 | 0;
++  }
++
++  setSource(t) {
++    const s = this.src;
++    s.GS = t.GS ? 1 : 0;
++    s.RD = t.RD ?? 1;
++    s.RDE = t.RDE ?? 6;
++    s.TL = t.TL ?? 0;
++    s.JIT = t.JIT ?? 0;
++    s.SHIM = t.SHIM ?? 0;
++    s.AM = t.AM === undefined ? 0 : t.AM < 0 ? 0 : t.AM > 1 ? 1 : t.AM;
++    s.FL = t.FL ?? 0;
++    this.tlA = tiltCoef(s.TL, 3000, this.sr);
++  }
++
++  lfShapeFor(effort) {
++    const s = this.src;
++    const rd = s.RD * Math.pow(2, -s.RDE * (effort - 0.5));
++    const key = Math.round(rd * 1000);
++    let shape = this.lfCache.get(key);
++    if (!shape) { shape = lfShape(key / 1000); this.lfCache.set(key, shape); }
++    return shape;
++  }
++
++  // approximately normal, unit variance (sum of 4 uniforms), from the source's own generator
++  gauss() {
++    let x = 0;
++    for (let i = 0; i < 4; i++) { this.jrng = xorshift(this.jrng); x += this.jrng / 2147483648; }
++    return x * 0.8660254037844386;   // sqrt(3/4): var of a sum of 4 U(-1,1) is 4/3
++  }
++
++  // a new glottal cycle: shape from the current effort, jitter and shimmer drawn per period. A local jitter of
++  // J% needs a per-period sd of J / 1.128 % (mean |d1 - d2| of two iid normals = 1.128 sd); likewise shimmer.
++  newCycle(cur) {
++    const s = this.src;
++    this.lf = this.lfShapeFor(cur.effort);
++    const sj = s.JIT / 112.8, ss = s.SHIM / 112.8;
++    const g1 = sj ? Math.max(-3, Math.min(3, this.gauss())) : 0;
++    const g2 = ss ? Math.max(-3, Math.min(3, this.gauss())) : 0;
++    this.cycleRate = 1 / (1 + sj * g1);
++    this.cycleAmp = Math.max(0, 1 + ss * g2);
++    this.flow = 0;
++  }
++
++  lfSample(cur, effF0, v, voicedGain, noiseSample) {
++    const s = this.src;
++    if (!this.lf) this.newCycle(cur);
++    let f0 = effF0;
++    if (s.FL) {
++      const t = this.sampleCounter / this.sr, w = 2 * Math.PI * t;
++      f0 += (s.FL / 50) * (effF0 / 100) * (Math.sin(12.7 * w) + Math.sin(7.1 * w) + Math.sin(4.7 * w));
++    }
++    const raw = lfPulse(this.glottalPhase, this.lf);
++    let voiced = raw * this.cycleAmp;
++    if (this.tlA) { voiced = (1 - this.tlA) * voiced + this.tlA * this.tlPrev; this.tlPrev = voiced; }
++    let asp = cur.aspiration * noiseSample * 0.5;
++    if (s.AM) {
++      const L = this.lf, a = s.AM;
++      const u = this.flow > 0 ? this.flow / 0.1 : 0;
++      const norm = Math.sqrt((1 - a) * (1 - a) + 2 * (1 - a) * a * L.uMean + a * a * L.uSq);
++      asp *= ((1 - a) + a * u) / norm;
++    }
++    const dphase = f0 * this.cycleRate / this.sr;
++    this.flow += raw * dphase;
++    this.glottalPhase += dphase;
++    if (this.glottalPhase >= 1) {
++      this.glottalPhase -= Math.floor(this.glottalPhase);
++      this.newCycle(cur);
++    }
++    return v * voiced * voicedGain + (1 - v) * noiseSample * 0.35 + asp;
++  }
++
+   // Render `out.length` samples into the given Float32Array
+   process(out) {
+     const cur = this.current;
+@@ -122,6 +218,7 @@ export class FormantSynth {
+       while (this.scheduleIdx < this.schedule.length
+           && this.schedule[this.scheduleIdx].atSample <= this.sampleCounter) {
+         const evt = this.schedule[this.scheduleIdx++];
++        if (evt.target.GS !== undefined || this.src.GS) this.setSource(evt.target);
+         const N = evt.transitionSamples;
+         this.transitionSamples = N;
+         for (const k of PARAMS) {
+@@ -152,13 +249,18 @@ export class FormantSynth {
+       const v = cur.voicing < 0 ? 0 : cur.voicing > 1 ? 1 : cur.voicing;
+       this.lfsr = xorshift(this.lfsr);
+       const noiseSample = this.lfsr / 2147483648;
+-      const pulseVal = glottalPulse(this.glottalPhase, cur.effort);
+       const voicedGain = 1 - cur.aspiration * 0.85;
+-      const exc = v * pulseVal * voicedGain
+-                + (1 - v) * noiseSample * 0.35
+-                + cur.aspiration * noiseSample * 0.5;
+-      this.glottalPhase += effF0 / this.sr;
+-      this.glottalPhase -= Math.floor(this.glottalPhase);
++      let exc;
++      if (!this.src.GS) {
++        const pulseVal = glottalPulse(this.glottalPhase, cur.effort);
++        exc = v * pulseVal * voicedGain
++            + (1 - v) * noiseSample * 0.35
++            + cur.aspiration * noiseSample * 0.5;
++        this.glottalPhase += effF0 / this.sr;
++        this.glottalPhase -= Math.floor(this.glottalPhase);
++      } else {
++        exc = this.lfSample(cur, effF0, v, voicedGain, noiseSample);
++      }
+ 
+       this.bp1.setFreq(cur.F1, cur.BW1, this.sr);
+       this.bp2.setFreq(cur.F2, cur.BW2, this.sr);
