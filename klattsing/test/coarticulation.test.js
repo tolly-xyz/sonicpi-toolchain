@@ -223,3 +223,19 @@ test('synth: shaped transitions (raised cosine, ease-out) and per-parameter even
   const y = renderToBuffer({ sampleRate: 16000, schedule: c.schedule, totalMs: c.totalMs });
   assert.ok(y.every(Number.isFinite) && Math.max(...y.map(Math.abs)) > 0.05);
 });
+
+test('very short slots: the schedule stays in time order, formant events never go back', () => {
+  for (const s of ['r100 D r5 AA r100 D', 'r100 D r2 AA r2 D r3 IY r100 G', 'r8 B r8 AY r8 L r8 IY', 'r1 D r1 AA r1 D r1 IY r1 K']) {
+    const c = co(s, '[CO=2] [TC=2]');
+    assert.deepEqual(c.warnings, []);
+    for (let i = 1; i < c.schedule.length; i++) assert.ok(c.schedule[i].atMs >= c.schedule[i - 1].atMs, `${s}: event ${i}`);
+    const y = renderToBuffer({ sampleRate: 16000, schedule: c.schedule, totalMs: c.totalMs });
+    assert.ok(y.every(Number.isFinite));
+  }
+  // a 5 ms vowel between two alveolars: its VC move starts after its CV jump, so it ends heading for the coda's locus
+  const c = co('r100 D r5 AA r100 D', '[CO=2] [TC=2]'), aa = c.phrases.find((p) => p.phoneme === 'AA');
+  const fe = formantEvents(c).filter((e) => e.atMs >= aa.tStartMs - 1e-9 && e.atMs < aa.tEndMs);
+  const [k, b] = LOCI.alveolar.F2;
+  assert.ok(near(fe.at(-1).target.F2, KLATT.AA.F2 + 2 * (k * KLATT.AA.F2 + b - KLATT.AA.F2)), `${fe.at(-1).target.F2}`);
+  assert.ok(fe.every((e, i) => i === 0 || e.atMs >= fe[i - 1].atMs));
+});

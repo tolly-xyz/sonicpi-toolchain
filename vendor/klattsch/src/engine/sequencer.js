@@ -300,7 +300,15 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
     for (const k of FORMANTS) out[k] = (L[k] ? V[k] + x * (L[k][0] * V[k] + L[k][1] - V[k]) : V[k]) * scale;
     return out;
   };
+  // Formant events never go back in time (in a vowel shorter than ~8 ms the VC move or a diphthong's glide
+  // would start before the CV move); `formantEvents` makes the schedule be sorted by time at the end (stably,
+  // so events at one time keep their order), since such a short slot can also put a formant event after the
+  // next non-formant one.
+  let lastFormantAt = -Infinity, formantEvents = false;
   const moveFormants = (F, transitionMs, atMs, curve = extras.TCF ?? extras.TC) => {
+    atMs = Math.max(atMs, lastFormantAt);
+    lastFormantAt = atMs;
+    formantEvents = true;
     schedule.push({
       atMs, target: { F1: F.F1, F2: F.F2, F3: F.F3 }, transitionMs: Math.max(transitionMs, 0.1),
       params: FORMANTS, ...(curve ? { curve } : {}),
@@ -588,6 +596,9 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
 
   // Hold the final phrase highlighted
   if (phrases.length) phrases[phrases.length - 1].tEndMs = timeMs;
+
+  // (sonicpi-toolchain patch) [CO]: the synth applies events in array order
+  if (formantEvents) schedule.sort((a, b) => a.atMs - b.atMs);
 
   return { schedule, totalMs: timeMs, warnings, phrases, source, engine };
 }
