@@ -5,6 +5,8 @@
 //   "bankPatch": { CODE: { field: value } }                fields changed on top of "bank" (default klatt1980-en),
 //                                                          as a generated bank "<base>--<hash>" that extends it
 //   "aspiration": "breath"                                 adds BR<vowel> entries, a bank "<base>--br<hash>" (below)
+//   "coarticulation": true | {...}                         adds klattsch's coarticulation fields (vowel, locus,
+//                                                          locusBurst, transparent): a bank "<base>--co<hash>"
 // klattsch layers banks by whole phoneme entries, so a patched entry is the base's resolved entry with the
 // patch's fields merged in (a field set to null is removed; an object value, e.g. glideTo, is merged one level).
 import { createHash } from 'node:crypto';
@@ -13,6 +15,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { banks, registerBank } from '../../vendor/klattsch/src/engine/banks/index.js';
 import { VOWELS } from './phones.js';
+import { coartOptions, coartFields } from './coarticulation.js';
 
 const BANK_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'banks');
 
@@ -95,9 +98,19 @@ export function breathBank(base, voicing) {
   return { schemaVersion: 1, name: `${base}--br${hash(canonical({ extends: base, phonemes }))}`, extends: base, phonemes };
 }
 
+// coarticulation (src/coarticulation.js): the base's entries with the fields klattsch's [CO=x] reads merged in
+export function coartBank(base, c) {
+  ensureBank(base);
+  const resolved = banks.get(base);
+  if (!resolved) throw new Error(`unknown bank: ${base}`);
+  const phonemes = {};
+  for (const [code, f] of Object.entries(coartFields(coartOptions(c), (p) => !!resolved.phonemes[p]))) phonemes[code] = { ...resolved.phonemes[code], ...f };
+  return { schemaVersion: 1, name: `${base}--co${hash(canonical({ extends: base, phonemes }))}`, extends: base, phonemes };
+}
+
 // spec -> the bank name to select with [bank=NAME] (undefined: klattsch's default), registering inline and
 // generated banks in this process. A plain string bank without a patch is passed through untouched, as before.
-// banksFor(spec) lists the banks a spec's string needs that are not files (inline, bankPatch, breath), parents
+// banksFor(spec) lists the banks a spec's string needs that are not files (inline, bankPatch, coarticulation, breath), parents
 // first, for a renderer in another process: a --print string naming one renders only where it is registered.
 export const bankName = (o) => chain(o).name;
 export const banksFor = (o) => chain(o).banks;
@@ -117,6 +130,7 @@ function chain(o) {
   // generated banks are content-addressed: a name already registered is the same bank
   const add = (b) => { if (!banks.list().includes(b.name)) registerBank(b); out.push(b); name = b.name; };
   if (o.bankPatch && Object.keys(o.bankPatch).length) add(patchedBank(name || banks.defaultName, o.bankPatch));
+  if (o.coarticulation) add(coartBank(name || banks.defaultName, o.coarticulation));
   if (o.aspiration === 'breath') add(breathBank(name || banks.defaultName, o.breathVoicing));
   return { name, banks: out };
 }

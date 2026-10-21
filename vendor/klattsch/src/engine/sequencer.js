@@ -1,6 +1,11 @@
 // Phoneme-string parser and schedule compiler
 
 import { banks, resolveBank } from './banks/index.js';
+import { PARAMS } from './synth-core.js';
+
+// (sonicpi-toolchain patch) coarticulation ([CO=x]): formant frequencies move in their own schedule events
+const FORMANTS = ['F1', 'F2', 'F3'];
+const NON_FORMANTS = PARAMS.filter((k) => !FORMANTS.includes(k));
 
 const PAUSE_MS = { ',': 100, ';': 200, '.': 300 };
 
@@ -28,6 +33,12 @@ const DEFAULTS = Object.freeze({
   sentenceFinalHoldMs: 0,
   fadeOutMs: 100,
   trailOffMs: 150,
+  // (sonicpi-toolchain patch) coarticulation: CV transition (locus -> vowel), VC transition (vowel -> locus),
+  // the step onto a locus or an obstruent's own formants, and the most of a vowel the VC transition may take
+  coCvMs: 60,
+  coVcMs: 50,
+  coJumpMs: 3,
+  coVcShare: 0.6,
 });
 
 const HOMOGLYPH_MAP = {
@@ -250,6 +261,101 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
     return out;
   };
 
+  // (sonicpi-toolchain patch) coarticulation, active while [CO=x] is set (x: how far a vowel's formants are
+  // pulled toward a consonant's locus at a CV boundary, 0 none; [COR=x] the same at a VC boundary, default x;
+  // a bare [CO] switches it off).
+  // In this mode formant frequencies (F1-F3) move only in their own events, so a consonant's locus can set
+  // where a vowel's formants start (CV) and end (VC) while the other parameters keep their usual timing.
+  // Bank fields it reads (none of them does anything without [CO]):
+  //   vowel: true         a vowel (a nucleus that takes loci)
+  //   locus: {F1: [k, c], F2: [k, c], F3: [k, c]}   a consonant's locus equations (Sussman et al. 1991):
+  //                       next to a vowel with formant F, the boundary value is F + x (k F + c - F)
+  //   locusVC: {...}      the same at the consonant's VC boundaries (default: locus)
+  //   locusBurst: true    a stop whose burst takes the following vowel's CV boundary formants (velars)
+  //   transparent: true   takes the formants of the vowel after it (HH), through the locus before it
+  //   smooth: true        a consonant with a locus whose formants glide (liquids, glides): a vowel after it moves
+  //                       from the consonant's own formants over COCV, and it is entered at the usual pace
+  // Timing: [COCV=ms] locus -> vowel target, [COVC=ms] vowel target -> locus (at most coVcShare of the
+  // vowel); a consonant with a locus reaches its own formants in coJumpMs (the vowel carries the transitions).
+  // A phoneme's neighbours are the phonemes next to it with only directives between (a pause breaks it).
+  // [TC=n] shapes the transitions (1 raised cosine, 2 ease-out; synth-core CURVES), with or without [CO];
+  // [TCF=n] the formant events' own (default TC).
+  const prevPh = new Map(), nextPh = new Map();
+  {
+    let last = null;
+    for (const t of tokens) {
+      if (t.type === 'phoneme') { if (last) { nextPh.set(last, t); prevPh.set(t, last); } last = t; }
+      else if (t.type === 'pause' || t.type === 'unknown' || (t.type === 'directive' && t.key === 'pause')) last = null;
+    }
+  }
+  const entryOf = (t) => (t ? phonemes[t.code] : undefined);
+  const rawF = (p, end = false) => {
+    const src = end && p.glideTo ? { ...p, ...p.glideTo } : p;
+    return { F1: src.F1, F2: src.F2, F3: src.F3 };
+  };
+  const scaleF = (F) => ({ F1: F.F1 * scale, F2: F.F2 * scale, F3: F.F3 * scale });
+  // the boundary formants between consonant entry c and vowel formants V (unscaled), scaled
+  const boundary = (c, V, vc) => {
+    const L = (vc && c.locusVC) || c.locus, x = vc ? (extras.COR ?? extras.CO) : extras.CO, out = {};
+    for (const k of FORMANTS) out[k] = (L[k] ? V[k] + x * (L[k][0] * V[k] + L[k][1] - V[k]) : V[k]) * scale;
+    return out;
+  };
+  // Formant events never go back in time (in a vowel shorter than ~8 ms the VC move or a diphthong's glide
+  // would start before the CV move); `formantEvents` makes the schedule be sorted by time at the end (stably,
+  // so events at one time keep their order), since such a short slot can also put a formant event after the
+  // next non-formant one.
+  let lastFormantAt = -Infinity, formantEvents = false;
+  const moveFormants = (F, transitionMs, atMs, curve = extras.TCF ?? extras.TC) => {
+    atMs = Math.max(atMs, lastFormantAt);
+    lastFormantAt = atMs;
+    formantEvents = true;
+    schedule.push({
+      atMs, target: { F1: F.F1, F2: F.F2, F3: F.F3 }, transitionMs: Math.max(transitionMs, 0.1),
+      params: FORMANTS, ...(curve ? { curve } : {}),
+    });
+  };
+  const sameF = (a, b) => a && b && FORMANTS.every((k) => a[k] === b[k]);
+  // the vowel a stop's burst or an HH belongs to: the next phoneme, or the one after an HH
+  const vowelAfter = (t) => {
+    let n = nextPh.get(t);
+    if (entryOf(n)?.transparent) n = nextPh.get(n);
+    return entryOf(n)?.vowel ? n : null;
+  };
+  const cvMs = () => extras.COCV ?? DEFAULTS.coCvMs;
+  // formants into phoneme t (entry p) at its start (timeMs); usualMs: the transition its other parameters take
+  const formantsIn = (t, p, usualMs, slotMs) => {
+    if (extras.CO === undefined) return;
+    const prev = prevPh.get(t), pe = entryOf(prev), jump = Math.min(DEFAULTS.coJumpMs, slotMs * 0.5);
+    if (p.transparent) {
+      const v = nextPh.get(t), ve = entryOf(v);
+      if (ve?.vowel) {
+        const V = rawF(ve);
+        moveFormants(pe?.locus ? boundary(pe, V, false) : scaleF(V), jump, timeMs);
+        moveFormants(scaleF(V), cvMs(), timeMs + jump);   // the CV transition starts at the release
+        return;
+      }
+    }
+    if (p.vowel && pe) {
+      if (pe.transparent && nextPh.get(prev) === t) return;           // under way since the HH
+      if (pe.vowel && sameF(rawF(pe), rawF(p))) return;                // the same vowel continues (breath part)
+      if (pe.locus && pe.smooth) { moveFormants(scaleF(rawF(p)), cvMs(), timeMs); return; }   // from the liquid itself
+      if (pe.locus) {
+        moveFormants(boundary(pe, rawF(p), false), jump, timeMs);
+        moveFormants(scaleF(rawF(p)), cvMs(), timeMs + jump);
+        return;
+      }
+    }
+    moveFormants(scaleF(rawF(p)), p.locus && !p.smooth ? jump : usualMs, timeMs);
+  };
+  // a vowel's formants toward the locus of the consonant after it, over its last COVC ms (slot: [start, start+ms])
+  const formantsOut = (t, p, slotStart, slotMs) => {
+    if (extras.CO === undefined || !p.vowel) return;
+    const ne = entryOf(nextPh.get(t));
+    if (!ne?.locus || ne.transparent) return;
+    const ms = Math.min(extras.COVC ?? DEFAULTS.coVcMs, slotMs * DEFAULTS.coVcShare);
+    moveFormants(boundary(ne, rawF(p, true), true), ms, slotStart + slotMs - ms);
+  };
+
   const renderPhoneme = (t, slotMs) => {
     const p = phonemes[t.code];
     if (!p) {
@@ -258,6 +364,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
     }
     const startF0 = t.stressed ? f0 + DEFAULTS.stressF0Lift : f0;
     const endF0 = startF0 + t.pitchDelta;
+    const slotStart = timeMs;
     if (p.isStop) {
       // (sonicpi-toolchain patch) a bank entry's burstMs sets its release burst (MITalk: P 5, T 15, K 25 ms)
       const burstMs = Math.min(p.burstMs ?? DEFAULTS.stopBurstMs, slotMs * 0.3);
@@ -265,26 +372,38 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
       silence(Math.min(20, silenceMs * 0.4));
       timeMs += silenceMs;
       emit(scaled(p, startF0), Math.min(5, burstMs * 0.2));
+      if (extras.CO !== undefined) {
+        // the burst's formants: its own, or (locusBurst, velars) the following vowel's CV boundary
+        const v = p.locusBurst && p.locus ? vowelAfter(t) : null;
+        moveFormants(v ? boundary(p, rawF(entryOf(v)), false) : scaleF(rawF(p)), Math.min(5, burstMs * 0.2), timeMs);
+      }
       timeMs += burstMs;
       return slotMs;
     } else if (p.glideTo) {
       const onset = slotMs * 0.25, glide = slotMs * 0.50, offset = slotMs * 0.25;
       emit(scaled(p, startF0), Math.min(20, onset));
+      formantsIn(t, p, Math.min(20, onset), slotMs);
       timeMs += onset;
       emit(scaled(p, endF0, p.glideTo), glide);
+      if (extras.CO !== undefined) moveFormants(scaleF(rawF(p, true)), glide, timeMs);
       timeMs += glide + offset;
+      formantsOut(t, p, slotStart, slotMs);
       return slotMs;
     } else if (t.pitchDelta !== 0) {
       emit(scaled(p, startF0), Math.min(25, slotMs * 0.25));
+      formantsIn(t, p, Math.min(25, slotMs * 0.25), slotMs);
       timeMs += slotMs * 0.25;
       emit(scaled(p, endF0), slotMs * 0.6);
       timeMs += slotMs * 0.75;
+      formantsOut(t, p, slotStart, slotMs);
       return slotMs;
     } else {
       // [TR=ms] (sonicpi-toolchain patch): how long formants take to move into a phoneme
       const trans = Math.min(extras.TR ?? DEFAULTS.defaultTransitionMs, slotMs * (extras.TR ? 0.9 : 0.4));
       emit(scaled(p, startF0), trans);
+      formantsIn(t, p, trans, slotMs);
       timeMs += slotMs;
+      formantsOut(t, p, slotStart, slotMs);
       return slotMs;
     }
   };
@@ -319,6 +438,9 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
       // [AV=x] (sonicpi-toolchain patch): loudness multiplier, moved like any other parameter
       target: { ...target, ...extras, ...stateExtras(), ...(extras.AV !== undefined ? { gain: 3.5 * extras.AV } : {}) },
       transitionMs,
+      // [TC=n], [CO=x] (sonicpi-toolchain patch): shaped transitions; formants left to their own events
+      ...(extras.TC ? { curve: extras.TC } : {}),
+      ...(extras.CO !== undefined ? { params: NON_FORMANTS } : {}),
     });
   };
   const silence = (transitionMs = 30) => emit({ A1: 0, A2: 0, A3: 0 }, transitionMs);
@@ -474,6 +596,9 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
 
   // Hold the final phrase highlighted
   if (phrases.length) phrases[phrases.length - 1].tEndMs = timeMs;
+
+  // (sonicpi-toolchain patch) [CO]: the synth applies events in array order
+  if (formantEvents) schedule.sort((a, b) => a.atMs - b.atMs);
 
   return { schedule, totalMs: timeMs, warnings, phrases, source, engine };
 }
