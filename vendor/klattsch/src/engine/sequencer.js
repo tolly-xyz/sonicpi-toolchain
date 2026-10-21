@@ -376,6 +376,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
   // nothing here runs.
   const nasalMode = () => extras.NAS !== undefined;
   let pendingNasal = null;     // nasal parameters for the next emit (the first event of a phoneme)
+  let nasalUsed = false;       // [NAS] was on: after a bare [NAS] the next event puts the nasal parameters back
   let nasalOnlyEvents = 0;
   const nasalScaled = (x) => {
     const out = {};
@@ -395,7 +396,11 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
   };
   // before a phoneme renders: its first event's nasal parameters; after: the vowel's nasal glides
   const nasalBefore = (t, p) => {
-    if (!nasalMode()) return null;
+    if (!nasalMode()) {
+      if (nasalUsed) { pendingNasal = nasalScaled(NASAL_DEFAULT); nasalUsed = false; }
+      return null;
+    }
+    nasalUsed = true;
     pendingNasal = nasalScaled(NASAL_DEFAULT);
     if (p.nasal || p.isStop || !((p.voicing ?? 0) >= 1)) return null;
     const prevN = nasalOf(prevPh.get(t)), nextN = nasalOf(nextPh.get(t));
