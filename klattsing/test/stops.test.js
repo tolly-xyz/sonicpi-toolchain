@@ -52,20 +52,21 @@ test('stops: context -> entries (voice bar, release into the vowel, unreleased, 
   assert.deepEqual(codesOf({ ...o, text: 'A good one.' }, 1), ['GQVUH', 'UH', 'DQVU']);
   assert.deepEqual(codesOf({ ...o, text: 'Good.' }, 0), ['GQUH', 'UH', 'DQVX'], 'final D after the vowel keeps its voice bar, released');
   // unreleased before a consonant, released before a vowel and before a pause
-  assert.deepEqual(codesOf({ ...o, text: 'that time' }, 0), ['DH', 'AE', 'TQU']);
-  assert.deepEqual(codesOf({ ...o, text: 'that is', stops: { flap: true } }, 0), ['DH', 'AE', 'TQIH']);
-  assert.deepEqual(codesOf({ ...o, text: 'that, time' }, 0), ['DH', 'AE', 'T'], 'released, no vowel context: the plain entry');
+  assert.deepEqual(codesOf({ ...o, text: 'that time' }, 0), ['DH', 'AE', 'TQTU'], 'unreleased, a voicing tail after the vowel');
+  assert.deepEqual(codesOf({ ...o, text: 'that is', stops: { flap: true } }, 0), ['DH', 'AE', 'TQTIH']);
+  assert.deepEqual(codesOf({ ...o, text: 'that, time' }, 0), ['DH', 'AE', 'TQTX'], 'released, no vowel context (a voicing tail)');
+  assert.deepEqual(codesOf({ ...o, text: 'that, time', stops: { voicingTail: 0 } }, 0), ['DH', 'AE', 'T'], 'released, no vowel context: the plain entry');
   // per stop: only T and D unreleased
-  assert.deepEqual(codesOf({ ...o, text: 'black cat sat', stops: { unreleased: { T: 'consonant', D: 'consonant' } } }, 0), ['BQAE', 'L', 'AE', 'K'],
-    'K before a consonant released (the plain entry: no vowel)');
-  assert.deepEqual(codesOf({ ...o, text: 'black cat sat', stops: { unreleased: { T: 'consonant' } } }, 1), ['KQAE', 'AE', 'TQU']);
+  assert.deepEqual(codesOf({ ...o, text: 'black cat sat', stops: { unreleased: { T: 'consonant', D: 'consonant' } } }, 0), ['BQAE', 'L', 'AE', 'KQTX'],
+    'K before a consonant released (no vowel context; a voicing tail)');
+  assert.deepEqual(codesOf({ ...o, text: 'black cat sat', stops: { unreleased: { T: 'consonant' } } }, 1), ['KQAE', 'AE', 'TQTU']);
   // glottalStop: an unreleased T after a sonorant closes abruptly
   assert.deepEqual(codesOf({ ...o, text: 'that man', stops: { glottalStop: true } }, 0), ['DH', 'AE', 'TQGU']);
   assert.deepEqual(codesOf({ ...o, text: 'its', stops: { glottalStop: true } }, 0), ['IH', 'TQGU', 'S'], 'after a vowel');
   assert.deepEqual(codesOf({ ...o, text: 'acts', stops: { glottalStop: true } }, 0).slice(2), ['TQU', 'S'], 'not after K');
-  assert.deepEqual(codesOf({ ...o, text: 'cats' }, 0), ['KQAE', 'AE', 'TQU', 'S']);
-  assert.deepEqual(codesOf({ ...o, text: 'cats', stops: { unreleased: 'closure' } }, 0), ['KQAE', 'AE', 'T', 'S']);
-  assert.deepEqual(codesOf({ ...o, text: 'napkin', stops: { unreleased: 'closure' } }, 0).slice(0, 3), ['N', 'AE', 'PQU']);
+  assert.deepEqual(codesOf({ ...o, text: 'cats' }, 0), ['KQAE', 'AE', 'TQTU', 'S']);
+  assert.deepEqual(codesOf({ ...o, text: 'cats', stops: { unreleased: 'closure' } }, 0), ['KQAE', 'AE', 'TQTX', 'S']);
+  assert.deepEqual(codesOf({ ...o, text: 'napkin', stops: { unreleased: 'closure' } }, 0).slice(0, 3), ['N', 'AE', 'PQTU']);
   // a stop released into its own onset's liquid takes the nucleus: "play", "street"
   assert.deepEqual(codesOf({ ...o, text: 'play' }, 0), ['PQEY', 'L', 'EY']);
   assert.deepEqual(codesOf({ ...o, text: 'street' }, 0).slice(0, 2), ['S', 'TQIY']);
@@ -73,12 +74,12 @@ test('stops: context -> entries (voice bar, release into the vowel, unreleased, 
   assert.equal(codesOf({ ...o, text: 'water' }, 0)[2], 'DQF');
   assert.equal(codesOf({ ...o, text: 'party' }, 0)[3], 'DQF');
   assert.notEqual(codesOf({ ...o, text: 'attack' }, 0)[1], 'DQF');
-  assert.equal(codesOf({ ...o, text: 'water', stops: { flap: false } }, 0)[2], 'TQER');
+  assert.equal(codesOf({ ...o, text: 'water', stops: { flap: false } }, 0)[2], 'TQTER');
   // across words ("words", the default): a word-final T/D after a vowel or R before a vowel-initial word, no pause
   assert.deepEqual(codesOf({ ...o, text: 'get it' }, 0), ['GQEH', 'EH', 'DQF']);
   assert.deepEqual(codesOf({ ...o, text: 'part of it' }, 0), ['PQAA', 'AA', 'R', 'DQF']);
-  assert.deepEqual(codesOf({ ...o, text: 'get, it' }, 0), ['GQEH', 'EH', 'T'], 'not across a pause');
-  assert.deepEqual(codesOf({ ...o, text: 'get it', stops: { flap: true } }, 0), ['GQEH', 'EH', 'TQIH'], 'true: inside words only');
+  assert.deepEqual(codesOf({ ...o, text: 'get, it' }, 0), ['GQEH', 'EH', 'TQTX'], 'not across a pause');
+  assert.deepEqual(codesOf({ ...o, text: 'get it', stops: { flap: true } }, 0), ['GQEH', 'EH', 'TQTIH'], 'true: inside words only');
   assert.deepEqual(codesOf({ ...o, text: 'kept it' }, 0).slice(-1), ['TQIH'], 'not after a consonant');
   // aspiration through the vowel's formants: HQ<vowel>, named HH in the timeline
   const s = speak({ ...o, text: 'Cat.' });
@@ -86,7 +87,7 @@ test('stops: context -> entries (voice bar, release into the vowel, unreleased, 
   assert.deepEqual(timelineOf({ ...o, text: 'Cat.' }).phones.map((p) => p.p), ['K', 'HH', 'AE', 'T']);
   assert.doesNotMatch(speak({ ...o, text: 'Cat.', stops: { aspiration: 0 } }), /HQ/);
   // everything off: the plain phonemes (only the bank name differs)
-  const off = { voiceBar: false, burst: 0, aspiration: 0, flap: false, unreleased: false }, T = 'A good cat at the party.';
+  const off = { voiceBar: false, voicingTail: 0, burst: 0, aspiration: 0, flap: false, unreleased: false }, T = 'A good cat at the party.';
   const unbanked = (x) => x.replace(/^\[bank=\S+\]/, '');
   assert.equal(unbanked(speak({ ...o, text: T, stops: off })), unbanked(speak({ bank: 'mitalk-bursts', text: T })));
 });
@@ -120,6 +121,11 @@ test('stops: the generated entries follow Stevens & Blumstein, Klatt', () => {
   assert.deepEqual(P.DQVAA.closure, { voicing: 1, F1: 180, BW1: 60, A1: 0.07, A2: 0, A3: 0, inMs: 20, fade: 0.35 });
   assert.equal(P.TQVAA, undefined);
   assert.equal(P.DQU.release, false);
+  // voicing tail: P T K only, the vowel's voicing dying away (to 0 by the release), ~11 dB under the voice bar
+  assert.deepEqual(P.TQTAA.closure, { voicing: 1, F1: 200, BW1: 80, A1: STOP_DEFAULTS.voicingTail, A2: 0, A3: 0, inMs: 15, fade: 0 });
+  assert.equal(STOP_DEFAULTS.voicingTail, 0.02);
+  assert.equal(P.DQTAA, undefined); assert.equal(P.TQTU.release, false);
+  assert.equal(stopsBank('mitalk-bursts', stopOptions({ voicingTail: 0 }), canonical).phonemes.TQTAA, undefined, 'voicingTail 0: none');
   // aspiration: the vowel's formants, F1 cut back and widened, voiceless
   assert.equal(P.HQAE.F2, V.AE.F2); assert.equal(P.HQAE.F3, V.AE.F3);
   assert.ok(P.HQAE.A1 < V.HH.A1 && P.HQAE.BW1 > V.AE.BW1 && P.HQAE.voicing === 0);
@@ -176,7 +182,7 @@ test('stops: closureMs, glottalStop, burstLocus and flapLocus entries', () => {
   assert.equal(P.KQGU, undefined, 'T only');
   assert.equal(P.DQVAA.closure.F1, 180, 'a voice bar is not a silent closure');
   // closureMs: every stop takes a generated entry
-  assert.deepEqual(codesOf({ bank: 'mitalk-bursts', text: 'that, time', stops: { closureMs: 8 } }, 0), ['DH', 'AE', 'TQX']);
+  assert.deepEqual(codesOf({ bank: 'mitalk-bursts', text: 'that, time', stops: { closureMs: 8, voicingTail: 0 } }, 0), ['DH', 'AE', 'TQX']);
   // under coarticulation: locusBurst (the velar's burst at the vowel's CV boundary) only with burstLocus
   const co = { bank: 'mitalk-bursts', coarticulation: true };
   const last = (o) => { const l = banksFor(o); return banks.get(l[l.length - 1].name).phonemes; };

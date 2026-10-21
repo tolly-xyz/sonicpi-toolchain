@@ -49,7 +49,7 @@ test('stops composes with coarticulation and glottal: each of the three changes 
   // the string carries all three: the stops bank (extending coarticulation's), [CO], [GS], context entries
   const s = speak(all);
   assert.match(s, /^\[bank=klatt1980-en--co[0-9a-f]{12}--st[0-9a-f]{12}\] \[CO=2\].* \[GS=1\]/);
-  assert.match(s, / GQVUH /); assert.match(s, / DQF /); assert.match(s, / HQAE /); assert.match(s, / PQU /);
+  assert.match(s, / GQVUH /); assert.match(s, / DQF /); assert.match(s, / HQAE /); assert.match(s, / PQTU /);
   // coarticulation's formant-only events survive, and the LF source stays on through closures, voice bars and bursts
   for (const b of banksFor(all)) registerBank(b);
   const v = compileString(s).voices[0];

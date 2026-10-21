@@ -59,7 +59,7 @@ import { VOWELS, STOPS, VOICED, LIQUIDS, GLIDES, NASALS, AFFRICATES, SONORANT } 
 // "stops": true = these (each chosen with tools/voicelab/fidelity.py against Kokoro; see VENDORED / README)
 export const STOP_DEFAULTS = {
   voiceBar: { F1: 180, BW1: 60, A1: 0.07, inMs: 20, fade: 0.35 },   // ~8-10 dB under the vowel's low band, fading ~9 dB
-  voicingTail: 0,
+  voicingTail: 0.02,   // the vowel's voicing dying away into a P/T/K closure, ~11 dB under the voice bar
   burst: 1,
   burstGain: 1,
   aspiration: 1,
