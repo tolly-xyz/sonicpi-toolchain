@@ -142,7 +142,7 @@ VOICE = {"lead": "g0.65 t0.2 h0.08 s0.98", "gangA": "g0.75 t0.3 h0.12 s0.94", "g
          "gangC": "g0.7 t0.25 h0.1 s1.06"}       # the MC uses klattsing's plain speech voice (clearer in tests)
 # klattsing features from the voicelab tournament: coarticulated formants (Whisper pairs 47% -> 69%) and the LF
 # voice source (much closer to a real voice spectrally)
-FEATURES = {"coarticulation": True, "glottal": True}
+FEATURES = {}   # coarticulation + glottal took Whisper per line 57% -> 43% here (they were tuned on speech); see voicelab sing tests
 vox = []
 def chant(sec, k, step, text, style="lead", span=32, end_note=40, hi=47, lo=43, rest=2, bank="silt-stops"):
     """A line chanted from a bar's step: unstressed syllables a 16th, stressed an 8th, the last held to
