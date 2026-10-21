@@ -13,16 +13,19 @@
 //              F2 locus near 1.8 kHz and a strong 3.5-4 kHz peak, lower before rounded vowels), velar compact (a
 //              single mid-frequency peak tied to the vowel: between F2 and F3 of a front vowel, just above F2 of
 //              a back one); a number blends the bank's burst (0) into these (1); {P, B, T, D, K, G}: per stop
+//   burstGain / aspirationGain  scale the burst / aspiration amplitudes (1)
 //   aspiration the aspiration after P/T/K (VOT) is noise through the following vowel's formants with F1 cut
 //              back and widened (Klatt 1975, 1980: aspiration excites the vocal tract of the vowel; the open
 //              glottis damps F1), as HQ<vowel> entries, instead of HH; a number blends HH (0) into these (1)
 //   vot        place-dependent VOT: true scales the aspiration (rules.aspirationMs) by Klatt's (1975) P 47 /
 //              T 65 / K 70 ms (relative to their mean), {P, T, K}: ms
 //   flap       T/D between a vowel (or R) and an unstressed vowel inside a word ("water", "city", "party") is
-//              a flap DQF: voiced, a brief dip, at most flapMs (Zue & Laferriere 1979: 26 ms on average; 0 or
-//              null: the rule duration)
-//   unreleased a stop before a stop, an affricate or a nasal (no pause between, not in one onset) has no burst
-//              (klattsch patch: release: false): "that time", "napkin"; "all": before any consonant
+//              a flap DQF: voiced, a brief dip (Zue & Laferriere 1979), at most flapMs ms (0: the rule duration;
+//              real flaps last ~20-30 ms)
+//   unreleased a stop before another consonant (no pause between, not released into its own onset: "play" keeps
+//              its burst) has no burst (klattsch patch: release: false): "that time", "napkin", "cats"
+//              (Crystal & House 1988, Byrd 1993: unreleased stops are the norm before consonants in American
+//              English); "closure": only before a consonant with an oral closure (a stop, an affricate, a nasal)
 // Codes: <stop>Q<closure><release>, closure "" (silent), "V" (voice bar) or "T" (voicing tail), release a vowel
 // (released into it), "X" (released, no vowel context) or "U" (unreleased); HQ<vowel>; DQF. The timeline names
 // them by their lexical phoneme (p).
@@ -30,17 +33,18 @@ import { createHash } from 'node:crypto';
 import { banks } from '../../vendor/klattsch/src/engine/banks/index.js';
 import { VOWELS, STOPS, VOICED, LIQUIDS, GLIDES, NASALS, AFFRICATES } from './phones.js';
 
+// "stops": true = these (each chosen with tools/voicelab/fidelity.py against Kokoro; see VENDORED / README)
 export const STOP_DEFAULTS = {
-  voiceBar: { F1: 180, BW1: 60, A1: 0.3, inMs: 20, fade: 0.6 },
+  voiceBar: { F1: 180, BW1: 60, A1: 0.07, inMs: 20, fade: 0.35 },   // ~8-10 dB under the vowel's low band, fading ~9 dB
   voicingTail: 0,
   burst: 1,
   burstGain: 1,
   aspiration: 1,
   aspirationGain: 1,
   vot: false,
-  flap: false,
-  flapMs: 26,
-  unreleased: false,
+  flap: true,
+  flapMs: 0,
+  unreleased: 'consonant',
 };
 export const VOT_KLATT1975 = { P: 47, T: 65, K: 70 };
 const PLACE = { P: 'lab', B: 'lab', T: 'alv', D: 'alv', K: 'vel', G: 'vel' };
@@ -60,7 +64,8 @@ export function stopOptions(x) {
   o.aspiration = unit(o.aspiration, 'aspiration');
   o.voicingTail = Number(o.voicingTail || 0);
   for (const k of ['burstGain', 'aspirationGain']) if (!(typeof o[k] === 'number' && o[k] >= 0)) throw new Error(`stops.${k}: expected a number >= 0, got ${JSON.stringify(o[k])}`);
-  if (![true, false, 'all'].includes(o.unreleased)) throw new Error(`stops.unreleased: true, false or "all", got ${JSON.stringify(o.unreleased)}`);
+  if (o.unreleased === true) o.unreleased = 'consonant';
+  if (![false, 'consonant', 'closure'].includes(o.unreleased)) throw new Error(`stops.unreleased: "consonant", "closure" or false, got ${JSON.stringify(o.unreleased)}`);
   return o;
 }
 
@@ -73,8 +78,8 @@ export function burstTemplate(code, e, v) {
   const voiced = !VOICELESS.has(code);
   switch (PLACE[code]) {
     case 'lab':    // diffuse-falling: energy at and below the vowel's F2, a weak F3
-      return { F1: e.F1, BW1: e.BW1, A1: voiced ? e.A1 : Math.max(e.A1, 0.2), F2: 0.8 * v.F2 + 150, BW2: 200, A2: 0.6 * tot,
-               F3: v.F3 - 150, BW3: 300, A3: 0.4 * tot };
+      return { F1: e.F1, BW1: e.BW1, A1: voiced ? e.A1 : Math.max(e.A1, 0.2), F2: 0.6 * v.F2 + 350, BW2: 200, A2: 0.6 * tot,
+               F3: Math.min(e.F3, v.F3), BW3: 300, A3: 0.3 * tot };
     case 'alv':    // diffuse-rising: F2 locus ~1.8 kHz, strong high peak (lower before rounded vowels)
       return { F1: e.F1, BW1: e.BW1, A1: e.A1, F2: 0.25 * v.F2 + 1300, BW2: Math.max(e.BW2, 150), A2: 0.4 * tot,
                F3: e.F3 - (v.rounded ? 400 : 0), BW3: Math.max(e.BW3, 400), A3: 0.6 * tot };
@@ -171,7 +176,7 @@ export function planStops(ws, o) {
     }
     const sameOnset = nextX && x.part === 'onset' && nextX.s === s && nextX.part === 'onset';
     const unrel = o.unreleased && next && !sameOnset && !VOWELS.has(next)
-      && (o.unreleased === 'all' || STOPS.has(next) || AFFRICATES.has(next) || NASALS.has(next));
+      && (o.unreleased === 'consonant' || STOPS.has(next) || AFFRICATES.has(next) || NASALS.has(next));
     let rel = 'X';
     if (unrel) rel = 'U';
     else if (o.burst[x.p] > 0 && next) {
@@ -190,3 +195,9 @@ export function planStops(ws, o) {
   }
   return ws;
 }
+
+// sing: a rest next to a stop that planStops saw in context (rests come from the notes, after the durations):
+// after a rest, no voice bar or voicing tail; before one, released without a vowel context
+const CODE = /^([PBTDKG])Q([VT]?)(.*)$/;
+export const afterSilence = (c) => { const m = c.match(CODE); return m ? `${m[1]}Q${m[3]}` : c; };
+export const beforeSilence = (c) => { const m = c.match(CODE); return m ? `${m[1]}Q${m[2]}X` : c; };

@@ -10,7 +10,7 @@ import { FUNCTION_WORDS } from './function_words.js';
 import { bankName, BREATH_PREFIX } from './banks.js';
 import { DUR } from './phones.js';
 import { coartOptions, coartDirectives } from './coarticulation.js';
-import { stopOptions, planStops } from './stops.js';
+import { stopOptions, planStops, afterSilence, beforeSilence } from './stops.js';
 
 const DIPH = { AY: ['AA', 'IY'], EY: ['EH', 'IY'], OW: ['AO', 'UW'], AW: ['AA', 'UW'], OY: ['AO', 'IY'] };
 const NOTE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -102,8 +102,8 @@ function prefix(o) {
 }
 const asp = (s, o) => (o.aspiration !== false && s.aspMs ? `r${f1(s.aspMs)} HH ` : '');
 // "stops" (stops.js): a consonant's context-dependent entry (onsetCode / codaCode / aspCode), named in the
-// timeline by its lexical phoneme
-const consonant = (s, part, i, p, at) => { const c = s[part]?.[i]; return c ? [c, { ...at, p }] : [p, at]; };
+// timeline by its lexical phoneme; fix: sing's correction for a rest next to it
+const consonant = (s, part, i, p, at, fix) => { const c = s[part]?.[i]; return c ? [fix ? fix(c) : c, { ...at, p }] : [p, at]; };
 const aspToken = (s, at) => (s.aspCode ? [s.aspCode, { ...at, asp: true, p: 'HH' }] : ['HH', { ...at, asp: true }]);
 // the klattsch aspiration (h) a voice string leaves set, so "breath" can restore it
 export function voiceAspiration(voice) {
@@ -215,20 +215,23 @@ export function sing(o, meta) {
   const breath = o.aspiration === 'breath', [hUp, hDown] = breathDirs(o, voiceOf(vo));
   let out = `${prefix(vo)} `;
   const ph = (ms, p, info, suffix = '') => { out += `r${f1(ms)} ${p}${suffix} `; m?.push(info); };
-  for (const x of plan) {
+  plan.forEach((x, k) => {
     const { s, at } = x;
+    // stops: a rest breaks the context planStops saw (no voice bar after it, a release before it)
+    const restBefore = x.rests.length > 0 || (k > 0 && plan[k - 1].rest > 0);
+    const restAfter = x.rest > 0 || (k + 1 < plan.length ? plan[k + 1].rests.length > 0 : tail.length > 0);
     for (const r of x.rests) out += `p${f1(r)} `;
     out += `v0 b${f1(hz(x.note))} ${av(s, o)}`;
-    s.onset.forEach((p, j) => ph(x.ons[j], ...consonant(s, 'onsetCode', j, p, at)));
+    s.onset.forEach((p, j) => ph(x.ons[j], ...consonant(s, 'onsetCode', j, p, at, j === 0 && restBefore && afterSilence)));
     if (x.a && !breath) ph(x.a, ...aspToken(s, at));
     const acc = o.accent !== false && s.stress === 1;
     if (acc) out += accUp;
     if (x.a && breath) { out += hUp; ph(x.a, BREATH_PREFIX + x.parts[0][0], { ...at, asp: true, p: x.parts[0][0] }); out += hDown; }
     x.parts.forEach(([p, len2], j) => ph(len2, p, at, x.to && j === x.parts.length - 1 ? `${x.to > 0 ? '+' : ''}${x.to}` : ''));
     if (acc) out += accDown;
-    s.coda.forEach((p, j) => ph(x.coda[j], ...consonant(s, 'codaCode', j, p, at)));
+    s.coda.forEach((p, j) => ph(x.coda[j], ...consonant(s, 'codaCode', j, p, at, j === s.coda.length - 1 && restAfter && beforeSilence)));
     if (x.rest > 0) out += `p${f1(x.rest)} `;
-  }
+  });
   for (const r of tail) out += `p${f1(r)} `;
   return out.trim();
 }
