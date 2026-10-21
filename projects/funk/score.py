@@ -140,6 +140,9 @@ def swung_ms(bar_i, step, length):
     return (pos(step + length) - pos(step)) * 1000
 VOICE = {"lead": "g0.65 t0.2 h0.08 s0.98", "gangA": "g0.75 t0.3 h0.12 s0.94", "gangB": "g0.6 t0.15 h0.15 s1.02",
          "gangC": "g0.7 t0.25 h0.1 s1.06"}       # the MC uses klattsing's plain speech voice (clearer in tests)
+# klattsing features from the voicelab tournament: coarticulated formants (Whisper pairs 47% -> 69%) and the LF
+# voice source (much closer to a real voice spectrally)
+FEATURES = {"coarticulation": True, "glottal": True}
 vox = []
 def chant(sec, k, step, text, style="lead", span=32, end_note=40, hi=47, lo=43, rest=2, bank="silt-stops"):
     """A line chanted from a bar's step: unstressed syllables a 16th, stressed an 8th, the last held to
@@ -161,11 +164,11 @@ def chant(sec, k, step, text, style="lead", span=32, end_note=40, hi=47, lo=43, 
     takes = [("lead", 0.0, 0.0, 1.0)] if style == "lead" else [("lead", 0.0, 0.0, 1.0), ("gangA", -0.6, 0.015, 0.45), ("gangC", 0.6, 0.025, 0.45)]
     for v, pan, dt, gain in takes:
         vox.append({"t": round(t0 + dt, 4), "style": style, "pan": pan, "gain": gain, "text": text,
-                    "spec": {"mode": "sing", "text": text, "notes": notes, "voice": VOICE[v], "bank": bank, "gate": 160, "hold": 0.6}})
+                    "spec": {"mode": "sing", "text": text, "notes": notes, "voice": VOICE[v], "bank": bank, "gate": 160, "hold": 0.6, **FEATURES}})
 def say(sec, k, step, text, pitch="A2", rate=1.0):
     bi = bar_of(sec, k)
     vox.append({"t": round(at(bars[bi], step, 0), 4), "style": "mc", "pan": 0.0, "text": text,
-                "spec": {"mode": "speak", "text": text, "pitch": pitch, "rate": rate, "voice": "speak", "bank": "silt-stops"}})
+                "spec": {"mode": "speak", "text": text, "pitch": pitch, "rate": rate, "voice": "speak", "bank": "silt-stops", **FEATURES}})
 
 say("intro", 0, 2, "Ladies, gentlemen, and everybody in between:")
 say("intro", 2, 4, "the floor has left the building.")
