@@ -42,11 +42,16 @@ export const STOP_DEFAULTS = {
   aspiration: 1,
   aspirationGain: 1,
   vot: false,
+  votTotal: false,
   flap: true,
   flapMs: 0,
+  flapLocus: false,
   unreleased: 'consonant',
+  burstLocus: true,
+  burstFit: false,
 };
 export const VOT_KLATT1975 = { P: 47, T: 65, K: 70 };
+export const MIN_CLOSURE_MS = 20;
 const PLACE = { P: 'lab', B: 'lab', T: 'alv', D: 'alv', K: 'vel', G: 'vel' };
 const VOICELESS = new Set(['P', 'T', 'K']);
 const ROUNDED = new Set('UW UH OW OY AO ER'.split(' '));
@@ -64,16 +69,47 @@ export function stopOptions(x) {
   o.aspiration = unit(o.aspiration, 'aspiration');
   o.voicingTail = Number(o.voicingTail || 0);
   for (const k of ['burstGain', 'aspirationGain']) if (!(typeof o[k] === 'number' && o[k] >= 0)) throw new Error(`stops.${k}: expected a number >= 0, got ${JSON.stringify(o[k])}`);
-  if (o.unreleased === true) o.unreleased = 'consonant';
-  if (![false, 'consonant', 'closure'].includes(o.unreleased)) throw new Error(`stops.unreleased: "consonant", "closure" or false, got ${JSON.stringify(o.unreleased)}`);
+  const ur = o.unreleased && typeof o.unreleased === 'object' ? o.unreleased : null;
+  o.unreleased = Object.fromEntries(['P', 'B', 'T', 'D', 'K', 'G'].map((c) => {
+    let v = ur ? ur[c] ?? false : o.unreleased;
+    if (v === true) v = 'consonant';
+    if (![false, 'consonant', 'closure'].includes(v)) throw new Error(`stops.unreleased${ur ? `.${c}` : ''}: "consonant", "closure" or false, got ${JSON.stringify(v)}`);
+    return [c, v];
+  }));
+  if (![true, false, 'words'].includes(o.flap)) throw new Error(`stops.flap: true, false or "words", got ${JSON.stringify(o.flap)}`);
+  for (const k of ['burstLocus', 'flapLocus', 'votTotal']) o[k] = !!o[k];
+  // burstFit: true (every stop), false, or a list of stops
+  const bf = o.burstFit;
+  if (!(typeof bf === 'boolean' || (Array.isArray(bf) && bf.every((c) => PLACE[c])))) throw new Error(`stops.burstFit: true, false or a list of P B T D K G, got ${JSON.stringify(bf)}`);
+  o.burstFit = Object.fromEntries(['P', 'B', 'T', 'D', 'K', 'G'].map((c) => [c, bf === true || (Array.isArray(bf) && bf.includes(c))]));
   return o;
 }
 
 const r3 = (x) => Math.round(x * 1000) / 1000;
 const mix = (a, b, k) => (a === undefined ? b : b === undefined ? a : a + (b - a) * k);
 
-// the burst template for stop entry e (bank) released into vowel entry v (its onset formants)
-export function burstTemplate(code, e, v) {
+// The bursts' BW2, BW3 and A2, A3 by stop and the vowel's class (front: F2 >= 1500 Hz at its onset), fitted to
+// Kokoro's bursts (tools/voicelab/burstfit.py --pooled on stopscope.py rows of the BASE + stops config, bands
+// 1.3-10 kHz; below, Kokoro's 11 ms window after the release already holds voicing): klattsch's were 5-15 dB weak
+// at 1.3-3 and 4.5-10 kHz (the glottal noise low-pass, and narrow F2/F3 leave a dip between them). The formant
+// frequencies stay the templates'; velars fit to one compact peak (A3 0), alveolars to a broad one.
+export const BURST_FIT = {
+  P: { BW2: 909, BW3: 1543, front: { A2: 0.133, A3: 0.389 }, back: { A2: 0.298, A3: 0.213 } },
+  B: { BW2: 125, BW3: 432, front: { A2: 0.903, A3: 0.673 }, back: { A2: 1.69, A3: 0.37 } },
+  T: { BW2: 2000, BW3: 2000, front: { A2: 0.16, A3: 0.117 }, back: { A2: 0.199, A3: 0.324 } },
+  D: { BW2: 788, BW3: 1389, front: { A2: 0.149, A3: 0.253 }, back: { A2: 0.12, A3: 0.412 } },
+  K: { BW2: 470, BW3: 1000, front: { A2: 1.292, A3: 0 }, back: { A2: 1.31, A3: 0 } },
+  G: { BW2: 282, BW3: 284, front: { A2: 1.871, A3: 0 }, back: { A2: 1.033, A3: 0.198 } },
+};
+
+// the burst template for stop entry e (bank) released into vowel entry v (its onset formants); fit: BURST_FIT's
+// bandwidths and amplitudes over the rules'
+export function burstTemplate(code, e, v, fit = false) {
+  const t = burstRules(code, e, v);
+  const f = fit && BURST_FIT[code];
+  return f ? { ...t, BW2: f.BW2, BW3: f.BW3, ...f[FRONT(v) ? 'front' : 'back'] } : t;
+}
+function burstRules(code, e, v) {
   const tot = (e.A2 ?? 0) + (e.A3 ?? 0);
   const voiced = !VOICELESS.has(code);
   switch (PLACE[code]) {
@@ -133,7 +169,9 @@ export function stopsBank(base, o, canonical) {
       const gain = (x) => (o.burstGain === 1 ? x : { ...x, A1: x.A1 * o.burstGain, A2: x.A2 * o.burstGain, A3: x.A3 * o.burstGain });
       phonemes[`${s}Q${c}X`] = withClosure(gain({ ...e }));
       phonemes[`${s}Q${c}U`] = withClosure({ ...e, release: false });
-      if (o.burst[s] > 0) for (const v of vowels) phonemes[`${s}Q${c}${v}`] = withClosure(gain(blend(e, burstTemplate(s, e, vowelOnset(P[v], v)), o.burst[s])));
+      // burstLocus false: the template's formants, not coarticulation's velar locus burst (locusBurst), under [CO]
+      const own = (x) => { if (!o.burstLocus) delete x.locusBurst; return x; };
+      if (o.burst[s] > 0) for (const v of vowels) phonemes[`${s}Q${c}${v}`] = withClosure(own(gain(blend(e, burstTemplate(s, e, vowelOnset(P[v], v), o.burstFit[s]), o.burst[s]))));
     }
   }
   const hh = P.HH;
@@ -145,6 +183,8 @@ export function stopsBank(base, o, canonical) {
   }
   // a flap: voiced, F1 down, F2 near the alveolar locus, weaker (a ~25 ms dip between the vowels)
   phonemes.DQF = { voicing: 1, F1: 300, BW1: 90, A1: 0.55, F2: 1700, BW2: 150, A2: 0.3, F3: 2600, BW3: 250, A3: 0.2 };
+  // flapLocus: under coarticulation the vowels around it move toward D's locus, as around a D
+  if (o.flapLocus && P.D?.locus) Object.assign(phonemes.DQF, { locus: P.D.locus, ...(P.D.locusVC ? { locusVC: P.D.locusVC } : {}) });
   for (const x of Object.values(phonemes)) for (const f of KEYS) if (typeof x[f] === 'number') x[f] = r3(x[f]);
   const bank = { schemaVersion: 1, name: `${base}--st${hash(canonical({ extends: base, phonemes }))}`, extends: base, phonemes };
   cache.set(key, bank);
@@ -169,14 +209,21 @@ export function planStops(ws, o) {
     const prev = prevX?.p, next = nextX?.p;
     const s = x.s;
     const set = (code) => { const f = x.part === 'onset' ? 'onsetCode' : 'codaCode'; (s[f] ??= [])[x.i] = code; };
-    // flap: word-internal T/D, the whole onset of an unstressed syllable, after a vowel or R
-    if (o.flap && (x.p === 'T' || x.p === 'D') && x.part === 'onset' && x.si > 0 && s.onset.length === 1 && s.nucleus && s.stress === 0
-        && prevX && prevX.wi === x.wi && (VOWELS.has(prev) || prev === 'R')) {
-      set('DQF'); if (o.flapMs) s.onsetMs[x.i] = Math.min(s.onsetMs[x.i], o.flapMs); return;
+    // flap: word-internal T/D, the whole onset of an unstressed syllable, after a vowel or R; "words" also a
+    // word-final T/D after a vowel or R before a vowel-initial word ("get it", "a lot of")
+    const flapV = (q) => VOWELS.has(q) || q === 'R';
+    const inWord = x.part === 'onset' && x.si > 0 && s.onset.length === 1 && s.nucleus && s.stress === 0 && prevX && prevX.wi === x.wi;
+    const acrossWords = o.flap === 'words' && x.part === 'coda' && x.i === s.coda.length - 1 && x.si === ws[x.wi].syllables.length - 1
+      && nextX && nextX.wi === x.wi + 1 && VOWELS.has(next) && prevX && prevX.s === s;
+    if (o.flap && (x.p === 'T' || x.p === 'D') && (inWord || acrossWords) && flapV(prev)) {
+      set('DQF');
+      if (o.flapMs) { const f = x.part === 'onset' ? s.onsetMs : s.codaMs; f[x.i] = Math.min(f[x.i], o.flapMs); }
+      return;
     }
     const sameOnset = nextX && x.part === 'onset' && nextX.s === s && nextX.part === 'onset';
-    const unrel = o.unreleased && next && !sameOnset && !VOWELS.has(next)
-      && (o.unreleased === 'consonant' || STOPS.has(next) || AFFRICATES.has(next) || NASALS.has(next));
+    const ur = o.unreleased[x.p];
+    const unrel = ur && next && !sameOnset && !VOWELS.has(next)
+      && (ur === 'consonant' || STOPS.has(next) || AFFRICATES.has(next) || NASALS.has(next));
     let rel = 'X';
     if (unrel) rel = 'U';
     else if (o.burst[x.p] > 0 && next) {
@@ -189,8 +236,11 @@ export function planStops(ws, o) {
   });
   for (const w of ws) for (const s of w.syllables) {
     if (!s.aspMs || !s.nucleus) continue;
-    const stop = s.onset[s.onset.length - 1];
+    const i = s.onset.length - 1, stop = s.onset[i], a0 = s.aspMs;
     if (o.vot) s.aspMs = o.vot === true ? s.aspMs * VOT_KLATT1975[stop] / ((47 + 65 + 70) / 3) : (o.vot[stop] ?? s.aspMs);
+    // votTotal: the stop keeps its total (closure + aspiration): the closure gives what the aspiration gains (it
+    // keeps at least MIN_CLOSURE_MS)
+    if (o.votTotal && s.aspMs !== a0) s.onsetMs[i] = Math.max(s.onsetMs[i] - (s.aspMs - a0), Math.min(s.onsetMs[i], MIN_CLOSURE_MS));
     if (aspirates(o)) s.aspCode = `HQ${s.nucleus}`;
   }
   return ws;
@@ -198,6 +248,7 @@ export function planStops(ws, o) {
 
 // sing: a rest next to a stop that planStops saw in context (rests come from the notes, after the durations):
 // after a rest, no voice bar or voicing tail; before one, released without a vowel context
+// (a flap DQF next to a rest is its lexical stop, p)
 const CODE = /^([PBTDKG])Q([VT]?)(.*)$/;
-export const afterSilence = (c) => { const m = c.match(CODE); return m ? `${m[1]}Q${m[3]}` : c; };
-export const beforeSilence = (c) => { const m = c.match(CODE); return m ? `${m[1]}Q${m[2]}X` : c; };
+export const afterSilence = (c, p) => { if (c === 'DQF') return c; const m = c.match(CODE); return m ? `${m[1]}Q${m[3]}` : c; };
+export const beforeSilence = (c, p) => { if (c === 'DQF') return p ?? c; const m = c.match(CODE); return m ? `${m[1]}Q${m[2]}X` : c; };

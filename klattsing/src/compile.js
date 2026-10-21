@@ -103,7 +103,7 @@ function prefix(o) {
 const asp = (s, o) => (o.aspiration !== false && s.aspMs ? `r${f1(s.aspMs)} HH ` : '');
 // "stops" (stops.js): a consonant's context-dependent entry (onsetCode / codaCode / aspCode), named in the
 // timeline by its lexical phoneme; fix: sing's correction for a rest next to it
-const consonant = (s, part, i, p, at, fix) => { const c = s[part]?.[i]; return c ? [fix ? fix(c) : c, { ...at, p }] : [p, at]; };
+const consonant = (s, part, i, p, at, fix) => { const c = s[part]?.[i]; return c ? [fix ? fix(c, p) : c, { ...at, p }] : [p, at]; };
 const aspToken = (s, at) => (s.aspCode ? [s.aspCode, { ...at, asp: true, p: 'HH' }] : ['HH', { ...at, asp: true }]);
 // the klattsch aspiration (h) a voice string leaves set, so "breath" can restore it
 export function voiceAspiration(voice) {
