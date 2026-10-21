@@ -37,3 +37,28 @@ test('under coarticulation the LF source stays on through formant-only events', 
   for (let i = 0; i < buf.length; i += 160) { synth.process(buf.subarray(i, i + 160)); n++; on += synth.src.GS; }
   assert.ok(on / n > 0.95, `LF source on ${(100 * on / n).toFixed(0)}% of blocks`);
 });
+
+// nasals (klattsch [NAS]) on top of both: its vowel nasalization rides in nasalOnly events (nasal parameters alone),
+// which must neither read as "GS absent" nor retime coarticulation's formant moves.
+test('nasals + coarticulation + glottal: each of the three still changes the sound', () => {
+  const text = 'Nine men ran home in the morning.';
+  const all = audio({ text, coarticulation: true, glottal: true, nasals: true });
+  assert.notEqual(all, audio({ text, coarticulation: true, glottal: true }), 'nasals ignored under coarticulation + glottal');
+  assert.notEqual(all, audio({ text, glottal: true, nasals: true }), 'coarticulation ignored under nasals');
+  assert.notEqual(all, audio({ text, coarticulation: true, nasals: true }), 'glottal source ignored under nasals');
+});
+
+test('under nasals + coarticulation the LF source stays on through nasalOnly and formant-only events', async () => {
+  const { FormantSynth } = await import('../../vendor/klattsch/src/engine/synth-core.js');
+  const spec = { text: 'Nine men ran home in the morning.', coarticulation: true, glottal: true, nasals: true };
+  for (const b of banksFor(spec)) registerBank(b);
+  const v = compileString(speak(spec)).voices[0];
+  assert.ok(v.schedule.some((e) => e.nasalOnly), 'expected nasalOnly events');
+  assert.ok(v.schedule.some((e) => e.params && e.params.join() === 'F1,F2,F3'), 'expected coarticulation formant events');
+  const synth = new FormantSynth({ sampleRate: 16000, schedule: v.schedule });
+  const buf = new Float32Array(Math.ceil(v.totalMs * 16));
+  let on = 0, n = 0;
+  for (let i = 0; i < buf.length; i += 160) { synth.process(buf.subarray(i, i + 160)); n++; on += synth.src.GS; }
+  assert.ok(on / n > 0.95, `LF source on ${(100 * on / n).toFixed(0)}% of blocks`);
+  assert.ok(synth.nasal, 'nasal path on');
+});

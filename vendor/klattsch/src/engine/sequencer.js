@@ -402,7 +402,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
     }
     nasalUsed = true;
     pendingNasal = nasalScaled(NASAL_DEFAULT);
-    if (p.nasal || p.isStop || !((p.voicing ?? 0) >= 1)) return null;
+    if (!(extras.NAS > 0) || p.nasal || p.isStop || !((p.voicing ?? 0) >= 1)) return null;
     const prevN = nasalOf(prevPh.get(t)), nextN = nasalOf(nextPh.get(t));
     if (!prevN && !nextN) return null;
     const cv = extras.NASCV ?? DEFAULTS.nasalCV, vc = extras.NASVC ?? DEFAULTS.nasalVC;
