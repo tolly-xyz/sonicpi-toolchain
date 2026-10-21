@@ -126,6 +126,17 @@ test('sequencer: vowels next to a nasal are nasalized over [NASVC] / [NASCV] of 
   assert.deepEqual(c.schedule.map((e) => e.atMs), [...c.schedule.map((e) => e.atMs)].sort((a, b) => a - b), 'in time order');
 });
 
+test('sequencer: [NAST=ms] times the events into a nasal and into the phoneme after it', () => {
+  const ev = (s) => compileString(s).schedule.filter((e) => !e.nasalOnly && e.target.A1 > 0).map((e) => e.transitionMs);
+  const bank = { schemaVersion: 1, name: 'nastest3', extends: 'klatt1980-en', phonemes: { M: { ...banks.get('klatt1980-en').phonemes.M, nasal: true } } };
+  registerBank(bank);
+  assert.deepEqual(ev('[bank=nastest3] [NAS=0] r200 AA M AA AH'), [35, 35, 35, 35]);
+  assert.deepEqual(ev('[bank=nastest3] [NAS=0] [NAST=4] r200 AA M AA AH'), [35, 4, 4, 35]);
+  assert.deepEqual(ev('[bank=nastest3] [NAST=4] r200 AA M AA AH'), [35, 35, 35, 35], 'only under [NAS]');
+  const stop = compileString('[bank=nastest3] [NAS=0] [NAST=4] r200 AA M P AA').schedule.filter((e) => !e.nasalOnly);
+  assert.equal(stop.find((e) => e.atMs === 400).transitionMs, 4, 'the closure after a nasal');
+});
+
 test('option: directives, generated bank, validation; durations and timing unchanged', () => {
   const spec = { mode: 'speak', text: 'Nine men ran home.', bank: 'mitalk-bursts' };
   const plain = speak(spec), s = speak({ ...spec, nasals: true });
@@ -149,7 +160,7 @@ test('option: directives, generated bank, validation; durations and timing uncha
   assert.deepEqual(chain.map((x) => x.name.replace(/[0-9a-f]{12}/g, '#')), ['mitalk-bursts--nas#', 'mitalk-bursts--nas#--#', 'mitalk-bursts--nas#--#--co#']);
   const top = banks.get(chain[2].name).phonemes.M;
   assert.ok(top.nasal && top.A1 === 0.5 && top.locus, 'all three kept');
-  assert.match(speak({ ...spec, nasals: { strength: 0.5, vc: 0.4, cv: 0.2 } }), /\[NAS=0\.5\] \[NASVC=0\.4\] \[NASCV=0\.2\]/);
+  assert.match(speak({ ...spec, nasals: { strength: 0.5, vc: 0.4, cv: 0.2, transition: 5 } }), /\[NAS=0\.5\] \[NASVC=0\.4\] \[NASCV=0\.2\] \[NAST=5\]/);
   // validation
   assert.throws(() => nasalOptions({ nasals: 1 }), /nasals: true or an object/);
   assert.throws(() => nasalOptions({ nasals: { strenght: 1 } }), /nasals.strenght: unknown/);

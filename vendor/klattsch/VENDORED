@@ -10,3 +10,13 @@ tgies/klattsch @ 63dc2c6 (MIT), vendored with patches:
     formants), transparent (HH: the next vowel's formants), smooth (liquids: no step); under [CO] formant events never go back in
     time and the schedule is sorted by time (stably); without [CO]/[TC] the schedule is unchanged
   src/engine/dsp.js, src/engine/synth-core.js: [GS=1] an LF (Liljencrants-Fant) voice source instead of the Rosenberg pulse: lfShape(Rd) (Fant 1995), [RD=x] [RDE=oct/effort] shape and its effort coupling, [TL=dB at 3 kHz] one-pole tilt, [JIT=%] [SHIM=%] local jitter (closure-to-closure periods) and shimmer, [AM=0..1] noise scaled by the glottal flow while voiced, [FL=x] flutter (Klatt & Klatt 1990), [NT=dB] [AT=dB] one-pole low-pass of the frication / aspiration noise (Klatt's soft low-pass noise); without GS (or GS=0) every sample is as before
+  src/engine/dsp.js, src/engine/synth-core.js, src/engine/sequencer.js: [NAS=x] nasals. The synth gains Klatt's (1980) nasal path:
+    a resonator FNP/BNP and an antiresonator FNZ/BNZ (each unity gain at 0 Hz, cancelling at FNP = FNZ, BNP = BNZ), a second pair
+    FNP2/BNP2, FNZ2/BNZ2, in cascade before the parallel formants, and AN, a parallel nasal formant at FNP; it runs only once a target
+    carries one of these keys (until then every sample is as before), the nasal parameters glide on their own clock, and an event
+    { nasalOnly: true } moves them alone (it is neither a voice-source event nor a move of the other parameters, in both the linear
+    and the shaped mode). Under [NAS=x] a bank entry's nasal fields (nasal: true, FNP ... BNZ2, AN; nasalizes {...}) are its murmur,
+    every other phoneme's first event and every silence carry neutral pairs, and a vowel-like neighbour of a nasal (no pause between)
+    is nasalized over [NASVC] (before it, default 0.5) / [NASCV] (after it, 0.3) of its slot at strength x (nasalOnly events); the
+    pole/zero frequencies follow the formant scale; a bare [NAS] puts neutral pairs back. Without [NAS] bank nasal fields are dropped
+    and the schedule is unchanged

@@ -1,9 +1,10 @@
 // "nasals": nasal murmurs with a nasal pole-zero pair and a place-dependent zero, and nasalized vowels next to
 // nasal consonants (klattsch [NAS=x], a patch to the vendored engine: vendor/klattsch/VENDORED).
 //   "nasals": true                                   the defaults below (NASALS, NASAL_MURMUR)
-//   "nasals": { strength, vc, cv, murmur: { M: {field: value}, ... }, nasalized: {FNP, BNP, FNZ, BNZ, AN, ...} }
+//   "nasals": { strength, vc, cv, transition, murmur: { M: {field: value}, ... }, nasalized: {FNP, BNP, FNZ, BNZ, AN, ...} }
 // strength: [NAS=x], how strongly a vowel next to M/N/NG is nasalized (0: murmurs only); vc / cv: [NASVC] /
-// [NASCV], the share of a vowel before / after a nasal consonant that is nasalized; murmur: fields laid over
+// [NASCV], the share of a vowel before / after a nasal consonant that is nasalized; transition: [NAST=ms], the
+// transition into a nasal consonant and into the phoneme after it (default: klattsch's usual); murmur: fields laid over
 // NASAL_MURMUR per nasal (any bank field: F1, BW1, A2, ... and the nasal ones; null removes one); nasalized: the
 // nasal parameters of a fully nasalized vowel (bank field nasalizes on each nasal; klattsch's default FNP 250,
 // BNP 100, FNZ 450, BNZ 100, AN 0). The murmur entries go into a generated bank "<base>--nas<hash>" that extends
@@ -21,9 +22,9 @@ export const NASAL_MURMUR = {
   NG: { FNP: 270, BNP: 100, FNZ: 450, BNZ: 100, AN: 0, FNP2: 3000, BNP2: 1000, FNZ2: 3000, BNZ2: 300 },
 };
 // the option's defaults ("nasals": true); vc / cv null: klattsch's own (0.5 / 0.3)
-export const NASALS = { strength: 1, vc: null, cv: null, nasalized: null };
+export const NASALS = { strength: 1, vc: null, cv: null, transition: null, nasalized: null };
 const NASAL_FIELDS = ['FNP', 'BNP', 'FNZ', 'BNZ', 'AN', 'FNP2', 'BNP2', 'FNZ2', 'BNZ2'];
-const KEYS = ['strength', 'vc', 'cv', 'murmur', 'nasalized'];
+const KEYS = ['strength', 'vc', 'cv', 'transition', 'murmur', 'nasalized'];
 const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
 
 // "nasals": true | {...} -> the full option, or null (off)
@@ -32,7 +33,7 @@ export function nasalOptions(o) {
   const x = o.nasals === true ? {} : o.nasals;
   if (!isObj(x)) throw new Error(`nasals: true or an object, got ${JSON.stringify(o.nasals)}`);
   for (const k of Object.keys(x)) if (!KEYS.includes(k)) throw new Error(`nasals.${k}: unknown (${KEYS.join(', ')})`);
-  for (const k of ['strength', 'vc', 'cv']) {
+  for (const k of ['strength', 'vc', 'cv', 'transition']) {
     if (x[k] != null && !(typeof x[k] === 'number' && Number.isFinite(x[k]) && x[k] >= 0)) throw new Error(`nasals.${k}: a number >= 0`);
   }
   if (x.murmur != null) {
@@ -60,7 +61,8 @@ export function nasalOptions(o) {
 // the klattsch directives that switch the nasal rendering on
 export function nasalDirectives(n) {
   if (!n) return '';
-  return [`[NAS=${n.strength}]`, n.vc != null ? `[NASVC=${n.vc}]` : '', n.cv != null ? `[NASCV=${n.cv}]` : ''].filter(Boolean).join(' ');
+  return [`[NAS=${n.strength}]`, n.vc != null ? `[NASVC=${n.vc}]` : '', n.cv != null ? `[NASCV=${n.cv}]` : '',
+    n.transition != null ? `[NAST=${n.transition}]` : ''].filter(Boolean).join(' ');
 }
 
 // the bank entries: each nasal's resolved base entry with the murmur fields (and nasal: true, nasalizes) laid over it

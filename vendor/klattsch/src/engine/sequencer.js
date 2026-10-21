@@ -433,6 +433,11 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
     nasalAfter(nasalPlan, slotMs);
     return r;
   };
+  // (sonicpi-toolchain patch) [NAST=ms] under [NAS]: the transition of the first event into a nasal consonant and
+  // into the phoneme after one (amplitudes, bandwidths, nasal parameters; [CO]'s formant moves keep their own):
+  // the oral closure and release that bound a murmur are abrupt. Absent: the usual transition.
+  const nasalTrans = (t, p, usual, slotMs) => (nasalMode() && extras.NAST !== undefined && (p.nasal || nasalOf(prevPh.get(t)))
+    ? Math.max(0.1, Math.min(extras.NAST, slotMs * 0.9)) : usual);
   const renderPhonemeEvents = (t, p, slotMs) => {
     const startF0 = t.stressed ? f0 + DEFAULTS.stressF0Lift : f0;
     const endF0 = startF0 + t.pitchDelta;
@@ -441,7 +446,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
       // (sonicpi-toolchain patch) a bank entry's burstMs sets its release burst (MITalk: P 5, T 15, K 25 ms)
       const burstMs = Math.min(p.burstMs ?? DEFAULTS.stopBurstMs, slotMs * 0.3);
       const silenceMs = slotMs - burstMs;
-      silence(Math.min(20, silenceMs * 0.4));
+      silence(nasalTrans(t, p, Math.min(20, silenceMs * 0.4), silenceMs));
       timeMs += silenceMs;
       emit(scaled(p, startF0), Math.min(5, burstMs * 0.2));
       if (extras.CO !== undefined) {
@@ -453,7 +458,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
       return slotMs;
     } else if (p.glideTo) {
       const onset = slotMs * 0.25, glide = slotMs * 0.50, offset = slotMs * 0.25;
-      emit(scaled(p, startF0), Math.min(20, onset));
+      emit(scaled(p, startF0), nasalTrans(t, p, Math.min(20, onset), onset));
       formantsIn(t, p, Math.min(20, onset), slotMs);
       timeMs += onset;
       emit(scaled(p, endF0, p.glideTo), glide);
@@ -462,7 +467,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
       formantsOut(t, p, slotStart, slotMs);
       return slotMs;
     } else if (t.pitchDelta !== 0) {
-      emit(scaled(p, startF0), Math.min(25, slotMs * 0.25));
+      emit(scaled(p, startF0), nasalTrans(t, p, Math.min(25, slotMs * 0.25), slotMs * 0.25));
       formantsIn(t, p, Math.min(25, slotMs * 0.25), slotMs);
       timeMs += slotMs * 0.25;
       emit(scaled(p, endF0), slotMs * 0.6);
@@ -472,7 +477,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
     } else {
       // [TR=ms] (sonicpi-toolchain patch): how long formants take to move into a phoneme
       const trans = Math.min(extras.TR ?? DEFAULTS.defaultTransitionMs, slotMs * (extras.TR ? 0.9 : 0.4));
-      emit(scaled(p, startF0), trans);
+      emit(scaled(p, startF0), nasalTrans(t, p, trans, slotMs));
       formantsIn(t, p, trans, slotMs);
       timeMs += slotMs;
       formantsOut(t, p, slotStart, slotMs);
