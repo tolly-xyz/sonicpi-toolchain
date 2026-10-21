@@ -40,10 +40,14 @@ const DEFAULTS = Object.freeze({
   coJumpMs: 3,
   coVcShare: 0.6,
   // (sonicpi-toolchain patch) [NAS=x]: share of a vowel nasalized before a nasal consonant ([NASVC]) and after
-  // one ([NASCV]), and the nasal parameters of a fully nasalized vowel (a nasal pole-zero pair, Klatt 1980)
-  nasalVC: 0.5,
-  nasalCV: 0.3,
-  nasalized: Object.freeze({ FNP: 250, BNP: 100, FNZ: 450, BNZ: 100, AN: 0 }),
+  // one ([NASCV]), and the nasal parameters of a fully nasalized vowel: a parallel nasal formant AN at FNP 250 Hz,
+  // the low nasal pole of nasalized vowels (P0: Hawkins & Stevens 1985, Chen 1997), the pairs neutral, and the
+  // whole at GN (the oral formants weaken: Kokoro's vowels next to nasals are quieter than its other vowels, not
+  // louder). Klatt's (1980) recipe, a zero raised above the pole (FNZ ~450), took 10 dB off everything above it and
+  // made the vowels less Kokoro-like at every strength tried (voicelab fidelity); these values were fitted there.
+  nasalVC: 0.8,
+  nasalCV: 0.5,
+  nasalized: Object.freeze({ FNP: 250, BNP: 100, FNZ: 250, BNZ: 100, AN: 0.8, GN: 0.3 }),
 });
 const NASAL_FREQ = /^(F|B)N[PZ]2?$/;   // nasal pole/zero frequencies and bandwidths: they follow the formant scale
 
@@ -434,8 +438,8 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
     return r;
   };
   // (sonicpi-toolchain patch) [NAST=ms] under [NAS]: the transition of the first event into a nasal consonant and
-  // into the phoneme after one (amplitudes, bandwidths, nasal parameters; [CO]'s formant moves keep their own):
-  // the oral closure and release that bound a murmur are abrupt. Absent: the usual transition.
+  // into a (non-stop) phoneme after one (amplitudes, bandwidths, nasal parameters; [CO]'s formant moves keep their
+  // own): the oral closure and release that bound a murmur are abrupt. Absent: the usual transition.
   const nasalTrans = (t, p, usual, slotMs) => (nasalMode() && extras.NAST !== undefined && (p.nasal || nasalOf(prevPh.get(t)))
     ? Math.max(0.1, Math.min(extras.NAST, slotMs * 0.9)) : usual);
   const renderPhonemeEvents = (t, p, slotMs) => {
@@ -446,7 +450,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
       // (sonicpi-toolchain patch) a bank entry's burstMs sets its release burst (MITalk: P 5, T 15, K 25 ms)
       const burstMs = Math.min(p.burstMs ?? DEFAULTS.stopBurstMs, slotMs * 0.3);
       const silenceMs = slotMs - burstMs;
-      silence(nasalTrans(t, p, Math.min(20, silenceMs * 0.4), silenceMs));
+      silence(Math.min(20, silenceMs * 0.4));
       timeMs += silenceMs;
       emit(scaled(p, startF0), Math.min(5, burstMs * 0.2));
       if (extras.CO !== undefined) {

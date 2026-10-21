@@ -30,14 +30,15 @@ export const PARAMS = [
 // (sonicpi-toolchain patch) Nasal parameters (Klatt 1980 names): a nasal pole-zero pair FNP/BNP, FNZ/BNZ in
 // cascade with the excitation (resonator then antiresonator, each unity gain at 0 Hz; they cancel when FNP = FNZ
 // and BNP = BNZ), a second pair FNP2/BNP2, FNZ2/BNZ2 (the murmur's place-dependent oral side-branch zero), and
-// AN, a parallel nasal formant at FNP (fed by the excitation, like A1-A3). The nasal path runs only once a target
+// AN, a parallel nasal formant at FNP (fed by the excitation, like A1-A3), and GN, a gain on all of it (the level
+// of a murmur or a nasalized vowel, which spectral distances do not see). The nasal path runs only once a target
 // (schedule event, setTarget, initialTarget) has carried one of these keys; until then every sample is computed
 // exactly as before. Nasal parameters glide linearly on their own clock (in both the linear and the shaped mode),
 // so an event may move only them ({ nasalOnly: true }) without retiming the other parameters' transitions.
-export const NASAL_PARAMS = ['FNP', 'BNP', 'FNZ', 'BNZ', 'AN', 'FNP2', 'BNP2', 'FNZ2', 'BNZ2'];
+export const NASAL_PARAMS = ['FNP', 'BNP', 'FNZ', 'BNZ', 'AN', 'FNP2', 'BNP2', 'FNZ2', 'BNZ2', 'GN'];
 export const NASAL_DEFAULT = Object.freeze({
   FNP: 250, BNP: 100, FNZ: 250, BNZ: 100, AN: 0,
-  FNP2: 1500, BNP2: 100, FNZ2: 1500, BNZ2: 100,
+  FNP2: 1500, BNP2: 100, FNZ2: 1500, BNZ2: 100, GN: 1,
 });
 const hasNasal = (t) => { for (const k of NASAL_PARAMS) if (k in t) return true; return false; };
 
@@ -438,7 +439,7 @@ export class FormantSynth {
         y = (this.bp1.process(en) * cur.A1
           +  this.bp2.process(en) * cur.A2
           +  this.bp3.process(en) * cur.A3
-          +  this.bpn.process(exc) * cur.AN) * cur.gain * tremoloMod;
+          +  this.bpn.process(exc) * cur.AN) * cur.GN * cur.gain * tremoloMod;
       }
 
       const tilted = y - cur.tilt * this.tiltPrev;

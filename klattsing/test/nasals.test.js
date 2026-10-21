@@ -63,6 +63,9 @@ test('engine: neutral nasal parameters (the pairs cancel, AN 0) render the non-n
   let d = 0; for (let i = 0; i < n.length; i++) d = Math.max(d, Math.abs(n[i] - plain[i]));
   assert.ok(d < 1e-4, `max difference ${d}`);
   assert.ok(!same(render(`[FNZ=600] ${s}`), plain), 'a nasal directive switches the path on');
+  // GN: a gain on the nasal path (level only)
+  const g = render(`${neutral} [GN=0.5] ${s}`);
+  assert.ok(Math.abs(20 * Math.log10(rms(g) / rms(plain)) + 6.02) < 0.3, `GN 0.5: ${20 * Math.log10(rms(g) / rms(plain))} dB`);
 });
 
 test('engine: a nasalOnly event moves the nasal parameters alone, on their own clock', () => {
@@ -134,7 +137,7 @@ test('sequencer: [NAST=ms] times the events into a nasal and into the phoneme af
   assert.deepEqual(ev('[bank=nastest3] [NAS=0] [NAST=4] r200 AA M AA AH'), [35, 4, 4, 35]);
   assert.deepEqual(ev('[bank=nastest3] [NAST=4] r200 AA M AA AH'), [35, 35, 35, 35], 'only under [NAS]');
   const stop = compileString('[bank=nastest3] [NAS=0] [NAST=4] r200 AA M P AA').schedule.filter((e) => !e.nasalOnly);
-  assert.equal(stop.find((e) => e.atMs === 400).transitionMs, 4, 'the closure after a nasal');
+  assert.equal(stop.find((e) => e.atMs === 400).transitionMs, 20, 'a stop closure after a nasal keeps its own');
 });
 
 test('option: directives, generated bank, validation; durations and timing unchanged', () => {

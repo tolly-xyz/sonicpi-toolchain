@@ -7,7 +7,7 @@
 // transition into a nasal consonant and into the phoneme after it (default: klattsch's usual); murmur: fields laid over
 // NASAL_MURMUR per nasal (any bank field: F1, BW1, A2, ... and the nasal ones; null removes one); nasalized: the
 // nasal parameters of a fully nasalized vowel (bank field nasalizes on each nasal; klattsch's default FNP 250,
-// BNP 100, FNZ 450, BNZ 100, AN 0). The murmur entries go into a generated bank "<base>--nas<hash>" that extends
+// BNP 100, FNZ 250, BNZ 100, AN 0.8, GN 0.3). The murmur entries go into a generated bank "<base>--nas<hash>" that extends
 // the spec's bank (before bankPatch, so a bankPatch can still change them, and before coarticulation).
 //
 // Engine parameters (Klatt 1980, "Software for a cascade/parallel formant synthesizer", JASA 67: FNP/BNP, FNZ/BNZ,
@@ -17,13 +17,14 @@
 // oral cavity, whose frequency marks the place of articulation (Fujimura 1962, JASA 34; Stevens 1998, Acoustic
 // Phonetics, ch. 9). AN: a parallel nasal formant at FNP, fed by the excitation as A1-A3 are.
 export const NASAL_MURMUR = {
-  M: { FNP: 270, BNP: 100, FNZ: 450, BNZ: 100, AN: 0, FNP2: 1000, BNP2: 600, FNZ2: 1000, BNZ2: 150 },
-  N: { FNP: 270, BNP: 100, FNZ: 450, BNZ: 100, AN: 0, FNP2: 1800, BNP2: 800, FNZ2: 1800, BNZ2: 200 },
-  NG: { FNP: 270, BNP: 100, FNZ: 450, BNZ: 100, AN: 0, FNP2: 3000, BNP2: 1000, FNZ2: 3000, BNZ2: 300 },
+  M: { F1: 230, BW1: 56.0, A2: 0.252, A3: 0.274, F2: 1070, BW2: 280, F3: 1980, BW3: 200, FNP: 250, BNP: 100, FNZ: 250, BNZ: 100, AN: 0.2, FNP2: 1000, FNZ2: 1000, BNZ2: 150, BNP2: 100, GN: 0.65 },
+  N: { F1: 290, BW1: 56.0, A2: 0.102, A3: 0.12, F2: 1040, BW2: 823, F3: 2170, BW3: 420, FNP: 250, BNP: 100, FNZ: 250, BNZ: 100, AN: 0.1, FNP2: 2100, FNZ2: 2100, BNZ2: 150, BNP2: 60.0, GN: 0.65 },
+  NG: { F1: 330, BW1: 110, A2: 0.2, A3: 0.044, F2: 2100, BW2: 153, F3: 2250, BW3: 109, FNP: 250, BNP: 100, FNZ: 330, BNZ: 100, AN: 0.0, FNP2: 3000, FNZ2: 3000, BNZ2: 66.7, BNP2: 150, GN: 0.65 },
 };
-// the option's defaults ("nasals": true); vc / cv null: klattsch's own (0.5 / 0.3)
-export const NASALS = { strength: 1, vc: null, cv: null, transition: null, nasalized: null };
-const NASAL_FIELDS = ['FNP', 'BNP', 'FNZ', 'BNZ', 'AN', 'FNP2', 'BNP2', 'FNZ2', 'BNZ2'];
+// the option's defaults ("nasals": true); vc / cv null: klattsch's own (0.8 / 0.5), nasalized null: klattsch's own
+// (AN 0.8 at FNP 250, pairs neutral, GN 0.3)
+export const NASALS = { strength: 1, vc: null, cv: null, transition: 5, nasalized: null };
+const NASAL_FIELDS = ['FNP', 'BNP', 'FNZ', 'BNZ', 'AN', 'FNP2', 'BNP2', 'FNZ2', 'BNZ2', 'GN'];
 const KEYS = ['strength', 'vc', 'cv', 'transition', 'murmur', 'nasalized'];
 const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
 

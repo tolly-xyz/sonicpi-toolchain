@@ -18,5 +18,5 @@ tgies/klattsch @ 63dc2c6 (MIT), vendored with patches:
     and the shaped mode). Under [NAS=x] a bank entry's nasal fields (nasal: true, FNP ... BNZ2, AN; nasalizes {...}) are its murmur,
     every other phoneme's first event and every silence carry neutral pairs, and a vowel-like neighbour of a nasal (no pause between)
     is nasalized over [NASVC] (before it, default 0.5) / [NASCV] (after it, 0.3) of its slot at strength x (nasalOnly events); the
-    pole/zero frequencies follow the formant scale; a bare [NAS] puts neutral pairs back. Without [NAS] bank nasal fields are dropped
-    and the schedule is unchanged
+    pole/zero frequencies follow the formant scale; [NAST=ms] times the first event into a nasal and into the (non-stop) phoneme after
+    it; a bare [NAS] puts neutral pairs back. Without [NAS] bank nasal fields are dropped and the schedule is unchanged
