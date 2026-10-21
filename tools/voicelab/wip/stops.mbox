@@ -1,0 +1,682 @@
+From 2480738aa71ef17074950697a8a1109c8a4b46c1 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 21 Oct 2026 00:07:26 +0000
+Subject: [PATCH 1/2] wip stops: voice bar, place/vowel bursts, vowel-formant
+ aspiration, VOT, flap, unreleased (engine: stop closure/release fields)
+
+---
+ klattsing/src/banks.js                  |   3 +
+ klattsing/src/compile.js                |  20 ++-
+ klattsing/src/stops.js                  | 192 ++++++++++++++++++++++++
+ vendor/klattsch/src/engine/sequencer.js |  20 ++-
+ 4 files changed, 225 insertions(+), 10 deletions(-)
+ create mode 100644 klattsing/src/stops.js
+
+diff --git a/klattsing/src/banks.js b/klattsing/src/banks.js
+index 6c56f02..44edd03 100644
+--- a/klattsing/src/banks.js
++++ b/klattsing/src/banks.js
+@@ -5,6 +5,7 @@
+ //   "bankPatch": { CODE: { field: value } }                fields changed on top of "bank" (default klatt1980-en),
+ //                                                          as a generated bank "<base>--<hash>" that extends it
+ //   "aspiration": "breath"                                 adds BR<vowel> entries, a bank "<base>--br<hash>" (below)
++//   "stops": true | {...}                                  context-dependent stop entries, "<base>--st<hash>" (stops.js)
+ // klattsch layers banks by whole phoneme entries, so a patched entry is the base's resolved entry with the
+ // patch's fields merged in (a field set to null is removed; an object value, e.g. glideTo, is merged one level).
+ import { createHash } from 'node:crypto';
+@@ -13,6 +14,7 @@ import { dirname, join } from 'node:path';
+ import { fileURLToPath } from 'node:url';
+ import { banks, registerBank } from '../../vendor/klattsch/src/engine/banks/index.js';
+ import { VOWELS } from './phones.js';
++import { stopOptions, stopsBank } from './stops.js';
+ 
+ const BANK_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'banks');
+ 
+@@ -118,5 +120,6 @@ function chain(o) {
+   const add = (b) => { if (!banks.list().includes(b.name)) registerBank(b); out.push(b); name = b.name; };
+   if (o.bankPatch && Object.keys(o.bankPatch).length) add(patchedBank(name || banks.defaultName, o.bankPatch));
+   if (o.aspiration === 'breath') add(breathBank(name || banks.defaultName, o.breathVoicing));
++  if (o.stops) { const base = name || banks.defaultName; ensureBank(base); add(stopsBank(base, stopOptions(o.stops), canonical)); }
+   return { name, banks: out };
+ }
+diff --git a/klattsing/src/compile.js b/klattsing/src/compile.js
+index c9fb08b..fb178d5 100644
+--- a/klattsing/src/compile.js
++++ b/klattsing/src/compile.js
+@@ -9,6 +9,7 @@ import { timeWordsV0 } from './durations_v0.js';
+ import { FUNCTION_WORDS } from './function_words.js';
+ import { bankName, BREATH_PREFIX } from './banks.js';
+ import { DUR } from './phones.js';
++import { stopOptions, planStops } from './stops.js';
+ 
+ const DIPH = { AY: ['AA', 'IY'], EY: ['EH', 'IY'], OW: ['AO', 'UW'], AW: ['AA', 'UW'], OY: ['AO', 'IY'] };
+ const NOTE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+@@ -69,7 +70,8 @@ export function words(text, rules, version, o = {}) {
+     return { ...w, syllables: w.syllables.map((s) => (reduce ? { ...s, stress: 0 } : { ...s })) };
+   });
+   const dur = durTable(o.phoneDur);
+-  return version === 'v0' ? timeWordsV0(ws, rules ?? undefined, dur) : timeWords(ws, { ...RULES, ...(rules ?? {}) }, dur);
++  const timed = version === 'v0' ? timeWordsV0(ws, rules ?? undefined, dur) : timeWords(ws, { ...RULES, ...(rules ?? {}) }, dur);
++  return o.stops ? planStops(timed, stopOptions(o.stops)) : timed;
+ }
+ 
+ // loudness by stress ([AV=x], a patch to the vendored klattsch): unstressed syllables recede, as in speech
+@@ -83,6 +85,10 @@ function prefix(o) {
+   return [bank ? `[bank=${bank}]` : '', o.transition ? `[TR=${o.transition}]` : '', voiceOf(o)].filter(Boolean).join(' ');
+ }
+ const asp = (s, o) => (o.aspiration !== false && s.aspMs ? `r${f1(s.aspMs)} HH ` : '');
++// "stops" (stops.js): a consonant's context-dependent entry (onsetCode / codaCode / aspCode), named in the
++// timeline by its lexical phoneme
++const consonant = (s, part, i, p, at) => { const c = s[part]?.[i]; return c ? [c, { ...at, p }] : [p, at]; };
++const aspToken = (s, at) => (s.aspCode ? [s.aspCode, { ...at, asp: true, p: 'HH' }] : ['HH', { ...at, asp: true }]);
+ // the klattsch aspiration (h) a voice string leaves set, so "breath" can restore it
+ export function voiceAspiration(voice) {
+   let h = 0;
+@@ -123,9 +129,9 @@ export function speak(o, meta) {
+       const b = I.declination ? base * 2 ** (-I.declination * t / 12000) : base;
+       if (I.declination && f1(b) !== lastB) { lastB = f1(b); out += `b${lastB} `; }
+       out += av(s, o);
+-      s.onset.forEach((p, i) => ph(s.onsetMs[i] * rate, p, at));
++      s.onset.forEach((p, i) => ph(s.onsetMs[i] * rate, ...consonant(s, 'onsetCode', i, p, at)));
+       const breathHere = breath && s.nucleus && s.aspMs;
+-      if (!breathHere && asp(s, o)) ph(s.aspMs, 'HH', { ...at, asp: true });
++      if (!breathHere && asp(s, o)) ph(s.aspMs, ...aspToken(s, at));
+       if (s.nucleus) {
+         // pitch: a rise on primary stress, a fall at the end of a phrase (a rise, with questionRise, after '?')
+         const st = final ? (I.questionRise && w.punct.includes('?') ? I.questionRise : -I.finalFall) : s.stress === 1 ? I.accent : 0;
+@@ -136,7 +142,7 @@ export function speak(o, meta) {
+         ph(s.nucleusMs * rate, s.nucleus, at, delta ? `(${delta > 0 ? '+' : ''}${delta})` : '');
+         if (acc) out += accDown;
+       }
+-      s.coda.forEach((p, i) => ph(s.codaMs[i] * rate, p, at));
++      s.coda.forEach((p, i) => ph(s.codaMs[i] * rate, ...consonant(s, 'codaCode', i, p, at)));
+       if (final && w.punct) {
+         out += `p${Math.round(pauseOf(o, w.punct) * rate)} `;
+         t = /[.!?]/.test(w.punct) ? 0 : t + pauseOf(o, w.punct) * rate;
+@@ -197,14 +203,14 @@ export function sing(o, meta) {
+     const { s, at } = x;
+     for (const r of x.rests) out += `p${f1(r)} `;
+     out += `v0 b${f1(hz(x.note))} ${av(s, o)}`;
+-    s.onset.forEach((p, j) => ph(x.ons[j], p, at));
+-    if (x.a && !breath) ph(x.a, 'HH', { ...at, asp: true });
++    s.onset.forEach((p, j) => ph(x.ons[j], ...consonant(s, 'onsetCode', j, p, at)));
++    if (x.a && !breath) ph(x.a, ...aspToken(s, at));
+     const acc = o.accent !== false && s.stress === 1;
+     if (acc) out += accUp;
+     if (x.a && breath) { out += hUp; ph(x.a, BREATH_PREFIX + x.parts[0][0], { ...at, asp: true, p: x.parts[0][0] }); out += hDown; }
+     x.parts.forEach(([p, len2], j) => ph(len2, p, at, x.to && j === x.parts.length - 1 ? `${x.to > 0 ? '+' : ''}${x.to}` : ''));
+     if (acc) out += accDown;
+-    s.coda.forEach((p, j) => ph(x.coda[j], p, at));
++    s.coda.forEach((p, j) => ph(x.coda[j], ...consonant(s, 'codaCode', j, p, at)));
+     if (x.rest > 0) out += `p${f1(x.rest)} `;
+   }
+   for (const r of tail) out += `p${f1(r)} `;
+diff --git a/klattsing/src/stops.js b/klattsing/src/stops.js
+new file mode 100644
+index 0000000..f1f1fd2
+--- /dev/null
++++ b/klattsing/src/stops.js
+@@ -0,0 +1,192 @@
++// Realistic stop consonants (the opt-in "stops" option). klattsch renders a stop as silence plus one fixed burst
++// (the bank entry), and klattsing adds the aspiration after P/T/K as an HH segment with fixed formants. With
++// "stops", each stop gets a bank entry chosen by its context, from a generated bank "<base>--st<hash>" that extends
++// the spec's bank (content-addressed like bankPatch's):
++//   voiceBar   B D G after a voiced sound (no pause between): low-frequency voicing through the closure
++//              (klattsch patch: a stop entry's `closure`), fading as the oral pressure builds up
++//              (Lisker & Abramson 1964: English voiced stops are voiced through the closure intervocalically
++//              but not after a pause; Westbury & Keating 1986: the voicing decays through the closure)
++//   voicingTail P T K after a voiced sound: the voicing of the vowel dies away over the closure's start (A1 of
++//              a fading voice-bar-like closure; 0 = silent closure)
++//   burst      the release burst's spectrum by place and the vowel it is released into (Stevens & Blumstein
++//              1978): labial diffuse-falling (energy below the vowel's F2), alveolar diffuse-rising (a high
++//              F2 locus near 1.8 kHz and a strong 3.5-4 kHz peak, lower before rounded vowels), velar compact (a
++//              single mid-frequency peak tied to the vowel: between F2 and F3 of a front vowel, just above F2 of
++//              a back one); a number blends the bank's burst (0) into these (1); {P, B, T, D, K, G}: per stop
++//   aspiration the aspiration after P/T/K (VOT) is noise through the following vowel's formants with F1 cut
++//              back and widened (Klatt 1975, 1980: aspiration excites the vocal tract of the vowel; the open
++//              glottis damps F1), as HQ<vowel> entries, instead of HH; a number blends HH (0) into these (1)
++//   vot        place-dependent VOT: true scales the aspiration (rules.aspirationMs) by Klatt's (1975) P 47 /
++//              T 65 / K 70 ms (relative to their mean), {P, T, K}: ms
++//   flap       T/D between a vowel (or R) and an unstressed vowel inside a word ("water", "city", "party") is
++//              a flap DQF: voiced, a brief dip, at most flapMs (Zue & Laferriere 1979: 26 ms on average; 0 or
++//              null: the rule duration)
++//   unreleased a stop before a stop, an affricate or a nasal (no pause between, not in one onset) has no burst
++//              (klattsch patch: release: false): "that time", "napkin"; "all": before any consonant
++// Codes: <stop>Q<closure><release>, closure "" (silent), "V" (voice bar) or "T" (voicing tail), release a vowel
++// (released into it), "X" (released, no vowel context) or "U" (unreleased); HQ<vowel>; DQF. The timeline names
++// them by their lexical phoneme (p).
++import { createHash } from 'node:crypto';
++import { banks } from '../../vendor/klattsch/src/engine/banks/index.js';
++import { VOWELS, STOPS, VOICED, LIQUIDS, GLIDES, NASALS, AFFRICATES } from './phones.js';
++
++export const STOP_DEFAULTS = {
++  voiceBar: { F1: 180, BW1: 60, A1: 0.3, inMs: 20, fade: 0.6 },
++  voicingTail: 0,
++  burst: 1,
++  burstGain: 1,
++  aspiration: 1,
++  aspirationGain: 1,
++  vot: false,
++  flap: false,
++  flapMs: 26,
++  unreleased: false,
++};
++export const VOT_KLATT1975 = { P: 47, T: 65, K: 70 };
++const PLACE = { P: 'lab', B: 'lab', T: 'alv', D: 'alv', K: 'vel', G: 'vel' };
++const VOICELESS = new Set(['P', 'T', 'K']);
++const ROUNDED = new Set('UW UH OW OY AO ER'.split(' '));
++const FRONT = (v) => v.F2 >= 1500;
++
++// "stops": true | { ...STOP_DEFAULTS fields } -> the full options (voiceBar: true/false/object)
++export function stopOptions(x) {
++  if (!x) return null;
++  const o = { ...STOP_DEFAULTS, ...(x === true ? {} : Object.fromEntries(Object.entries(x).filter(([, v]) => v != null))) };
++  if (o.voiceBar === true) o.voiceBar = STOP_DEFAULTS.voiceBar;
++  else if (o.voiceBar && typeof o.voiceBar === 'object') o.voiceBar = { ...STOP_DEFAULTS.voiceBar, ...o.voiceBar };
++  const unit = (v, k) => { const n = v === true ? 1 : Number(v || 0); if (!(n >= 0 && n <= 1)) throw new Error(`stops.${k}: expected 0..1, got ${JSON.stringify(v)}`); return n; };
++  const b = o.burst && typeof o.burst === 'object' ? o.burst : null;
++  o.burst = Object.fromEntries(['P', 'B', 'T', 'D', 'K', 'G'].map((c) => [c, unit(b ? b[c] : o.burst, `burst${b ? `.${c}` : ''}`)]));
++  o.aspiration = unit(o.aspiration, 'aspiration');
++  o.voicingTail = Number(o.voicingTail || 0);
++  for (const k of ['burstGain', 'aspirationGain']) if (!(typeof o[k] === 'number' && o[k] >= 0)) throw new Error(`stops.${k}: expected a number >= 0, got ${JSON.stringify(o[k])}`);
++  if (![true, false, 'all'].includes(o.unreleased)) throw new Error(`stops.unreleased: true, false or "all", got ${JSON.stringify(o.unreleased)}`);
++  return o;
++}
++
++const r3 = (x) => Math.round(x * 1000) / 1000;
++const mix = (a, b, k) => (a === undefined ? b : b === undefined ? a : a + (b - a) * k);
++
++// the burst template for stop entry e (bank) released into vowel entry v (its onset formants)
++export function burstTemplate(code, e, v) {
++  const tot = (e.A2 ?? 0) + (e.A3 ?? 0);
++  const voiced = !VOICELESS.has(code);
++  switch (PLACE[code]) {
++    case 'lab':    // diffuse-falling: energy at and below the vowel's F2, a weak F3
++      return { F1: e.F1, BW1: e.BW1, A1: voiced ? e.A1 : Math.max(e.A1, 0.2), F2: 0.8 * v.F2 + 150, BW2: 200, A2: 0.6 * tot,
++               F3: v.F3 - 150, BW3: 300, A3: 0.4 * tot };
++    case 'alv':    // diffuse-rising: F2 locus ~1.8 kHz, strong high peak (lower before rounded vowels)
++      return { F1: e.F1, BW1: e.BW1, A1: e.A1, F2: 0.25 * v.F2 + 1300, BW2: Math.max(e.BW2, 150), A2: 0.4 * tot,
++               F3: e.F3 - (v.rounded ? 400 : 0), BW3: Math.max(e.BW3, 400), A3: 0.6 * tot };
++    default: {     // compact: one mid-frequency peak tied to the vowel
++      const peak = FRONT(v) ? (v.F2 + v.F3) / 2 : v.F2 + 300;
++      return { F1: e.F1, BW1: e.BW1, A1: e.A1, F2: peak, BW2: 200, A2: 0.65 * tot,
++               F3: FRONT(v) ? v.F3 + 200 : v.F3, BW3: Math.max(e.BW3, 250), A3: 0.35 * tot };
++    }
++  }
++}
++const KEYS = ['F1', 'BW1', 'A1', 'F2', 'BW2', 'A2', 'F3', 'BW3', 'A3'];
++function blend(e, t, k) {
++  const out = { ...e };
++  for (const f of KEYS) if (t[f] !== undefined) out[f] = mix(e[f], t[f], k);
++  return out;
++}
++// a vowel's onset formants are its entry's F1-F3 (glideTo is where it ends)
++const vowelOnset = (v, code) => ({ ...v, rounded: ROUNDED.has(code) });
++
++// aspiration into vowel entry v: noise through the vowel's formants, F1 cut back and widened (blend k from HH)
++function aspirationEntry(hh, v, k) {
++  const t = { voicing: 0, F1: v.F1, BW1: v.BW1 + 200, A1: hh.A1 * 0.4, F2: v.F2, BW2: Math.max(v.BW2, 100) * 1.5, A2: hh.A2,
++              F3: v.F3, BW3: Math.max(v.BW3, 150) * 1.5, A3: hh.A3 };
++  const out = blend({ ...hh }, t, k);
++  out.voicing = hh.voicing;
++  return out;
++}
++
++const aspirates = (o) => o.aspiration > 0 || o.aspirationGain !== 1;
++const hash = (s) => createHash('sha1').update(s).digest('hex').slice(0, 12);
++const cache = new Map();
++// The generated bank for base bank `base` (registered) and options o (stopOptions): every stop x closure x
++// release variant, HQ<vowel>, DQF. canonical: banks.js's canonical JSON (passed in to avoid an import cycle).
++export function stopsBank(base, o, canonical) {
++  const resolved = banks.get(base);
++  if (!resolved) throw new Error(`unknown bank: ${base}`);
++  const key = `${base}\n${canonical(o)}\n${canonical(resolved.phonemes)}`;
++  if (cache.has(key)) return cache.get(key);
++  const P = resolved.phonemes, phonemes = {};
++  const vowels = Object.keys(P).filter((c) => VOWELS.has(c) && P[c]);
++  for (const s of ['P', 'B', 'T', 'D', 'K', 'G']) {
++    const e = P[s];
++    if (!e || !e.isStop) continue;
++    const closures = [''];
++    if (o.voiceBar && !VOICELESS.has(s)) closures.push('V');
++    if (o.voicingTail > 0 && VOICELESS.has(s)) closures.push('T');
++    for (const c of closures) {
++      const closure = c === 'V' ? { voicing: 1, F1: o.voiceBar.F1, BW1: o.voiceBar.BW1, A1: o.voiceBar.A1, A2: 0, A3: 0, inMs: o.voiceBar.inMs, fade: o.voiceBar.fade }
++        : c === 'T' ? { voicing: 1, F1: 200, BW1: 80, A1: o.voicingTail, A2: 0, A3: 0, inMs: 15, fade: 0 } : null;
++      const withClosure = (x) => (closure ? { ...x, closure } : x);
++      const gain = (x) => (o.burstGain === 1 ? x : { ...x, A1: x.A1 * o.burstGain, A2: x.A2 * o.burstGain, A3: x.A3 * o.burstGain });
++      phonemes[`${s}Q${c}X`] = withClosure(gain({ ...e }));
++      phonemes[`${s}Q${c}U`] = withClosure({ ...e, release: false });
++      if (o.burst[s] > 0) for (const v of vowels) phonemes[`${s}Q${c}${v}`] = withClosure(gain(blend(e, burstTemplate(s, e, vowelOnset(P[v], v)), o.burst[s])));
++    }
++  }
++  const hh = P.HH;
++  if (aspirates(o) && hh) {
++    for (const v of vowels) {
++      const a = aspirationEntry(hh, P[v], o.aspiration), g = o.aspirationGain;
++      phonemes[`HQ${v}`] = g === 1 ? a : { ...a, A1: a.A1 * g, A2: a.A2 * g, A3: a.A3 * g };
++    }
++  }
++  // a flap: voiced, F1 down, F2 near the alveolar locus, weaker (a ~25 ms dip between the vowels)
++  phonemes.DQF = { voicing: 1, F1: 300, BW1: 90, A1: 0.55, F2: 1700, BW2: 150, A2: 0.3, F3: 2600, BW3: 250, A3: 0.2 };
++  for (const x of Object.values(phonemes)) for (const f of KEYS) if (typeof x[f] === 'number') x[f] = r3(x[f]);
++  const bank = { schemaVersion: 1, name: `${base}--st${hash(canonical({ extends: base, phonemes }))}`, extends: base, phonemes };
++  cache.set(key, bank);
++  return bank;
++}
++
++// Context per stop, on klattsing's syllabified words (after the duration rules): sets s.onsetCode / s.codaCode
++// (the entry per consonant, undefined = the plain phoneme), s.aspCode (HQ<vowel>), and changes s.aspMs (vot) and
++// the flap's duration. A pause (a word with punctuation) breaks the context.
++export function planStops(ws, o) {
++  const flat = [];
++  ws.forEach((w, wi) => w.syllables.forEach((s, si) => {
++    s.onset.forEach((p, i) => flat.push({ p, wi, si, s, part: 'onset', i }));
++    if (s.nucleus) flat.push({ p: s.nucleus, wi, si, s, part: 'nucleus' });
++    s.coda.forEach((p, i) => flat.push({ p, wi, si, s, part: 'coda', i }));
++  }));
++  const pauseBetween = (a, b) => a.wi !== b.wi && ws[a.wi].punct !== '';
++  flat.forEach((x, k) => {
++    if (!STOPS.has(x.p)) return;
++    const prevX = k > 0 && !pauseBetween(flat[k - 1], x) ? flat[k - 1] : null;
++    const nextX = k + 1 < flat.length && !pauseBetween(x, flat[k + 1]) ? flat[k + 1] : null;
++    const prev = prevX?.p, next = nextX?.p;
++    const s = x.s;
++    const set = (code) => { const f = x.part === 'onset' ? 'onsetCode' : 'codaCode'; (s[f] ??= [])[x.i] = code; };
++    // flap: word-internal T/D, the whole onset of an unstressed syllable, after a vowel or R
++    if (o.flap && (x.p === 'T' || x.p === 'D') && x.part === 'onset' && x.si > 0 && s.onset.length === 1 && s.nucleus && s.stress === 0
++        && prevX && prevX.wi === x.wi && (VOWELS.has(prev) || prev === 'R')) {
++      set('DQF'); if (o.flapMs) s.onsetMs[x.i] = Math.min(s.onsetMs[x.i], o.flapMs); return;
++    }
++    const sameOnset = nextX && x.part === 'onset' && nextX.s === s && nextX.part === 'onset';
++    const unrel = o.unreleased && next && !sameOnset && !VOWELS.has(next)
++      && (o.unreleased === 'all' || STOPS.has(next) || AFFRICATES.has(next) || NASALS.has(next));
++    let rel = 'X';
++    if (unrel) rel = 'U';
++    else if (o.burst[x.p] > 0 && next) {
++      if (VOWELS.has(next)) rel = next;
++      else if (sameOnset && (LIQUIDS.has(next) || GLIDES.has(next)) && s.nucleus) rel = s.nucleus;
++    }
++    const voicedCtx = prev !== undefined && VOICED.has(prev);
++    const clo = !voicedCtx ? '' : !VOICELESS.has(x.p) ? (o.voiceBar ? 'V' : '') : (o.voicingTail > 0 ? 'T' : '');
++    if (clo || rel !== 'X' || o.burstGain !== 1) set(`${x.p}Q${clo}${rel}`);
++  });
++  for (const w of ws) for (const s of w.syllables) {
++    if (!s.aspMs || !s.nucleus) continue;
++    const stop = s.onset[s.onset.length - 1];
++    if (o.vot) s.aspMs = o.vot === true ? s.aspMs * VOT_KLATT1975[stop] / ((47 + 65 + 70) / 3) : (o.vot[stop] ?? s.aspMs);
++    if (aspirates(o)) s.aspCode = `HQ${s.nucleus}`;
++  }
++  return ws;
++}
+diff --git a/vendor/klattsch/src/engine/sequencer.js b/vendor/klattsch/src/engine/sequencer.js
+index 5500fdb..206c205 100644
+--- a/vendor/klattsch/src/engine/sequencer.js
++++ b/vendor/klattsch/src/engine/sequencer.js
+@@ -260,11 +260,25 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+     const endF0 = startF0 + t.pitchDelta;
+     if (p.isStop) {
+       // (sonicpi-toolchain patch) a bank entry's burstMs sets its release burst (MITalk: P 5, T 15, K 25 ms)
+-      const burstMs = Math.min(p.burstMs ?? DEFAULTS.stopBurstMs, slotMs * 0.3);
++      // (sonicpi-toolchain patch) release: false -> no burst, the closure fills the slot (an unreleased stop)
++      const burstMs = p.release === false ? 0 : Math.min(p.burstMs ?? DEFAULTS.stopBurstMs, slotMs * 0.3);
+       const silenceMs = slotMs - burstMs;
+-      silence(Math.min(20, silenceMs * 0.4));
++      if (p.closure) {
++        // (sonicpi-toolchain patch) closure: what sounds while the tract is closed instead of silence (a voice
++        // bar): its parameters reached in inMs (default 20, at most 40% of the closure), then its A1-A3 times
++        // fade (default 1) by the end of the closure
++        const { inMs = 20, fade = 1, ...c } = p.closure;
++        const tIn = Math.min(inMs, silenceMs * 0.4);
++        const target = scaled({ ...p, ...c }, startF0);
++        emit(target, tIn);
++        if (fade !== 1 && silenceMs - tIn > 0) {
++          timeMs += tIn;
++          emit({ ...target, A1: target.A1 * fade, A2: target.A2 * fade, A3: target.A3 * fade }, silenceMs - tIn);
++          timeMs -= tIn;
++        }
++      } else silence(Math.min(20, silenceMs * 0.4));
+       timeMs += silenceMs;
+-      emit(scaled(p, startF0), Math.min(5, burstMs * 0.2));
++      if (p.release !== false) emit(scaled(p, startF0), Math.min(5, burstMs * 0.2));
+       timeMs += burstMs;
+       return slotMs;
+     } else if (p.glideTo) {
+-- 
+2.43.0
+
+
+From 3c95b9f8658bdee2f75842976b594875418d19d0 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 21 Oct 2026 00:15:54 +0000
+Subject: [PATCH 2/2] wip stops: tuned defaults (voice bar 0.07, unreleased
+ before consonants, flap), sing rests, tests
+
+---
+ klattsing/src/compile.js     |  17 ++--
+ klattsing/src/stops.js       |  35 +++++---
+ klattsing/test/stops.test.js | 169 +++++++++++++++++++++++++++++++++++
+ 3 files changed, 202 insertions(+), 19 deletions(-)
+ create mode 100644 klattsing/test/stops.test.js
+
+diff --git a/klattsing/src/compile.js b/klattsing/src/compile.js
+index fb178d5..4d0f7db 100644
+--- a/klattsing/src/compile.js
++++ b/klattsing/src/compile.js
+@@ -9,7 +9,7 @@ import { timeWordsV0 } from './durations_v0.js';
+ import { FUNCTION_WORDS } from './function_words.js';
+ import { bankName, BREATH_PREFIX } from './banks.js';
+ import { DUR } from './phones.js';
+-import { stopOptions, planStops } from './stops.js';
++import { stopOptions, planStops, afterSilence, beforeSilence } from './stops.js';
+ 
+ const DIPH = { AY: ['AA', 'IY'], EY: ['EH', 'IY'], OW: ['AO', 'UW'], AW: ['AA', 'UW'], OY: ['AO', 'IY'] };
+ const NOTE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+@@ -86,8 +86,8 @@ function prefix(o) {
+ }
+ const asp = (s, o) => (o.aspiration !== false && s.aspMs ? `r${f1(s.aspMs)} HH ` : '');
+ // "stops" (stops.js): a consonant's context-dependent entry (onsetCode / codaCode / aspCode), named in the
+-// timeline by its lexical phoneme
+-const consonant = (s, part, i, p, at) => { const c = s[part]?.[i]; return c ? [c, { ...at, p }] : [p, at]; };
++// timeline by its lexical phoneme; fix: sing's correction for a rest next to it
++const consonant = (s, part, i, p, at, fix) => { const c = s[part]?.[i]; return c ? [fix ? fix(c) : c, { ...at, p }] : [p, at]; };
+ const aspToken = (s, at) => (s.aspCode ? [s.aspCode, { ...at, asp: true, p: 'HH' }] : ['HH', { ...at, asp: true }]);
+ // the klattsch aspiration (h) a voice string leaves set, so "breath" can restore it
+ export function voiceAspiration(voice) {
+@@ -199,20 +199,23 @@ export function sing(o, meta) {
+   const breath = o.aspiration === 'breath', [hUp, hDown] = breathDirs(o, voiceOf(vo));
+   let out = `${prefix(vo)} `;
+   const ph = (ms, p, info, suffix = '') => { out += `r${f1(ms)} ${p}${suffix} `; m?.push(info); };
+-  for (const x of plan) {
++  plan.forEach((x, k) => {
+     const { s, at } = x;
++    // stops: a rest breaks the context planStops saw (no voice bar after it, a release before it)
++    const restBefore = x.rests.length > 0 || (k > 0 && plan[k - 1].rest > 0);
++    const restAfter = x.rest > 0 || (k + 1 < plan.length ? plan[k + 1].rests.length > 0 : tail.length > 0);
+     for (const r of x.rests) out += `p${f1(r)} `;
+     out += `v0 b${f1(hz(x.note))} ${av(s, o)}`;
+-    s.onset.forEach((p, j) => ph(x.ons[j], ...consonant(s, 'onsetCode', j, p, at)));
++    s.onset.forEach((p, j) => ph(x.ons[j], ...consonant(s, 'onsetCode', j, p, at, j === 0 && restBefore && afterSilence)));
+     if (x.a && !breath) ph(x.a, ...aspToken(s, at));
+     const acc = o.accent !== false && s.stress === 1;
+     if (acc) out += accUp;
+     if (x.a && breath) { out += hUp; ph(x.a, BREATH_PREFIX + x.parts[0][0], { ...at, asp: true, p: x.parts[0][0] }); out += hDown; }
+     x.parts.forEach(([p, len2], j) => ph(len2, p, at, x.to && j === x.parts.length - 1 ? `${x.to > 0 ? '+' : ''}${x.to}` : ''));
+     if (acc) out += accDown;
+-    s.coda.forEach((p, j) => ph(x.coda[j], ...consonant(s, 'codaCode', j, p, at)));
++    s.coda.forEach((p, j) => ph(x.coda[j], ...consonant(s, 'codaCode', j, p, at, j === s.coda.length - 1 && restAfter && beforeSilence)));
+     if (x.rest > 0) out += `p${f1(x.rest)} `;
+-  }
++  });
+   for (const r of tail) out += `p${f1(r)} `;
+   return out.trim();
+ }
+diff --git a/klattsing/src/stops.js b/klattsing/src/stops.js
+index f1f1fd2..2bf45ff 100644
+--- a/klattsing/src/stops.js
++++ b/klattsing/src/stops.js
+@@ -13,16 +13,19 @@
+ //              F2 locus near 1.8 kHz and a strong 3.5-4 kHz peak, lower before rounded vowels), velar compact (a
+ //              single mid-frequency peak tied to the vowel: between F2 and F3 of a front vowel, just above F2 of
+ //              a back one); a number blends the bank's burst (0) into these (1); {P, B, T, D, K, G}: per stop
++//   burstGain / aspirationGain  scale the burst / aspiration amplitudes (1)
+ //   aspiration the aspiration after P/T/K (VOT) is noise through the following vowel's formants with F1 cut
+ //              back and widened (Klatt 1975, 1980: aspiration excites the vocal tract of the vowel; the open
+ //              glottis damps F1), as HQ<vowel> entries, instead of HH; a number blends HH (0) into these (1)
+ //   vot        place-dependent VOT: true scales the aspiration (rules.aspirationMs) by Klatt's (1975) P 47 /
+ //              T 65 / K 70 ms (relative to their mean), {P, T, K}: ms
+ //   flap       T/D between a vowel (or R) and an unstressed vowel inside a word ("water", "city", "party") is
+-//              a flap DQF: voiced, a brief dip, at most flapMs (Zue & Laferriere 1979: 26 ms on average; 0 or
+-//              null: the rule duration)
+-//   unreleased a stop before a stop, an affricate or a nasal (no pause between, not in one onset) has no burst
+-//              (klattsch patch: release: false): "that time", "napkin"; "all": before any consonant
++//              a flap DQF: voiced, a brief dip (Zue & Laferriere 1979), at most flapMs ms (0: the rule duration;
++//              real flaps last ~20-30 ms)
++//   unreleased a stop before another consonant (no pause between, not released into its own onset: "play" keeps
++//              its burst) has no burst (klattsch patch: release: false): "that time", "napkin", "cats"
++//              (Crystal & House 1988, Byrd 1993: unreleased stops are the norm before consonants in American
++//              English); "closure": only before a consonant with an oral closure (a stop, an affricate, a nasal)
+ // Codes: <stop>Q<closure><release>, closure "" (silent), "V" (voice bar) or "T" (voicing tail), release a vowel
+ // (released into it), "X" (released, no vowel context) or "U" (unreleased); HQ<vowel>; DQF. The timeline names
+ // them by their lexical phoneme (p).
+@@ -30,17 +33,18 @@ import { createHash } from 'node:crypto';
+ import { banks } from '../../vendor/klattsch/src/engine/banks/index.js';
+ import { VOWELS, STOPS, VOICED, LIQUIDS, GLIDES, NASALS, AFFRICATES } from './phones.js';
+ 
++// "stops": true = these (each chosen with tools/voicelab/fidelity.py against Kokoro; see VENDORED / README)
+ export const STOP_DEFAULTS = {
+-  voiceBar: { F1: 180, BW1: 60, A1: 0.3, inMs: 20, fade: 0.6 },
++  voiceBar: { F1: 180, BW1: 60, A1: 0.07, inMs: 20, fade: 0.35 },   // ~8-10 dB under the vowel's low band, fading ~9 dB
+   voicingTail: 0,
+   burst: 1,
+   burstGain: 1,
+   aspiration: 1,
+   aspirationGain: 1,
+   vot: false,
+-  flap: false,
+-  flapMs: 26,
+-  unreleased: false,
++  flap: true,
++  flapMs: 0,
++  unreleased: 'consonant',
+ };
+ export const VOT_KLATT1975 = { P: 47, T: 65, K: 70 };
+ const PLACE = { P: 'lab', B: 'lab', T: 'alv', D: 'alv', K: 'vel', G: 'vel' };
+@@ -60,7 +64,8 @@ export function stopOptions(x) {
+   o.aspiration = unit(o.aspiration, 'aspiration');
+   o.voicingTail = Number(o.voicingTail || 0);
+   for (const k of ['burstGain', 'aspirationGain']) if (!(typeof o[k] === 'number' && o[k] >= 0)) throw new Error(`stops.${k}: expected a number >= 0, got ${JSON.stringify(o[k])}`);
+-  if (![true, false, 'all'].includes(o.unreleased)) throw new Error(`stops.unreleased: true, false or "all", got ${JSON.stringify(o.unreleased)}`);
++  if (o.unreleased === true) o.unreleased = 'consonant';
++  if (![false, 'consonant', 'closure'].includes(o.unreleased)) throw new Error(`stops.unreleased: "consonant", "closure" or false, got ${JSON.stringify(o.unreleased)}`);
+   return o;
+ }
+ 
+@@ -73,8 +78,8 @@ export function burstTemplate(code, e, v) {
+   const voiced = !VOICELESS.has(code);
+   switch (PLACE[code]) {
+     case 'lab':    // diffuse-falling: energy at and below the vowel's F2, a weak F3
+-      return { F1: e.F1, BW1: e.BW1, A1: voiced ? e.A1 : Math.max(e.A1, 0.2), F2: 0.8 * v.F2 + 150, BW2: 200, A2: 0.6 * tot,
+-               F3: v.F3 - 150, BW3: 300, A3: 0.4 * tot };
++      return { F1: e.F1, BW1: e.BW1, A1: voiced ? e.A1 : Math.max(e.A1, 0.2), F2: 0.6 * v.F2 + 350, BW2: 200, A2: 0.6 * tot,
++               F3: Math.min(e.F3, v.F3), BW3: 300, A3: 0.3 * tot };
+     case 'alv':    // diffuse-rising: F2 locus ~1.8 kHz, strong high peak (lower before rounded vowels)
+       return { F1: e.F1, BW1: e.BW1, A1: e.A1, F2: 0.25 * v.F2 + 1300, BW2: Math.max(e.BW2, 150), A2: 0.4 * tot,
+                F3: e.F3 - (v.rounded ? 400 : 0), BW3: Math.max(e.BW3, 400), A3: 0.6 * tot };
+@@ -171,7 +176,7 @@ export function planStops(ws, o) {
+     }
+     const sameOnset = nextX && x.part === 'onset' && nextX.s === s && nextX.part === 'onset';
+     const unrel = o.unreleased && next && !sameOnset && !VOWELS.has(next)
+-      && (o.unreleased === 'all' || STOPS.has(next) || AFFRICATES.has(next) || NASALS.has(next));
++      && (o.unreleased === 'consonant' || STOPS.has(next) || AFFRICATES.has(next) || NASALS.has(next));
+     let rel = 'X';
+     if (unrel) rel = 'U';
+     else if (o.burst[x.p] > 0 && next) {
+@@ -190,3 +195,9 @@ export function planStops(ws, o) {
+   }
+   return ws;
+ }
++
++// sing: a rest next to a stop that planStops saw in context (rests come from the notes, after the durations):
++// after a rest, no voice bar or voicing tail; before one, released without a vowel context
++const CODE = /^([PBTDKG])Q([VT]?)(.*)$/;
++export const afterSilence = (c) => { const m = c.match(CODE); return m ? `${m[1]}Q${m[3]}` : c; };
++export const beforeSilence = (c) => { const m = c.match(CODE); return m ? `${m[1]}Q${m[2]}X` : c; };
+diff --git a/klattsing/test/stops.test.js b/klattsing/test/stops.test.js
+new file mode 100644
+index 0000000..b7da181
+--- /dev/null
++++ b/klattsing/test/stops.test.js
+@@ -0,0 +1,169 @@
++// The opt-in "stops" option (src/stops.js) and its klattsch patch (a stop entry's closure / release: false).
++// Off by default: the reference fixture stays byte-identical (extensions.test.js), and here stops: false/null too.
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { readFileSync } from 'node:fs';
++import { speak, sing, toKlattsch, durationsOf, words } from '../src/compile.js';
++import { bankName, banksFor, canonical } from '../src/banks.js';
++import { stopOptions, stopsBank, planStops, STOP_DEFAULTS, VOT_KLATT1975, afterSilence, beforeSilence } from '../src/stops.js';
++import { timelineOf } from '../src/timeline.js';
++import { compileString, banks } from '../../vendor/klattsch/src/engine/index.js';
++import { registerBank } from '../../vendor/klattsch/src/engine/banks/index.js';
++
++const REF = JSON.parse(readFileSync(new URL('./reference.fixture.json', import.meta.url), 'utf8'));
++const tokens = (s) => s.split(/\s+/);
++const phonemes = (s) => tokens(s).filter((t) => /^[A-Z]+(\(|[+-]|$)/.test(t)).map((t) => t.match(/^[A-Z]+/)[0]);
++// the klattsch code each lexical phoneme of `word` (index in the text) gets
++function codesOf(spec, wi) {
++  const meta = [], s = toKlattsch(spec, meta), ph = phonemes(s);
++  return ph.filter((_, i) => meta[i].word === wi && !meta[i].asp);
++}
++
++test('stops: off (false, null, absent) changes nothing', () => {
++  for (const { spec, out } of REF) {
++    assert.equal(toKlattsch({ ...spec, stops: false }), out, JSON.stringify(spec));
++    assert.equal(toKlattsch({ ...spec, stops: null }), out, JSON.stringify(spec));
++  }
++});
++
++test('stops: a generated bank that extends the spec\'s, every string compiles, timelines and durations keep their phonemes', () => {
++  for (const { spec } of REF) {
++    const o = { ...spec, stops: true };
++    const s = toKlattsch(o);
++    const base = typeof spec.bank === 'string' ? spec.bank : 'klatt1980-en';
++    assert.match(s, new RegExp(`^\\[bank=${base.replace(/[.-]/g, '\\$&')}(--[0-9a-z]+)*--st[0-9a-f]{12}\\] `), s.slice(0, 80));
++    const c = compileString(s);
++    assert.deepEqual(c.warnings, [], `${JSON.stringify(spec)}: ${c.warnings}`);
++    // the timeline names every token by its lexical phoneme, as without stops
++    assert.deepEqual(timelineOf(o).phones.map((p) => [p.p, p.word, p.syl, !!p.asp]), timelineOf(spec).phones.map((p) => [p.p, p.word, p.syl, !!p.asp]));
++    // default stops (no vot, flapMs 0) keep every duration
++    assert.deepEqual(durationsOf(o), durationsOf(spec));
++  }
++  assert.equal(bankName({ bank: 'mitalk-bursts', stops: true }), bankName({ bank: 'mitalk-bursts', stops: { ...STOP_DEFAULTS } }), 'true = the defaults');
++  assert.notEqual(bankName({ bank: 'mitalk-bursts', stops: true }), bankName({ bank: 'mitalk-bursts', stops: { burst: 0.5 } }));
++  const list = banksFor({ bank: 'mitalk-bursts', bankPatch: { AA: { F1: 710 } }, stops: true });
++  assert.equal(list.length, 2);
++  assert.equal(list[1].extends, list[0].name, 'the stops bank extends the patched one');
++});
++
++test('stops: context -> entries (voice bar, release into the vowel, unreleased, flap, aspiration)', () => {
++  const o = { bank: 'mitalk-bursts', stops: true };
++  // "a good": G after a vowel -> voice bar, released into UH; "Good." after nothing -> no voice bar
++  assert.deepEqual(codesOf({ ...o, text: 'A good one.' }, 1), ['GQVUH', 'UH', 'DQVU']);
++  assert.deepEqual(codesOf({ ...o, text: 'Good.' }, 0), ['GQUH', 'UH', 'DQVX'], 'final D after the vowel keeps its voice bar, released');
++  // unreleased before a consonant, released before a vowel and before a pause
++  assert.deepEqual(codesOf({ ...o, text: 'that time' }, 0), ['DH', 'AE', 'TQU']);
++  assert.deepEqual(codesOf({ ...o, text: 'that is' }, 0), ['DH', 'AE', 'TQIH']);
++  assert.deepEqual(codesOf({ ...o, text: 'that, time' }, 0), ['DH', 'AE', 'T'], 'released, no vowel context: the plain entry');
++  assert.deepEqual(codesOf({ ...o, text: 'cats' }, 0), ['KQAE', 'AE', 'TQU', 'S']);
++  assert.deepEqual(codesOf({ ...o, text: 'cats', stops: { unreleased: 'closure' } }, 0), ['KQAE', 'AE', 'T', 'S']);
++  assert.deepEqual(codesOf({ ...o, text: 'napkin', stops: { unreleased: 'closure' } }, 0).slice(0, 3), ['N', 'AE', 'PQU']);
++  // a stop released into its own onset's liquid takes the nucleus: "play", "street"
++  assert.deepEqual(codesOf({ ...o, text: 'play' }, 0), ['PQEY', 'L', 'EY']);
++  assert.deepEqual(codesOf({ ...o, text: 'street' }, 0).slice(0, 2), ['S', 'TQIY']);
++  // flap: word-internal T/D before an unstressed vowel after a vowel or R; not before a stressed one
++  assert.equal(codesOf({ ...o, text: 'water' }, 0)[2], 'DQF');
++  assert.equal(codesOf({ ...o, text: 'party' }, 0)[3], 'DQF');
++  assert.notEqual(codesOf({ ...o, text: 'attack' }, 0)[1], 'DQF');
++  assert.equal(codesOf({ ...o, text: 'water', stops: { flap: false } }, 0)[2], 'TQER');
++  // aspiration through the vowel's formants: HQ<vowel>, named HH in the timeline
++  const s = speak({ ...o, text: 'Cat.' });
++  assert.match(s, / r[\d.]+ HQAE /);
++  assert.deepEqual(timelineOf({ ...o, text: 'Cat.' }).phones.map((p) => p.p), ['K', 'HH', 'AE', 'T']);
++  assert.doesNotMatch(speak({ ...o, text: 'Cat.', stops: { aspiration: 0 } }), /HQ/);
++  // everything off: the plain phonemes (only the bank name differs)
++  const off = { voiceBar: false, burst: 0, aspiration: 0, flap: false, unreleased: false }, T = 'A good cat at the party.';
++  const unbanked = (x) => x.replace(/^\[bank=\S+\]/, '');
++  assert.equal(unbanked(speak({ ...o, text: T, stops: off })), unbanked(speak({ bank: 'mitalk-bursts', text: T })));
++});
++
++test('stops: the generated entries follow Stevens & Blumstein, Klatt', () => {
++  const o = stopOptions(true);
++  const b = stopsBank('mitalk-bursts', o, canonical), P = b.phonemes, V = banks.get('mitalk-bursts').phonemes;
++  assert.match(b.name, /^mitalk-bursts--st[0-9a-f]{12}$/);
++  // velar: one compact peak that follows the vowel (higher before front vowels)
++  assert.ok(P.KQIY.F2 > P.KQAA.F2 + 500, `${P.KQIY.F2} ${P.KQAA.F2}`);
++  assert.ok(P.KQIY.A2 > P.KQIY.A3 && P.KQIY.BW2 <= 200);
++  // alveolar: rising (A3 > A2), the high peak lower before rounded vowels
++  assert.ok(P.TQIY.A3 > P.TQIY.A2 && P.TQUW.F3 < P.TQIY.F3);
++  // labial: falling (A2 > A3), F2 below the vowel's
++  assert.ok(P.PQIY.A2 > P.PQIY.A3 && P.PQIY.F2 < V.IY.F2 && P.PQAA.F2 < P.PQIY.F2);
++  // blend 0: the bank's own burst
++  const b0 = stopsBank('mitalk-bursts', stopOptions({ burst: 0 }), canonical).phonemes;
++  assert.equal(b0.KQIY, undefined);
++  assert.deepEqual(b0.KQX, V.K);
++  // voice bar: B D G only, voiced low F1 closure, no F2/F3
++  assert.deepEqual(P.DQVAA.closure, { voicing: 1, F1: 180, BW1: 60, A1: 0.07, A2: 0, A3: 0, inMs: 20, fade: 0.35 });
++  assert.equal(P.TQVAA, undefined);
++  assert.equal(P.DQU.release, false);
++  // aspiration: the vowel's formants, F1 cut back and widened, voiceless
++  assert.equal(P.HQAE.F2, V.AE.F2); assert.equal(P.HQAE.F3, V.AE.F3);
++  assert.ok(P.HQAE.A1 < V.HH.A1 && P.HQAE.BW1 > V.AE.BW1 && P.HQAE.voicing === 0);
++  assert.equal(P.HQAY.glideTo, undefined); assert.equal(P.HQAY.F2, V.AY.F2, 'the onset of a diphthong');
++  // DQF: a voiced non-stop
++  assert.equal(P.DQF.voicing, 1); assert.equal(P.DQF.isStop, undefined);
++  // options are checked
++  assert.throws(() => stopOptions({ burst: 2 }), /stops.burst/);
++  assert.throws(() => stopOptions({ unreleased: 'some' }), /stops.unreleased/);
++  assert.throws(() => stopOptions({ burstGain: -1 }), /stops.burstGain/);
++  assert.equal(stopOptions({ unreleased: true }).unreleased, 'consonant');
++  assert.deepEqual(stopOptions({ burst: { K: 1 } }).burst, { P: 0, B: 0, T: 0, D: 0, K: 1, G: 0 });
++});
++
++test('stops: vot and flapMs change the durations, consistently in durationsOf and the string', () => {
++  const text = 'Pick a tall cup.';
++  const plain = durationsOf({ text }), vot = durationsOf({ text, stops: { vot: true } });
++  const asp = (d) => d.phones.filter((p) => p.asp).map((p) => p.asp);
++  const mean = (47 + 65 + 70) / 3;
++  assert.deepEqual(asp(plain), [25, 25, 25]);
++  assert.ok(Math.abs(asp(vot)[0] - 25 * VOT_KLATT1975.P / mean) < 1e-9);
++  assert.ok(Math.abs(asp(vot)[1] - 25 * VOT_KLATT1975.T / mean) < 1e-9);
++  assert.ok(Math.abs(asp(vot)[2] - 25 * VOT_KLATT1975.K / mean) < 1e-9);
++  assert.deepEqual(asp(durationsOf({ text, stops: { vot: { P: 47, T: 65, K: 70 } } })), [47, 65, 70]);
++  const s = speak({ text, stops: { vot: { P: 47, T: 65, K: 70 } } });
++  assert.match(s, /r47 HQIH .* r65 HQAO .* r70 HQAH/);
++  // flapMs: the flap at most that long
++  const w = (o) => durationsOf({ text: 'water', ...o }).phones[2].ms;
++  assert.equal(w({ stops: true }), w({}));
++  assert.equal(w({ stops: { flapMs: 20 } }), Math.min(20, w({})));
++  assert.match(speak({ text: 'water', stops: { flapMs: 20 } }), /r20 DQF/);
++});
++
++test('stops: sing keeps the context across notes, and a rest breaks it', () => {
++  const o = { mode: 'sing', text: 'a dog a dog', bpm: 120, stops: true };
++  const legato = sing({ ...o, notes: [['E2', 2], ['G2', 4], ['E2', 2], ['G2', 4]] });
++  const rest = sing({ ...o, notes: [['E2', 2], ['G2', 4], ['r', 2], ['E2', 2], ['G2', 4]] });
++  assert.match(legato, /DQVAO .* GQVAH .* DQVAO .* GQVX/);
++  assert.match(rest, /DQVAO .* GQVX p[\d.]+ .* DQVAO .* GQVX/, 'G before the rest: released without a vowel context');
++  const gated = sing({ mode: 'sing', text: 'go dog', bpm: 120, stops: true, gate: 120, notes: [['E2', 8], ['G2', 4]] });
++  assert.match(gated, /p[\d.]+ (v0 \S+ )?r[\d.]+ DQAO/, 'after a gated note: no voice bar');
++  assert.deepEqual(compileString(gated).warnings, []);
++  assert.equal(afterSilence('BQVIY'), 'BQIY'); assert.equal(afterSilence('TQTAA'), 'TQAA'); assert.equal(afterSilence('DQF'), 'DQF');
++  assert.equal(beforeSilence('GQVAH'), 'GQVX'); assert.equal(beforeSilence('TQU'), 'TQX');
++});
++
++test('klattsch patch: closure (voice bar) and release: false', () => {
++  const D = { ...banks.get('klatt1980-en').phonemes.D };
++  const mk = (name, entry) => registerBank({ schemaVersion: 1, name, extends: 'klatt1980-en', phonemes: { D: entry } });
++  mk('test-stop-plain', D);
++  mk('test-stop-bar', { ...D, closure: { voicing: 1, F1: 180, BW1: 60, A1: 0.1, A2: 0, A3: 0, inMs: 20, fade: 0.5 } });
++  mk('test-stop-unrel', { ...D, release: false });
++  {
++    const s = (b) => compileString(`[bank=${b}] r200 AA r100 D r200 AA`).schedule;
++    const plain = s('test-stop-plain'), bar = s('test-stop-bar'), unrel = s('test-stop-unrel');
++    const orig = compileString('r200 AA r100 D r200 AA').schedule;
++    assert.deepEqual(plain, orig, 'an entry without the fields renders as before');
++    // plain: silence at 200, burst at 200 + 100 - burst; bar: the closure target, its fade, the burst
++    const at = (sch) => sch.map((e) => Math.round(e.atMs * 10) / 10);
++    assert.deepEqual(at(plain), [0, 200, 275, 300, 500]);
++    assert.deepEqual(at(bar), [0, 200, 220, 275, 300, 500]);
++    const clo = bar[1].target;
++    assert.equal(clo.voicing, 1); assert.equal(clo.F1, 180); assert.equal(clo.A1, 0.1); assert.equal(clo.A2, 0);
++    assert.equal(bar[1].transitionMs, 20);
++    assert.equal(bar[2].target.A1, 0.05); assert.equal(bar[2].transitionMs, 55);
++    assert.equal(bar[3].target.voicing, D.voicing, 'then the burst');
++    // unreleased: the closure (here silence) fills the slot, no burst
++    assert.deepEqual(at(unrel), [0, 200, 300, 500]);
++    assert.equal(unrel[1].target.A1, 0);
++  }
++});
+-- 
+2.43.0
+

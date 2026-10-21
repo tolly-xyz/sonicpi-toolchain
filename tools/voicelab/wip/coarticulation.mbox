@@ -1,0 +1,1794 @@
+From 35571146fd12bc34ef06644f279bacc8fa5df8d7 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 20 Oct 2026 22:57:35 +0000
+Subject: [PATCH 1/4] wip coarticulation: apply predecessor patch (tests pass,
+ engine inert by default)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013D7H5RPb4wjuAo6EWsSqmi
+---
+ klattsing/README.md                      |   3 +-
+ klattsing/src/banks.js                   |  16 +-
+ klattsing/src/coarticulation.js          | 107 +++++++++++
+ klattsing/src/compile.js                 |   5 +-
+ klattsing/test/coarticulation.test.js    | 225 +++++++++++++++++++++++
+ tools/voicelab/pairs.py                  |   3 +-
+ vendor/klattsch/VENDORED                 |   6 +
+ vendor/klattsch/src/engine/sequencer.js  | 114 ++++++++++++
+ vendor/klattsch/src/engine/synth-core.js |  88 ++++++++-
+ 9 files changed, 552 insertions(+), 15 deletions(-)
+ create mode 100644 klattsing/src/coarticulation.js
+ create mode 100644 klattsing/test/coarticulation.test.js
+
+diff --git a/klattsing/README.md b/klattsing/README.md
+index 1d9ccc6..92eda96 100644
+--- a/klattsing/README.md
++++ b/klattsing/README.md
+@@ -26,7 +26,7 @@ per syllable, or `"auto"`), `bpm`, `melody` (auto: `scale`, `long`, `short`, `la
+ (formant glide ms, a klattsch patch), `aspiration` (breath after P/T/K, default on), `accent`,
+ `dynamics` (loudness by stress, a klattsch patch; off by default), `durations` (`"v0"` for the first
+ reconstruction), `rules`; and the opt-in options below (`bankPatch`, `functionWords`, `intonation`,
+-`breathLevel`, `breathVoicing`, `pauseMs`, `accentDelta`).
++`breathLevel`, `breathVoicing`, `pauseMs`, `accentDelta`, `phoneDur`, `coarticulation`).
+ 
+ ## Options for optimizers (all opt-in; leaving them out gives exactly the strings from before)
+ 
+@@ -42,6 +42,7 @@ reconstruction), `rules`; and the opt-in options below (`bankPatch`, `functionWo
+ | `pauseMs` | `250`, or `{",": ms, ".": ms, ..., default: 250}` | speak: silence after a phrase's punctuation (times `rate`) |
+ | `accentDelta` | speak `{g: 0.1, t: 0}`, sing `{g: 0.15, t: 0.15}` | effort (`g`) and tilt (`t`) added over a stressed vowel (with `accent`) |
+ | `phoneDur` | `{PHONE: [inherent, minimum]}` ms (`src/phones.js` `DUR`) | the duration table per call, merged over `DUR` (either `durations` version, speak and sing); `tools/voicelab/climb.py durations` fits it with `rules` |
++| `coarticulation` | `true` or `{degree: 2, codaDegree: (degree), curve: "out", formantCurve: (curve), cv: 60, vc: 50, burst: true, hh: true, sonorants: true, loci: {PHONE: {F1/F2/F3: [k, c]}}}` (off) | context-dependent formant trajectories (klattsch's `[CO=x]` patch, `src/coarticulation.js`): a vowel starts at each neighbouring consonant's locus-equation value `F + degree (k F + c - F)` (loci per place fitted to Kokoro; Sussman et al. 1991) and moves to its target over `cv` ms, and moves toward the next consonant's value over its last `vc` ms (`codaDegree`); HH takes the next vowel's formants (`hh`), velar bursts front before front vowels (`burst`), liquids and glides glide (`sonorants`); every transition eased out (`curve`: `out`, `cos`, `linear`). A generated bank `<base>--co<hash>` carries the loci. Timings and the string's phonemes are unchanged |
+ 
+ Presets fitted against Kokoro by `tools/voicelab/climb.py` are spec fragments in `presets/` (merge one into a spec:
+ `{"mode": "speak", "text": ..., ...preset}`): `kokoro-durations.json` (`rules`, `phoneDur`, `functionWords`) and
+diff --git a/klattsing/src/banks.js b/klattsing/src/banks.js
+index 6c56f02..4f1776a 100644
+--- a/klattsing/src/banks.js
++++ b/klattsing/src/banks.js
+@@ -5,6 +5,8 @@
+ //   "bankPatch": { CODE: { field: value } }                fields changed on top of "bank" (default klatt1980-en),
+ //                                                          as a generated bank "<base>--<hash>" that extends it
+ //   "aspiration": "breath"                                 adds BR<vowel> entries, a bank "<base>--br<hash>" (below)
++//   "coarticulation": true | {...}                         adds klattsch's coarticulation fields (vowel, locus,
++//                                                          locusBurst, transparent): a bank "<base>--co<hash>"
+ // klattsch layers banks by whole phoneme entries, so a patched entry is the base's resolved entry with the
+ // patch's fields merged in (a field set to null is removed; an object value, e.g. glideTo, is merged one level).
+ import { createHash } from 'node:crypto';
+@@ -13,6 +15,7 @@ import { dirname, join } from 'node:path';
+ import { fileURLToPath } from 'node:url';
+ import { banks, registerBank } from '../../vendor/klattsch/src/engine/banks/index.js';
+ import { VOWELS } from './phones.js';
++import { coartOptions, coartFields } from './coarticulation.js';
+ 
+ const BANK_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'banks');
+ 
+@@ -95,9 +98,19 @@ export function breathBank(base, voicing) {
+   return { schemaVersion: 1, name: `${base}--br${hash(canonical({ extends: base, phonemes }))}`, extends: base, phonemes };
+ }
+ 
++// coarticulation (src/coarticulation.js): the base's entries with the fields klattsch's [CO=x] reads merged in
++export function coartBank(base, c) {
++  ensureBank(base);
++  const resolved = banks.get(base);
++  if (!resolved) throw new Error(`unknown bank: ${base}`);
++  const phonemes = {};
++  for (const [code, f] of Object.entries(coartFields(coartOptions(c), (p) => !!resolved.phonemes[p]))) phonemes[code] = { ...resolved.phonemes[code], ...f };
++  return { schemaVersion: 1, name: `${base}--co${hash(canonical({ extends: base, phonemes }))}`, extends: base, phonemes };
++}
++
+ // spec -> the bank name to select with [bank=NAME] (undefined: klattsch's default), registering inline and
+ // generated banks in this process. A plain string bank without a patch is passed through untouched, as before.
+-// banksFor(spec) lists the banks a spec's string needs that are not files (inline, bankPatch, breath), parents
++// banksFor(spec) lists the banks a spec's string needs that are not files (inline, bankPatch, coarticulation, breath), parents
+ // first, for a renderer in another process: a --print string naming one renders only where it is registered.
+ export const bankName = (o) => chain(o).name;
+ export const banksFor = (o) => chain(o).banks;
+@@ -117,6 +130,7 @@ function chain(o) {
+   // generated banks are content-addressed: a name already registered is the same bank
+   const add = (b) => { if (!banks.list().includes(b.name)) registerBank(b); out.push(b); name = b.name; };
+   if (o.bankPatch && Object.keys(o.bankPatch).length) add(patchedBank(name || banks.defaultName, o.bankPatch));
++  if (o.coarticulation) add(coartBank(name || banks.defaultName, o.coarticulation));
+   if (o.aspiration === 'breath') add(breathBank(name || banks.defaultName, o.breathVoicing));
+   return { name, banks: out };
+ }
+diff --git a/klattsing/src/coarticulation.js b/klattsing/src/coarticulation.js
+new file mode 100644
+index 0000000..f6eb7df
+--- /dev/null
++++ b/klattsing/src/coarticulation.js
+@@ -0,0 +1,107 @@
++// Coarticulated formant trajectories (opt-in: spec "coarticulation"), carried out by klattsch's [CO=x] patch.
++//
++// Without it klattsch moves all parameters linearly over a fixed transition (35 ms, or [TR]) into each phoneme's
++// fixed targets: a stop's burst formants are the same before every vowel, a vowel ends on its own target right
++// up to a following closure, HH keeps neutral formants (500/1500/2500) whatever vowel it breathes into.
++// With it:
++//   - CV: a vowel after a consonant starts at the consonant's locus-equation value for that vowel,
++//     F_onset = F + x (k F + c - F) (x = degree; x = 1: the locus equation F_onset = k F + c of Sussman, McCaffrey
++//     & Matthews 1991, a place's onset pointing at its locus as in Delattre, Liberman & Cooper 1955), and moves to
++//     its target over `cv` ms; after a liquid or glide (sonorants) it moves from the consonant's own formants;
++//   - VC: a vowel before a consonant moves toward that consonant's value over its last `vc` ms (at most 60% of
++//     it, so a short vowel between two consonants never reaches its target: Lindblom's 1963 undershoot);
++//   - HH takes the following vowel's formants (Klatt 1980: [h] is a voiceless copy of the next vowel), and after
++//     P/T/K the CV transition starts at the release, under the aspiration;
++//   - a velar's burst takes the following vowel's onset formants (fronted before front vowels);
++//   - an obstruent or nasal reaches its own formants in 3 ms (the vowel carries the transitions; fricative and
++//     nasal resonances start abruptly), other parameters (amplitudes, voicing, F0) keep their usual timing;
++//   - curve: the shape of every transition ("out": ease-out u(2-u), fast at first and settling, the shape of
++//     Kokoro's F2 after a consonant (median remaining share 0.71 / 0.47 / 0.30 / 0.16 at 10 / 20 / 30 / 40 ms;
++//     (1 - t/60)^2: 0.69 / 0.44 / 0.25 / 0.11); "cos": raised cosine; "linear": klattsch's own ramps).
++//     formantCurve: the formants' own (default: curve). In voicelab fidelity the curve matters through the other
++//     parameters (amplitude and voicing onsets, F0): formants linear lose 0.005, raised cosine 0.01, while
++//     everything else linear loses 0.18.
++// Loci per place, fitted to the Kokoro corpus (am_onyx, 100 Harvard sentences; Praat Burg formants 5 ms into
++// each vowel vs at its midpoint, robust least squares; F2 slopes: labial 0.71, alveolar 0.53, velar 0.86,
++// against 0.87 / 0.43 / 0.66 in Sussman et al. 1991). Unreliable fits (r < 0.3, too few tokens) are replaced:
++// postalveolar F1 and F3 by the alveolar ones; Y has no F3 locus.
++// degree 2 (the default) pulls twice as far as those fits: the 25 ms analysis window 5 ms into the vowel
++// averages the boundary with the vowel, and Kokoro's connected-speech vowels undershoot more than the
++// equations alone give. voicelab fidelity (BASE = kokoro-durations + mitalk-bursts) peaks there:
++// degree 1 0.70, 1.5 0.74, 2 0.76, 2.5 0.74 (BASE 0.37).
++import { VOWELS } from './phones.js';
++
++export const LOCI = {
++  labial:       { phones: 'P B M',       F1: [0.905, -7],  F2: [0.705, 311], F3: [0.523, 1125] },
++  labiodental:  { phones: 'F V',         F1: [0.691, 146], F2: [0.36, 906],  F3: [0.477, 1248] },
++  dental:       { phones: 'TH DH',       F1: [0.294, 263], F2: [0.516, 673], F3: [0.154, 2115] },
++  alveolar:     { phones: 'T D N',       F1: [0.54, 176],  F2: [0.531, 763], F3: [0.141, 2136] },
++  alveolarFric: { phones: 'S Z',         F1: [0.448, 197], F2: [0.575, 620], F3: [0.043, 2337] },
++  postalveolar: { phones: 'SH ZH CH JH', F1: [0.54, 176],  F2: [0.39, 1225], F3: [0.141, 2136] },
++  velar:        { phones: 'K G NG',      F1: [0.445, 209], F2: [0.862, 345], F3: [0.862, 374] },
++  // liquids and glides (sonorants: true): VC boundaries; a vowel after one moves from its formants over cv ms
++  lateral:      { phones: 'L', smooth: true, F1: [0.638, 144], F2: [0.545, 338], F3: [0.381, 1619] },
++  rhotic:       { phones: 'R', smooth: true, F1: [0.546, 178], F2: [0.321, 761], F3: [0.268, 1177] },
++  labiovelar:   { phones: 'W', smooth: true, F1: [0.513, 162], F2: [0.248, 600], F3: [0.441, 1302] },
++  palatal:      { phones: 'Y', smooth: true, F1: [0.538, 103], F2: [0.399, 1290] },
++};
++export const VELAR_STOPS = ['K', 'G'];
++export const CURVE = { linear: 0, cos: 1, out: 2 };
++// the option's defaults ("coarticulation": true)
++export const COARTICULATION = {
++  degree: 2, codaDegree: null, curve: 'out', formantCurve: null, cv: 60, vc: 50, burst: true, hh: true, sonorants: true,
++};
++const curveCode = (c, what) => {
++  if (typeof c === 'number' && Object.values(CURVE).includes(c)) return c;
++  if (c in CURVE) return CURVE[c];
++  throw new Error(`coarticulation.${what}: ${c} (linear, cos, out)`);
++};
++
++// "coarticulation": true | {degree, codaDegree, curve, formantCurve, cv, vc, burst, hh, sonorants, loci}
++//   -> the full option, or null (off)
++export function coartOptions(c) {
++  if (!c) return null;
++  const o = { ...COARTICULATION, ...(c === true ? {} : Object.fromEntries(Object.entries(c).filter(([, v]) => v !== undefined))) };
++  curveCode(o.curve, 'curve');
++  if (o.formantCurve !== null) curveCode(o.formantCurve, 'formantCurve');
++  for (const k of ['degree', 'cv', 'vc']) if (typeof o[k] !== 'number' || !(o[k] >= 0)) throw new Error(`coarticulation.${k}: expected a number >= 0`);
++  if (o.codaDegree !== null && !(o.codaDegree >= 0)) throw new Error('coarticulation.codaDegree: expected a number >= 0');
++  lociOf(o);
++  return o;
++}
++
++// phone -> {F1: [k, c], ...}: LOCI by place (liquids and glides unless sonorants: false), with o.loci
++// ({PHONE: {F2: [k, c], ...}}, or PHONE: null for none) merged over them
++export function lociOf(o) {
++  const out = {};
++  for (const { phones, smooth, ...eq } of Object.values(LOCI)) {
++    if (!smooth || o?.sonorants !== false) for (const p of phones.split(' ')) out[p] = { ...eq };
++  }
++  for (const [p, eq] of Object.entries(o?.loci ?? {})) {
++    for (const [k, v] of Object.entries(eq ?? {})) {
++      if (!/^F[123]$/.test(k) || !Array.isArray(v) || v.length !== 2 || !v.every(Number.isFinite)) {
++        throw new Error(`coarticulation.loci.${p}.${k}: expected F1/F2/F3: [slope, intercept Hz]`);
++      }
++    }
++    out[p] = eq === null ? undefined : { ...(out[p] ?? {}), ...eq };
++  }
++  return out;
++}
++
++// the klattsch bank fields that carry it: {CODE: fields to merge into the base bank's entry}
++export function coartFields(o, has) {
++  const fields = {};
++  for (const v of VOWELS) if (has(v)) fields[v] = { vowel: true };
++  const smooth = new Set(Object.values(LOCI).filter((x) => x.smooth).flatMap((x) => x.phones.split(' ')));
++  for (const [p, locus] of Object.entries(lociOf(o))) if (locus && has(p)) fields[p] = { locus, ...(smooth.has(p) ? { smooth: true } : {}) };
++  if (o.burst) for (const p of VELAR_STOPS) if (fields[p]) fields[p].locusBurst = true;
++  if (o.hh && has('HH')) fields.HH = { transparent: true };
++  return fields;
++}
++
++// the directives that switch it on in klattsch
++export function coartDirectives(o) {
++  const curve = curveCode(o.curve, 'curve'), fc = o.formantCurve === null ? curve : curveCode(o.formantCurve, 'formantCurve');
++  return [`[CO=${o.degree}]`, o.codaDegree !== null && o.codaDegree !== o.degree ? `[COR=${o.codaDegree}]` : '',
++    curve ? `[TC=${curve}]` : '', fc !== curve ? `[TCF=${fc}]` : '', `[COCV=${o.cv}]`, `[COVC=${o.vc}]`].filter(Boolean).join(' ');
++}
+diff --git a/klattsing/src/compile.js b/klattsing/src/compile.js
+index c9fb08b..8e0dd8d 100644
+--- a/klattsing/src/compile.js
++++ b/klattsing/src/compile.js
+@@ -9,6 +9,7 @@ import { timeWordsV0 } from './durations_v0.js';
+ import { FUNCTION_WORDS } from './function_words.js';
+ import { bankName, BREATH_PREFIX } from './banks.js';
+ import { DUR } from './phones.js';
++import { coartOptions, coartDirectives } from './coarticulation.js';
+ 
+ const DIPH = { AY: ['AA', 'IY'], EY: ['EH', 'IY'], OW: ['AO', 'UW'], AW: ['AA', 'UW'], OY: ['AO', 'IY'] };
+ const NOTE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+@@ -79,8 +80,8 @@ const av = (s, o) => (!o.dynamics ? '' : `[AV=${(o.dynamics === true ? DYNAMICS
+ // dynamics (true | {stress: gain}; off by default until voicelab says otherwise), voice }
+ const voiceOf = (o) => VOICES[o.voice] ?? o.voice ?? VOICES.speak;
+ function prefix(o) {
+-  const bank = bankName(o);
+-  return [bank ? `[bank=${bank}]` : '', o.transition ? `[TR=${o.transition}]` : '', voiceOf(o)].filter(Boolean).join(' ');
++  const bank = bankName(o), co = coartOptions(o.coarticulation);
++  return [bank ? `[bank=${bank}]` : '', o.transition ? `[TR=${o.transition}]` : '', co ? coartDirectives(co) : '', voiceOf(o)].filter(Boolean).join(' ');
+ }
+ const asp = (s, o) => (o.aspiration !== false && s.aspMs ? `r${f1(s.aspMs)} HH ` : '');
+ // the klattsch aspiration (h) a voice string leaves set, so "breath" can restore it
+diff --git a/klattsing/test/coarticulation.test.js b/klattsing/test/coarticulation.test.js
+new file mode 100644
+index 0000000..732c8b8
+--- /dev/null
++++ b/klattsing/test/coarticulation.test.js
+@@ -0,0 +1,225 @@
++// "coarticulation" (klattsing) and klattsch's [CO=x] / [TC=n] patch: locus-equation boundaries, VC transitions,
++// HH taking the next vowel's formants, velar bursts, shaped transitions; all of it inert unless asked for.
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { createHash } from 'node:crypto';
++import { readFileSync } from 'node:fs';
++import { speak, sing, toKlattsch, durationsOf } from '../src/compile.js';
++import { bankName, banksFor, coartBank } from '../src/banks.js';
++import { LOCI, lociOf, coartOptions, coartDirectives, COARTICULATION } from '../src/coarticulation.js';
++import { timelineOf } from '../src/timeline.js';
++import { compileString, renderToBuffer, FormantSynth, PARAMS, banks } from '../../vendor/klattsch/src/engine/index.js';
++import '../../bin/klatt-render.mjs';
++
++const REF = JSON.parse(readFileSync(new URL('./reference.fixture.json', import.meta.url), 'utf8'));
++const KLATT = banks.get('klatt1980-en').phonemes;
++const formantEvents = (c) => c.schedule.filter((e) => e.params && e.params.join() === 'F1,F2,F3');
++const near = (a, b, tol = 1e-6) => Math.abs(a - b) <= tol;
++
++test('defaults: no coarticulation option (or false/null) gives the reference strings, no curve or params in the schedule', () => {
++  for (const { spec, out } of REF) {
++    assert.equal(toKlattsch({ ...spec, coarticulation: false }), out);
++    assert.equal(toKlattsch({ ...spec, coarticulation: null }), out);
++  }
++  for (const { out } of REF.slice(0, 20)) {
++    for (const e of compileString(out).schedule) assert.ok(!('curve' in e) && !('params' in e), out);
++  }
++});
++
++test('defaults: the engine renders default strings sample for sample as before the patch', () => {
++  // sha1 of the float audio (16 kHz) of every 7th reference string and one with [TR]/[AV], from the engine before [CO]/[TC]
++  const h = createHash('sha1');
++  const strings = REF.filter((_, i) => i % 7 === 0).map((r) => r.out).concat(['[TR=70] [AV=0.8] HH AH L OW p200 b=C3 (D IY P) (S IY)']);
++  for (const s of strings) {
++    const c = compileString(s);
++    for (const v of c.voices) if (v.schedule.length) h.update(Buffer.from(renderToBuffer({ sampleRate: 16000, schedule: v.schedule, totalMs: v.totalMs }).buffer));
++  }
++  assert.equal(h.digest('hex'), 'e0357552625a2441483dbe796f2ccc1812624e53');
++});
++
++test('option: directives in the prefix and a generated bank with the coarticulation fields', () => {
++  const s = speak({ text: 'Keep the cat.', bank: 'mitalk-bursts', coarticulation: true });
++  assert.match(s, /^\[bank=mitalk-bursts--co[0-9a-f]{12}\] \[CO=2\] \[TC=2\] \[COCV=60\] \[COVC=50\] g0\.5/);
++  assert.deepEqual(compileString(s).warnings, []);
++  const name = bankName({ bank: 'mitalk-bursts', coarticulation: true });
++  assert.equal(name, bankName({ bank: 'mitalk-bursts', coarticulation: {} }), 'true = the defaults');
++  assert.notEqual(name, bankName({ bank: 'mitalk-bursts', coarticulation: { burst: false } }));
++  const b = banks.get(name).phonemes;
++  assert.equal(b.IY.vowel, true); assert.equal(b.AA.vowel, true); assert.equal(b.S.vowel, undefined);
++  assert.deepEqual(b.D.locus, { F1: LOCI.alveolar.F1, F2: LOCI.alveolar.F2, F3: LOCI.alveolar.F3 });
++  assert.equal(b.K.locusBurst, true); assert.equal(b.T.locusBurst, undefined); assert.equal(b.NG.locusBurst, undefined);
++  assert.equal(b.HH.transparent, true);
++  assert.equal(b.D.burstMs, banks.get('mitalk-bursts').phonemes.D.burstMs, 'the base entry is kept');
++  assert.deepEqual(banksFor({ bank: 'mitalk-bursts', coarticulation: true }).map((x) => x.name), [name]);
++  // with bankPatch and breath: patch, then coarticulation, then the breath entries (which inherit vowel: true)
++  const chain = banksFor({ bank: 'mitalk-bursts', bankPatch: { AA: { F1: 700 } }, coarticulation: true, aspiration: 'breath' });
++  assert.deepEqual(chain.map((x) => x.name.replace(/[0-9a-f]{12}/g, '#')), ['mitalk-bursts--#', 'mitalk-bursts--#--co#', 'mitalk-bursts--#--co#--br#']);
++  assert.equal(banks.get(chain[2].name).phonemes.BRAA.vowel, true);
++  assert.equal(banks.get(chain[2].name).phonemes.AA.F1, 700);
++  assert.match(speak({ text: 'a', coarticulation: { degree: 0.5, codaDegree: 0.25, curve: 'linear', cv: 40, vc: 30 } }),
++    /\[CO=0\.5\] \[COR=0\.25\] \[COCV=40\] \[COVC=30\]/);
++  assert.throws(() => speak({ text: 'a', coarticulation: { curve: 'wobbly' } }), /curve/);
++  assert.throws(() => speak({ text: 'a', coarticulation: { cv: -1 } }), /cv/);
++  assert.throws(() => speak({ text: 'a', coarticulation: { loci: { D: { F2: [0.5] } } } }), /loci\.D\.F2/);
++  assert.deepEqual(coartOptions(true), COARTICULATION);
++  assert.equal(coartDirectives(coartOptions({ curve: 'cos' })), '[CO=2] [TC=1] [COCV=60] [COVC=50]');
++  assert.equal(coartDirectives(coartOptions({ formantCurve: 'linear' })), '[CO=2] [TC=2] [TCF=0] [COCV=60] [COVC=50]');
++  assert.equal(coartDirectives(coartOptions({ curve: 0, formantCurve: 'out' })), '[CO=2] [TCF=2] [COCV=60] [COVC=50]');
++  assert.throws(() => coartOptions({ formantCurve: 7 }), /formantCurve/);
++  // liquids and glides: loci that glide (smooth), unless sonorants: false
++  assert.deepEqual(b.L.locus.F2, LOCI.lateral.F2); assert.equal(b.L.smooth, true); assert.equal(b.D.smooth, undefined);
++  assert.equal(banks.get(bankName({ bank: 'mitalk-bursts', coarticulation: { sonorants: false } })).phonemes.L.locus, undefined);
++  assert.deepEqual(lociOf({ loci: { D: { F2: [0.4, 1200] } } }).D.F2, [0.4, 1200]);
++  assert.equal(lociOf({ loci: { D: null } }).D, undefined);
++});
++
++test('durations and timeline: the same phonemes and times with or without coarticulation', () => {
++  const spec = { mode: 'speak', text: 'Pin the top, then stop.', bank: 'mitalk-bursts' };
++  assert.deepEqual(durationsOf({ ...spec, coarticulation: true }), durationsOf(spec));
++  const a = timelineOf(spec), b = timelineOf({ ...spec, coarticulation: true });
++  assert.deepEqual(b.phones, a.phones); assert.equal(b.totalMs, a.totalMs);
++  const sungSpec = { mode: 'sing', text: 'Lower the bucket', bpm: 168, notes: [['E2', 3], ['G2', 3], ['F2', 3], ['A2', 3], ['G2', 4]] };
++  assert.deepEqual(timelineOf({ ...sungSpec, coarticulation: true }).phones, timelineOf(sungSpec).phones);
++  assert.deepEqual(compileString(sing({ ...sungSpec, coarticulation: true })).warnings, []);
++});
++
++// a hand-written klattsch string over a bank carrying the fields
++const BANK = coartBank('klatt1980-en', true).name;
++if (!banks.list().includes(BANK)) speak({ text: 'a', coarticulation: true });
++const co = (s, pre = '[CO=1]') => compileString(`[bank=${BANK}] ${pre} ${s}`);
++
++test('CV: the vowel starts at the locus-equation value for it, then moves to its target', () => {
++  const c = co('r100 D r200 AA');
++  assert.deepEqual(c.warnings, []);
++  const aa = c.phrases.find((p) => p.phoneme === 'AA');
++  const fe = formantEvents(c).filter((e) => e.atMs >= aa.tStartMs - 1e-9);
++  const [k, b] = LOCI.alveolar.F2;
++  assert.ok(near(fe[0].target.F2, KLATT.AA.F2 + (k * KLATT.AA.F2 + b - KLATT.AA.F2)), `${fe[0].target.F2}`);
++  assert.ok(near(fe[0].atMs, aa.tStartMs) && fe[0].transitionMs <= 3);
++  assert.ok(near(fe[1].target.F2, KLATT.AA.F2) && fe[1].transitionMs === 60 && fe[1].curve === undefined);
++  // degree x scales the pull; 0 starts on the vowel's own target
++  const half = formantEvents(co('r100 D r200 AA', '[CO=0.5]')).find((e) => e.atMs >= aa.tStartMs - 1e-9);
++  assert.ok(near(half.target.F2, KLATT.AA.F2 + 0.5 * (k * KLATT.AA.F2 + b - KLATT.AA.F2)));
++  const none = formantEvents(co('r100 D r200 AA', '[CO=0]')).find((e) => e.atMs >= aa.tStartMs - 1e-9);
++  assert.ok(near(none.target.F2, KLATT.AA.F2));
++  // other parameters move in their own events, at their usual times (formants excluded)
++  const other = c.schedule.filter((e) => e.params && e.params.includes('A1'));
++  assert.ok(other.length && other.every((e) => !e.params.includes('F2') && e.params.length === PARAMS.length - 3));
++  // the formant scale applies to the boundary too
++  const sc = formantEvents(co('s0.9 r100 D r200 AA')).find((e) => e.atMs >= aa.tStartMs - 1e-9);
++  assert.ok(near(sc.target.F2, 0.9 * fe[0].target.F2, 1e-6));
++});
++
++test('velars: the burst and the vowel onset front before front vowels', () => {
++  const burstF2 = (v) => {
++    const c = co(`r100 G r200 ${v}`), g = c.phrases.find((p) => p.phoneme === 'G');
++    return formantEvents(c).find((e) => e.atMs > g.tStartMs + 1).target.F2;   // at the burst
++  };
++  const [k, b] = LOCI.velar.F2;
++  assert.ok(near(burstF2('IY'), k * KLATT.IY.F2 + b));
++  assert.ok(near(burstF2('UW'), k * KLATT.UW.F2 + b));
++  assert.ok(burstF2('IY') > burstF2('UW') + 500, 'fronted before IY');
++  // with burst: false the burst keeps the stop's own formants
++  const nb = coartBank('klatt1980-en', { burst: false }).name;
++  speak({ text: 'a', coarticulation: { burst: false } });
++  const c = compileString(`[bank=${nb}] [CO=1] r100 G r200 IY`), g = c.phrases.find((p) => p.phoneme === 'G');
++  assert.equal(formantEvents(c).find((e) => e.atMs > g.tStartMs + 1).target.F2, KLATT.G.F2);
++});
++
++test('VC: the vowel moves toward the next consonant\'s value over its last COVC ms (at most 60% of it)', () => {
++  const c = co('[COVC=40] r200 AA r100 D'), aa = c.phrases.find((p) => p.phoneme === 'AA');
++  const last = formantEvents(c).filter((e) => e.atMs < aa.tEndMs).at(-1);
++  const [k, b] = LOCI.alveolar.F2;
++  assert.ok(near(last.atMs, aa.tEndMs - 40) && last.transitionMs === 40);
++  assert.ok(near(last.target.F2, k * KLATT.AA.F2 + b));
++  const short = co('r50 AA r100 D'), a2 = short.phrases.find((p) => p.phoneme === 'AA');
++  const l2 = formantEvents(short).filter((e) => e.atMs < a2.tEndMs).at(-1);
++  assert.ok(near(l2.transitionMs, 30) && near(l2.atMs, a2.tEndMs - 30), 'capped at 60% of a short vowel');
++  // [COR=x] sets the VC pull on its own
++  const r0 = co('r200 AA r100 D', '[CO=1] [COR=0]'), a3 = r0.phrases.find((p) => p.phoneme === 'AA');
++  assert.ok(near(formantEvents(r0).filter((e) => e.atMs < a3.tEndMs).at(-1).target.F2, KLATT.AA.F2));
++  // a diphthong ends from its glide target
++  const ay = co('r200 AY r100 D'), a4 = ay.phrases.find((p) => p.phoneme === 'AY');
++  assert.ok(near(formantEvents(ay).filter((e) => e.atMs < a4.tEndMs).at(-1).target.F2, k * KLATT.AY.glideTo.F2 + b));
++  // no consonant with a locus after the vowel: no VC event
++  const al = co('r200 AA r100 IY'), a5 = al.phrases.find((p) => p.phoneme === 'AA');
++  assert.equal(formantEvents(al).filter((e) => e.atMs > a5.tStartMs + 1 && e.atMs < a5.tEndMs).length, 0);
++});
++
++test('HH takes the next vowel\'s formants; after a stop the CV transition starts at the release', () => {
++  const c = co('r80 HH r200 IY'), hh = c.phrases.find((p) => p.phoneme === 'HH');
++  const first = formantEvents(c).find((e) => e.atMs >= hh.tStartMs);
++  assert.deepEqual([first.target.F1, first.target.F2, first.target.F3], [KLATT.IY.F1, KLATT.IY.F2, KLATT.IY.F3]);
++  const k2 = co('r80 K r25 HH r200 AA'), h2 = k2.phrases.find((p) => p.phoneme === 'HH'), aa = k2.phrases.find((p) => p.phoneme === 'AA');
++  const ev = formantEvents(k2).filter((e) => e.atMs >= h2.tStartMs - 1e-9);
++  const [k, b] = LOCI.velar.F2;
++  assert.ok(near(ev[0].target.F2, k * KLATT.AA.F2 + b), 'HH at the velar boundary for AA');
++  assert.ok(near(ev[1].target.F2, KLATT.AA.F2) && ev[1].transitionMs === 60, 'then toward AA');
++  assert.equal(ev.length, 2, 'no new formant event when the vowel starts');
++  assert.ok(ev.every((e) => e.atMs < aa.tStartMs));
++  // without coarticulation HH keeps its own formants
++  const plain = compileString('r80 HH r200 IY');
++  assert.equal(plain.schedule[0].target.F2, KLATT.HH.F2);
++});
++
++test('liquids and glides: entered at the usual pace, and a vowel after one glides from its formants', () => {
++  const c = co('r200 AA r100 L r200 IY'), l = c.phrases.find((p) => p.phoneme === 'L'), iy = c.phrases.find((p) => p.phoneme === 'IY');
++  const fe = formantEvents(c);
++  const vc = fe.filter((e) => e.atMs < l.tStartMs).at(-1), [k, b] = LOCI.lateral.F2;
++  assert.ok(near(vc.target.F2, k * KLATT.AA.F2 + b), 'VC toward the lateral boundary');
++  const intoL = fe.find((e) => near(e.atMs, l.tStartMs));
++  assert.ok(intoL.target.F2 === KLATT.L.F2 && intoL.transitionMs === 35, `${intoL.transitionMs}`);
++  const intoIY = fe.filter((e) => near(e.atMs, iy.tStartMs));
++  assert.equal(intoIY.length, 1);
++  assert.ok(intoIY[0].target.F2 === KLATT.IY.F2 && intoIY[0].transitionMs === 60, 'no jump: from L itself over COCV');
++});
++
++test('obstruents reach their own formants at once; a phoneme-free pause breaks the context', () => {
++  const c = co('r200 AA r100 S'), s = c.phrases.find((p) => p.phoneme === 'S');
++  const e = formantEvents(c).find((x) => near(x.atMs, s.tStartMs));
++  assert.ok(e.target.F3 === KLATT.S.F3 && e.transitionMs <= 3);
++  const p = co('r100 D p200 r200 AA'), aa = p.phrases.find((x) => x.phoneme === 'AA');
++  const fe = formantEvents(p).find((x) => x.atMs >= aa.tStartMs - 1e-9);
++  assert.ok(near(fe.target.F2, KLATT.AA.F2), 'no locus across a pause');
++});
++
++test('[TCF=n]: the formant events\' own curve', () => {
++  const c = co('r100 D r200 AA', '[CO=1] [TC=2] [TCF=0]');
++  assert.ok(formantEvents(c).every((e) => e.curve === undefined));
++  assert.ok(c.schedule.filter((e) => !formantEvents(c).includes(e)).every((e) => e.curve === 2));
++  assert.ok(formantEvents(co('r100 D r200 AA', '[CO=1] [TCF=1]')).every((e) => e.curve === 1));
++  // [TC] alone, without [CO]: every event shaped, all parameters together
++  const t = compileString('[TC=2] r100 D r200 AA');
++  assert.ok(t.schedule.every((e) => e.curve === 2 && !('params' in e)));
++});
++
++test('synth: shaped transitions (raised cosine, ease-out) and per-parameter events', () => {
++  const sr = 1000, at = (synth, n) => { synth.process(new Float32Array(n)); return synth.current; };
++  const ev = (curve, params) => [{ atMs: 0, target: { F2: 2000, A1: 1 }, transitionMs: 100, ...(curve ? { curve } : {}), ...(params ? { params } : {}) }];
++  const lin = new FormantSynth({ sampleRate: sr, schedule: ev(0) });
++  assert.equal(lin.shaped, false);
++  assert.ok(near(at(lin, 50).F2, 1500 + 500 * 0.5, 1e-6));
++  const cos = new FormantSynth({ sampleRate: sr, schedule: ev(1) });
++  assert.equal(cos.shaped, true);
++  assert.ok(near(at(cos, 25).F2, 1500 + 500 * (0.5 - 0.5 * Math.cos(Math.PI * 0.25)), 1e-6));
++  const out = new FormantSynth({ sampleRate: sr, schedule: ev(2) });
++  assert.ok(near(at(out, 50).F2, 1500 + 500 * 0.75, 1e-6));
++  assert.ok(near(at(out, 60).F2, 2000) && near(out.current.A1, 1), 'reaches the target');
++  // params: only the named parameters move; another event keeps running for the rest
++  const two = new FormantSynth({
++    sampleRate: sr, schedule: [{ atMs: 0, target: { F2: 2000, A1: 1 }, transitionMs: 100 },
++      { atMs: 20, target: { F2: 1000 }, transitionMs: 10, params: ['F2'] }],
++  });
++  const c1 = at(two, 30);
++  assert.ok(near(c1.F2, 1000) && near(c1.A1, 0.3, 1e-9), `${c1.F2} ${c1.A1}`);
++  assert.ok(near(at(two, 70).A1, 1));
++  // live setTarget in shaped mode: a linear move of every parameter
++  out.setTarget({ F1: 700 }, 10);
++  assert.ok(near(at(out, 5).F1, 500 + 200 * 0.5, 1e-6));
++  // a coarticulated render: finite, not silent, same length
++  const spec = { mode: 'speak', text: 'Keep the cat, he said.', bank: 'mitalk-bursts' };
++  const c = compileString(speak({ ...spec, coarticulation: true })), d = compileString(speak(spec));
++  assert.equal(c.totalMs, d.totalMs);
++  const y = renderToBuffer({ sampleRate: 16000, schedule: c.schedule, totalMs: c.totalMs });
++  assert.ok(y.every(Number.isFinite) && Math.max(...y.map(Math.abs)) > 0.05);
++});
+diff --git a/tools/voicelab/pairs.py b/tools/voicelab/pairs.py
+index d47ac62..0ddcd39 100644
+--- a/tools/voicelab/pairs.py
++++ b/tools/voicelab/pairs.py
+@@ -71,7 +71,8 @@ def render(cfg, words, path):
+         sf.write(path, np.concatenate(parts), sr); return
+     specs = []
+     for i, w in enumerate(words):
+-        base = {k: v for k, v in cfg.items() if k in ("bank", "transition", "aspiration", "voice", "rules", "accent", "gate", "hold", "durations", "dynamics")}
++        base = {k: v for k, v in cfg.items() if k in ("bank", "transition", "aspiration", "voice", "rules", "accent", "gate", "hold", "durations", "dynamics",
++                                                      "coarticulation")}
+         if cfg.get("mode", "speak") == "sing":
+             nsyl = 2 if NUM[i] == "seven" else 1
+             notes = [["E2", 4 // nsyl]] * nsyl + [["r", 2], ["G2", 8]]
+diff --git a/vendor/klattsch/VENDORED b/vendor/klattsch/VENDORED
+index a49c071..6f2d797 100644
+--- a/vendor/klattsch/VENDORED
++++ b/vendor/klattsch/VENDORED
+@@ -2,3 +2,9 @@ tgies/klattsch @ 63dc2c6 (MIT), vendored with patches:
+   src/engine/sequencer.js: [TR=ms] sets the formant transition into steady phonemes (default 35 ms, at most 40% of the phoneme; with TR, up to 90%)
+   src/engine/sequencer.js: [AV=x] scales loudness (the synth's gain, default 3.5) and glides with the phoneme's transition
+   src/engine/sequencer.js: a stop's bank entry may set burstMs (default 25 ms for all)
++  src/engine/synth-core.js: shaped, per-parameter transitions: a schedule event may carry curve (1 raised cosine, 2 ease-out) and params
++    (the parameters it moves; the others keep their own transitions); a schedule without either renders through the original code
++  src/engine/sequencer.js: [TC=n] gives every event that curve; [CO=x] coarticulation: formants move in their own events, a vowel starts at
++    and ends toward each neighbouring consonant's locus-equation value F + x (k F + c - F) ([COR=x] at VC; [COCV=ms], [COVC=ms]; [TCF=n]
++    the formant events' curve), from bank fields vowel, locus {F1..F3: [k, c]}, locusVC, locusBurst (a stop's burst at the vowel's onset
++    formants), transparent (HH: the next vowel's formants), smooth (liquids: no step); without [CO]/[TC] the schedule is unchanged
+diff --git a/vendor/klattsch/src/engine/sequencer.js b/vendor/klattsch/src/engine/sequencer.js
+index 5500fdb..e4d01fd 100644
+--- a/vendor/klattsch/src/engine/sequencer.js
++++ b/vendor/klattsch/src/engine/sequencer.js
+@@ -1,6 +1,11 @@
+ // Phoneme-string parser and schedule compiler
+ 
+ import { banks, resolveBank } from './banks/index.js';
++import { PARAMS } from './synth-core.js';
++
++// (sonicpi-toolchain patch) coarticulation ([CO=x]): formant frequencies move in their own schedule events
++const FORMANTS = ['F1', 'F2', 'F3'];
++const NON_FORMANTS = PARAMS.filter((k) => !FORMANTS.includes(k));
+ 
+ const PAUSE_MS = { ',': 100, ';': 200, '.': 300 };
+ 
+@@ -28,6 +33,12 @@ const DEFAULTS = Object.freeze({
+   sentenceFinalHoldMs: 0,
+   fadeOutMs: 100,
+   trailOffMs: 150,
++  // (sonicpi-toolchain patch) coarticulation: CV transition (locus -> vowel), VC transition (vowel -> locus),
++  // the step onto a locus or an obstruent's own formants, and the most of a vowel the VC transition may take
++  coCvMs: 60,
++  coVcMs: 50,
++  coJumpMs: 3,
++  coVcShare: 0.6,
+ });
+ 
+ const HOMOGLYPH_MAP = {
+@@ -250,6 +261,93 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+     return out;
+   };
+ 
++  // (sonicpi-toolchain patch) coarticulation, active while [CO=x] is set (x: how far a vowel's formants are
++  // pulled toward a consonant's locus at a CV boundary, 0 none; [COR=x] the same at a VC boundary, default x;
++  // a bare [CO] switches it off).
++  // In this mode formant frequencies (F1-F3) move only in their own events, so a consonant's locus can set
++  // where a vowel's formants start (CV) and end (VC) while the other parameters keep their usual timing.
++  // Bank fields it reads (none of them does anything without [CO]):
++  //   vowel: true         a vowel (a nucleus that takes loci)
++  //   locus: {F1: [k, c], F2: [k, c], F3: [k, c]}   a consonant's locus equations (Sussman et al. 1991):
++  //                       next to a vowel with formant F, the boundary value is F + x (k F + c - F)
++  //   locusVC: {...}      the same at the consonant's VC boundaries (default: locus)
++  //   locusBurst: true    a stop whose burst takes the following vowel's CV boundary formants (velars)
++  //   transparent: true   takes the formants of the vowel after it (HH), through the locus before it
++  //   smooth: true        a consonant with a locus whose formants glide (liquids, glides): a vowel after it moves
++  //                       from the consonant's own formants over COCV, and it is entered at the usual pace
++  // Timing: [COCV=ms] locus -> vowel target, [COVC=ms] vowel target -> locus (at most coVcShare of the
++  // vowel); a consonant with a locus reaches its own formants in coJumpMs (the vowel carries the transitions).
++  // A phoneme's neighbours are the phonemes next to it with only directives between (a pause breaks it).
++  // [TC=n] shapes the transitions (1 raised cosine, 2 ease-out; synth-core CURVES), with or without [CO];
++  // [TCF=n] the formant events' own (default TC).
++  const prevPh = new Map(), nextPh = new Map();
++  {
++    let last = null;
++    for (const t of tokens) {
++      if (t.type === 'phoneme') { if (last) { nextPh.set(last, t); prevPh.set(t, last); } last = t; }
++      else if (t.type === 'pause' || t.type === 'unknown' || (t.type === 'directive' && t.key === 'pause')) last = null;
++    }
++  }
++  const entryOf = (t) => (t ? phonemes[t.code] : undefined);
++  const rawF = (p, end = false) => {
++    const src = end && p.glideTo ? { ...p, ...p.glideTo } : p;
++    return { F1: src.F1, F2: src.F2, F3: src.F3 };
++  };
++  const scaleF = (F) => ({ F1: F.F1 * scale, F2: F.F2 * scale, F3: F.F3 * scale });
++  // the boundary formants between consonant entry c and vowel formants V (unscaled), scaled
++  const boundary = (c, V, vc) => {
++    const L = (vc && c.locusVC) || c.locus, x = vc ? (extras.COR ?? extras.CO) : extras.CO, out = {};
++    for (const k of FORMANTS) out[k] = (L[k] ? V[k] + x * (L[k][0] * V[k] + L[k][1] - V[k]) : V[k]) * scale;
++    return out;
++  };
++  const moveFormants = (F, transitionMs, atMs, curve = extras.TCF ?? extras.TC) => {
++    schedule.push({
++      atMs, target: { F1: F.F1, F2: F.F2, F3: F.F3 }, transitionMs: Math.max(transitionMs, 0.1),
++      params: FORMANTS, ...(curve ? { curve } : {}),
++    });
++  };
++  const sameF = (a, b) => a && b && FORMANTS.every((k) => a[k] === b[k]);
++  // the vowel a stop's burst or an HH belongs to: the next phoneme, or the one after an HH
++  const vowelAfter = (t) => {
++    let n = nextPh.get(t);
++    if (entryOf(n)?.transparent) n = nextPh.get(n);
++    return entryOf(n)?.vowel ? n : null;
++  };
++  const cvMs = () => extras.COCV ?? DEFAULTS.coCvMs;
++  // formants into phoneme t (entry p) at its start (timeMs); usualMs: the transition its other parameters take
++  const formantsIn = (t, p, usualMs, slotMs) => {
++    if (extras.CO === undefined) return;
++    const prev = prevPh.get(t), pe = entryOf(prev), jump = Math.min(DEFAULTS.coJumpMs, slotMs * 0.5);
++    if (p.transparent) {
++      const v = nextPh.get(t), ve = entryOf(v);
++      if (ve?.vowel) {
++        const V = rawF(ve);
++        moveFormants(pe?.locus ? boundary(pe, V, false) : scaleF(V), jump, timeMs);
++        moveFormants(scaleF(V), cvMs(), timeMs + jump);   // the CV transition starts at the release
++        return;
++      }
++    }
++    if (p.vowel && pe) {
++      if (pe.transparent && nextPh.get(prev) === t) return;           // under way since the HH
++      if (pe.vowel && sameF(rawF(pe), rawF(p))) return;                // the same vowel continues (breath part)
++      if (pe.locus && pe.smooth) { moveFormants(scaleF(rawF(p)), cvMs(), timeMs); return; }   // from the liquid itself
++      if (pe.locus) {
++        moveFormants(boundary(pe, rawF(p), false), jump, timeMs);
++        moveFormants(scaleF(rawF(p)), cvMs(), timeMs + jump);
++        return;
++      }
++    }
++    moveFormants(scaleF(rawF(p)), p.locus && !p.smooth ? jump : usualMs, timeMs);
++  };
++  // a vowel's formants toward the locus of the consonant after it, over its last COVC ms (slot: [start, start+ms])
++  const formantsOut = (t, p, slotStart, slotMs) => {
++    if (extras.CO === undefined || !p.vowel) return;
++    const ne = entryOf(nextPh.get(t));
++    if (!ne?.locus || ne.transparent) return;
++    const ms = Math.min(extras.COVC ?? DEFAULTS.coVcMs, slotMs * DEFAULTS.coVcShare);
++    moveFormants(boundary(ne, rawF(p, true), true), ms, slotStart + slotMs - ms);
++  };
++
+   const renderPhoneme = (t, slotMs) => {
+     const p = phonemes[t.code];
+     if (!p) {
+@@ -258,6 +356,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+     }
+     const startF0 = t.stressed ? f0 + DEFAULTS.stressF0Lift : f0;
+     const endF0 = startF0 + t.pitchDelta;
++    const slotStart = timeMs;
+     if (p.isStop) {
+       // (sonicpi-toolchain patch) a bank entry's burstMs sets its release burst (MITalk: P 5, T 15, K 25 ms)
+       const burstMs = Math.min(p.burstMs ?? DEFAULTS.stopBurstMs, slotMs * 0.3);
+@@ -265,26 +364,38 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+       silence(Math.min(20, silenceMs * 0.4));
+       timeMs += silenceMs;
+       emit(scaled(p, startF0), Math.min(5, burstMs * 0.2));
++      if (extras.CO !== undefined) {
++        // the burst's formants: its own, or (locusBurst, velars) the following vowel's CV boundary
++        const v = p.locusBurst && p.locus ? vowelAfter(t) : null;
++        moveFormants(v ? boundary(p, rawF(entryOf(v)), false) : scaleF(rawF(p)), Math.min(5, burstMs * 0.2), timeMs);
++      }
+       timeMs += burstMs;
+       return slotMs;
+     } else if (p.glideTo) {
+       const onset = slotMs * 0.25, glide = slotMs * 0.50, offset = slotMs * 0.25;
+       emit(scaled(p, startF0), Math.min(20, onset));
++      formantsIn(t, p, Math.min(20, onset), slotMs);
+       timeMs += onset;
+       emit(scaled(p, endF0, p.glideTo), glide);
++      if (extras.CO !== undefined) moveFormants(scaleF(rawF(p, true)), glide, timeMs);
+       timeMs += glide + offset;
++      formantsOut(t, p, slotStart, slotMs);
+       return slotMs;
+     } else if (t.pitchDelta !== 0) {
+       emit(scaled(p, startF0), Math.min(25, slotMs * 0.25));
++      formantsIn(t, p, Math.min(25, slotMs * 0.25), slotMs);
+       timeMs += slotMs * 0.25;
+       emit(scaled(p, endF0), slotMs * 0.6);
+       timeMs += slotMs * 0.75;
++      formantsOut(t, p, slotStart, slotMs);
+       return slotMs;
+     } else {
+       // [TR=ms] (sonicpi-toolchain patch): how long formants take to move into a phoneme
+       const trans = Math.min(extras.TR ?? DEFAULTS.defaultTransitionMs, slotMs * (extras.TR ? 0.9 : 0.4));
+       emit(scaled(p, startF0), trans);
++      formantsIn(t, p, trans, slotMs);
+       timeMs += slotMs;
++      formantsOut(t, p, slotStart, slotMs);
+       return slotMs;
+     }
+   };
+@@ -319,6 +430,9 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+       // [AV=x] (sonicpi-toolchain patch): loudness multiplier, moved like any other parameter
+       target: { ...target, ...extras, ...stateExtras(), ...(extras.AV !== undefined ? { gain: 3.5 * extras.AV } : {}) },
+       transitionMs,
++      // [TC=n], [CO=x] (sonicpi-toolchain patch): shaped transitions; formants left to their own events
++      ...(extras.TC ? { curve: extras.TC } : {}),
++      ...(extras.CO !== undefined ? { params: NON_FORMANTS } : {}),
+     });
+   };
+   const silence = (transitionMs = 30) => emit({ A1: 0, A2: 0, A3: 0 }, transitionMs);
+diff --git a/vendor/klattsch/src/engine/synth-core.js b/vendor/klattsch/src/engine/synth-core.js
+index 6decea1..ae1bb7c 100644
+--- a/vendor/klattsch/src/engine/synth-core.js
++++ b/vendor/klattsch/src/engine/synth-core.js
+@@ -42,6 +42,23 @@ export const DEFAULT = {
+   effort: 0.5,
+ };
+ 
++// (sonicpi-toolchain patch) shaped, per-parameter transitions. A schedule event may carry
++//   curve:  1 raised cosine (0.5 - 0.5 cos(pi u)), 2 ease-out (u (2 - u): fast at first, settling, like
++//           the formant movement after a consonant release), 0 or absent linear
++//   params: the parameters it moves (absent: all of them, as before); the others keep their own transitions
++// A schedule whose events carry neither renders through the original linear code, sample for sample.
++export const CURVES = {
++  1: (u) => 0.5 - 0.5 * Math.cos(Math.PI * u),
++  2: (u) => u * (2 - u),
++};
++const isShaped = (events) => events.some((e) => e.curve || e.params);
++const toEvents = (events, sr) => events.map((e) => ({
++  atSample: Math.floor((e.atMs ?? 0) * sr / 1000),
++  target: e.target,
++  transitionSamples: Math.max(1, Math.floor((e.transitionMs ?? 30) * sr / 1000)),
++  ...(e.curve || e.params ? { curve: e.curve ?? 0, params: e.params ?? null } : {}),
++}));
++
+ export class FormantSynth {
+   constructor({ sampleRate, initialTarget, schedule } = {}) {
+     if (!sampleRate || sampleRate <= 0) {
+@@ -63,19 +80,54 @@ export class FormantSynth {
+     this.bp2 = new BandpassBiquad();
+     this.bp3 = new BandpassBiquad();
+ 
+-    this.schedule = (schedule ?? []).map(e => ({
+-      atSample: Math.floor((e.atMs ?? 0) * this.sr / 1000),
+-      target: e.target,
+-      transitionSamples: Math.max(1, Math.floor((e.transitionMs ?? 30) * this.sr / 1000)),
+-    }));
++    this.schedule = toEvents(schedule ?? [], this.sr);
+     this.scheduleIdx = 0;
+     this.sampleCounter = 0;
++    this.shaped = isShaped(this.schedule);
++    this.moves = [];        // shaped mode: running transitions { n, N, shape, keys, from, to }
++    this.mover = {};        // shaped mode: param -> the transition moving it
++  }
++
++  // shaped mode: start moving `params` (default all) toward target over N samples along curve
++  startMove(target, N, curve = 0, params = null) {
++    const keys = [];
++    const move = { n: 0, N, shape: CURVES[curve] ?? null, keys, from: {}, to: {} };
++    for (const k of params ?? PARAMS) {
++      if (k in target) this.target[k] = target[k];
++      const old = this.mover[k];
++      if (old) old.keys.splice(old.keys.indexOf(k), 1);
++      this.mover[k] = move;
++      keys.push(k);
++      move.from[k] = this.current[k];
++      move.to[k] = this.target[k];
++    }
++    this.moves.push(move);
++  }
++
++  // shaped mode: advance every running transition one sample
++  stepMoves() {
++    const cur = this.current;
++    let done = 0;
++    for (const m of this.moves) {
++      m.n++;
++      if (m.n >= m.N) {
++        for (const k of m.keys) { cur[k] = m.to[k]; this.mover[k] = undefined; }
++        m.keys.length = 0;
++        done++;
++        continue;
++      }
++      const u = m.n / m.N, w = m.shape ? m.shape(u) : u;
++      for (const k of m.keys) cur[k] = m.from[k] + (m.to[k] - m.from[k]) * w;
++      if (!m.keys.length) done++;
++    }
++    if (done) this.moves = this.moves.filter((m) => m.keys.length && m.n < m.N);
+   }
+ 
+   // Schedule a new target. transitionMs samples are linearly interpolated
+   // from current state to the new target
+   setTarget(target, transitionMs = 30) {
+     const N = Math.max(1, Math.floor(transitionMs * this.sr / 1000));
++    if (this.shaped) { this.startMove(target, N); return; }
+     this.transitionSamples = N;
+     for (const k of PARAMS) {
+       if (k in target) this.target[k] = target[k];
+@@ -86,13 +138,15 @@ export class FormantSynth {
+   // startCounter presets the schedule clock: negative delays the first event,
+   // positive drains already-past events on the first process() call.
+   queueSchedule(events, startCounter = 0) {
+-    this.schedule = events.map(e => ({
+-      atSample: Math.floor((e.atMs ?? 0) * this.sr / 1000),
+-      target: e.target,
+-      transitionSamples: Math.max(1, Math.floor((e.transitionMs ?? 30) * this.sr / 1000)),
+-    }));
++    this.schedule = toEvents(events, this.sr);
+     this.scheduleIdx = 0;
+     this.sampleCounter = startCounter;
++    if (isShaped(this.schedule) && !this.shaped) {
++      // switching to shaped mode mid-flight: carry the linear transition that is running
++      this.shaped = true;
++      if (this.transitionSamples > 0) this.startMove({}, this.transitionSamples);
++      this.transitionSamples = 0;
++    }
+   }
+ 
+   reset(initialTarget) {
+@@ -112,12 +166,25 @@ export class FormantSynth {
+     this.schedule = [];
+     this.scheduleIdx = 0;
+     this.sampleCounter = 0;
++    this.shaped = false;
++    this.moves = [];
++    this.mover = {};
+   }
+ 
+   // Render `out.length` samples into the given Float32Array
+   process(out) {
+     const cur = this.current;
+     for (let i = 0; i < out.length; i++) {
++      if (this.shaped) {
++        // (sonicpi-toolchain patch) shaped, per-parameter transitions
++        while (this.scheduleIdx < this.schedule.length
++            && this.schedule[this.scheduleIdx].atSample <= this.sampleCounter) {
++          const evt = this.schedule[this.scheduleIdx++];
++          this.startMove(evt.target, evt.transitionSamples, evt.curve, evt.params);
++        }
++        this.sampleCounter++;
++        if (this.moves.length) this.stepMoves();
++      } else {
+       // Drain any baked-in schedule events whose time has arrived
+       while (this.scheduleIdx < this.schedule.length
+           && this.schedule[this.scheduleIdx].atSample <= this.sampleCounter) {
+@@ -138,6 +205,7 @@ export class FormantSynth {
+           for (const k of PARAMS) cur[k] = this.target[k];
+         }
+       }
++      }
+ 
+       // Vibrato LFO modulates F0 around its target value
+       this.vibratoPhase += 2 * Math.PI * cur.vibratoRate / this.sr;
+-- 
+2.43.0
+
+
+From f5b23302423c618639c367219f7eb482640c3931 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 20 Oct 2026 23:07:31 +0000
+Subject: [PATCH 2/4] wip coarticulation: formant events never go back in time;
+ schedule sorted under [CO]
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013D7H5RPb4wjuAo6EWsSqmi
+---
+ klattsing/test/coarticulation.test.js   | 16 ++++++++++++++++
+ vendor/klattsch/src/engine/sequencer.js | 11 +++++++++++
+ 2 files changed, 27 insertions(+)
+
+diff --git a/klattsing/test/coarticulation.test.js b/klattsing/test/coarticulation.test.js
+index 732c8b8..04d8aa8 100644
+--- a/klattsing/test/coarticulation.test.js
++++ b/klattsing/test/coarticulation.test.js
+@@ -223,3 +223,19 @@ test('synth: shaped transitions (raised cosine, ease-out) and per-parameter even
+   const y = renderToBuffer({ sampleRate: 16000, schedule: c.schedule, totalMs: c.totalMs });
+   assert.ok(y.every(Number.isFinite) && Math.max(...y.map(Math.abs)) > 0.05);
+ });
++
++test('very short slots: the schedule stays in time order, formant events never go back', () => {
++  for (const s of ['r100 D r5 AA r100 D', 'r100 D r2 AA r2 D r3 IY r100 G', 'r8 B r8 AY r8 L r8 IY', 'r1 D r1 AA r1 D r1 IY r1 K']) {
++    const c = co(s, '[CO=2] [TC=2]');
++    assert.deepEqual(c.warnings, []);
++    for (let i = 1; i < c.schedule.length; i++) assert.ok(c.schedule[i].atMs >= c.schedule[i - 1].atMs, `${s}: event ${i}`);
++    const y = renderToBuffer({ sampleRate: 16000, schedule: c.schedule, totalMs: c.totalMs });
++    assert.ok(y.every(Number.isFinite));
++  }
++  // a 5 ms vowel between two alveolars: its VC move starts after its CV jump, so it ends heading for the coda's locus
++  const c = co('r100 D r5 AA r100 D', '[CO=2] [TC=2]'), aa = c.phrases.find((p) => p.phoneme === 'AA');
++  const fe = formantEvents(c).filter((e) => e.atMs >= aa.tStartMs - 1e-9 && e.atMs < aa.tEndMs);
++  const [k, b] = LOCI.alveolar.F2;
++  assert.ok(near(fe.at(-1).target.F2, KLATT.AA.F2 + 2 * (k * KLATT.AA.F2 + b - KLATT.AA.F2)), `${fe.at(-1).target.F2}`);
++  assert.ok(fe.every((e, i) => i === 0 || e.atMs >= fe[i - 1].atMs));
++});
+diff --git a/vendor/klattsch/src/engine/sequencer.js b/vendor/klattsch/src/engine/sequencer.js
+index e4d01fd..aec95ab 100644
+--- a/vendor/klattsch/src/engine/sequencer.js
++++ b/vendor/klattsch/src/engine/sequencer.js
+@@ -300,7 +300,15 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+     for (const k of FORMANTS) out[k] = (L[k] ? V[k] + x * (L[k][0] * V[k] + L[k][1] - V[k]) : V[k]) * scale;
+     return out;
+   };
++  // Formant events never go back in time (in a vowel shorter than ~8 ms the VC move or a diphthong's glide
++  // would start before the CV move); `formantEvents` makes the schedule be sorted by time at the end (stably,
++  // so events at one time keep their order), since such a short slot can also put a formant event after the
++  // next non-formant one.
++  let lastFormantAt = -Infinity, formantEvents = false;
+   const moveFormants = (F, transitionMs, atMs, curve = extras.TCF ?? extras.TC) => {
++    atMs = Math.max(atMs, lastFormantAt);
++    lastFormantAt = atMs;
++    formantEvents = true;
+     schedule.push({
+       atMs, target: { F1: F.F1, F2: F.F2, F3: F.F3 }, transitionMs: Math.max(transitionMs, 0.1),
+       params: FORMANTS, ...(curve ? { curve } : {}),
+@@ -589,6 +597,9 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+   // Hold the final phrase highlighted
+   if (phrases.length) phrases[phrases.length - 1].tEndMs = timeMs;
+ 
++  // (sonicpi-toolchain patch) [CO]: the synth applies events in array order
++  if (formantEvents) schedule.sort((a, b) => a.atMs - b.atMs);
++
+   return { schedule, totalMs: timeMs, warnings, phrases, source, engine };
+ }
+ 
+-- 
+2.43.0
+
+
+From 1ae1f04420f3cf0de82d789f63695e76a193ac28 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 20 Oct 2026 23:11:28 +0000
+Subject: [PATCH 3/4] wip coarticulation: docs (generalization, ablation, [TC]
+ alone), VENDORED
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013D7H5RPb4wjuAo6EWsSqmi
+---
+ klattsing/README.md             | 2 +-
+ klattsing/src/coarticulation.js | 5 ++++-
+ vendor/klattsch/VENDORED        | 3 ++-
+ 3 files changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/klattsing/README.md b/klattsing/README.md
+index 92eda96..dee6a70 100644
+--- a/klattsing/README.md
++++ b/klattsing/README.md
+@@ -42,7 +42,7 @@ reconstruction), `rules`; and the opt-in options below (`bankPatch`, `functionWo
+ | `pauseMs` | `250`, or `{",": ms, ".": ms, ..., default: 250}` | speak: silence after a phrase's punctuation (times `rate`) |
+ | `accentDelta` | speak `{g: 0.1, t: 0}`, sing `{g: 0.15, t: 0.15}` | effort (`g`) and tilt (`t`) added over a stressed vowel (with `accent`) |
+ | `phoneDur` | `{PHONE: [inherent, minimum]}` ms (`src/phones.js` `DUR`) | the duration table per call, merged over `DUR` (either `durations` version, speak and sing); `tools/voicelab/climb.py durations` fits it with `rules` |
+-| `coarticulation` | `true` or `{degree: 2, codaDegree: (degree), curve: "out", formantCurve: (curve), cv: 60, vc: 50, burst: true, hh: true, sonorants: true, loci: {PHONE: {F1/F2/F3: [k, c]}}}` (off) | context-dependent formant trajectories (klattsch's `[CO=x]` patch, `src/coarticulation.js`): a vowel starts at each neighbouring consonant's locus-equation value `F + degree (k F + c - F)` (loci per place fitted to Kokoro; Sussman et al. 1991) and moves to its target over `cv` ms, and moves toward the next consonant's value over its last `vc` ms (`codaDegree`); HH takes the next vowel's formants (`hh`), velar bursts front before front vowels (`burst`), liquids and glides glide (`sonorants`); every transition eased out (`curve`: `out`, `cos`, `linear`). A generated bank `<base>--co<hash>` carries the loci. Timings and the string's phonemes are unchanged |
++| `coarticulation` | `true` or `{degree: 2, codaDegree: (degree), curve: "out", formantCurve: (curve), cv: 60, vc: 50, burst: true, hh: true, sonorants: true, loci: {PHONE: {F1/F2/F3: [k, c]}}}` (off) | context-dependent formant trajectories (klattsch's `[CO=x]` patch, `src/coarticulation.js`): a vowel starts at each neighbouring consonant's locus-equation value `F + degree (k F + c - F)` (loci per place fitted to Kokoro; Sussman et al. 1991) and moves to its target over `cv` ms, and moves toward the next consonant's value over its last `vc` ms (`codaDegree`); HH takes the next vowel's formants (`hh`), velar bursts front before front vowels (`burst`), liquids and glides glide (`sonorants`); every transition eased out (`curve`: `out`, `cos`, `linear`). A generated bank `<base>--co<hash>` carries the loci. Timings and the string's phonemes are unchanged. The curve without the loci: klattsch's `[TC=2]` in `voice` (e.g. `"[TC=2] g0.5 t0 h0.05"`) |
+ 
+ Presets fitted against Kokoro by `tools/voicelab/climb.py` are spec fragments in `presets/` (merge one into a spec:
+ `{"mode": "speak", "text": ..., ...preset}`): `kokoro-durations.json` (`rules`, `phoneDur`, `functionWords`) and
+diff --git a/klattsing/src/coarticulation.js b/klattsing/src/coarticulation.js
+index f6eb7df..c88a52e 100644
+--- a/klattsing/src/coarticulation.js
++++ b/klattsing/src/coarticulation.js
+@@ -28,7 +28,10 @@
+ // degree 2 (the default) pulls twice as far as those fits: the 25 ms analysis window 5 ms into the vowel
+ // averages the boundary with the vowel, and Kokoro's connected-speech vowels undershoot more than the
+ // equations alone give. voicelab fidelity (BASE = kokoro-durations + mitalk-bursts) peaks there:
+-// degree 1 0.70, 1.5 0.74, 2 0.76, 2.5 0.74 (BASE 0.37).
++// degree 1 0.70, 1.5 0.74, 2 0.76, 2.5 0.74 (BASE 0.37). The loci and the degree were fitted on all 100 am_onyx
++// sentences; the gain holds on climb.py's 20 held-out sentences (BASE 0.21 -> 0.54) and on the other voice,
++// am_michael (0.44 -> 0.82). Of the 0.39: the ease-out curve alone (klattsch [TC=2], no loci) 0.19, the loci alone
++// (all transitions linear) 0.21; the VC transitions are worth 0.13 (codaDegree 0: 0.63), liquids/glides 0.08, HH 0.02.
+ import { VOWELS } from './phones.js';
+ 
+ export const LOCI = {
+diff --git a/vendor/klattsch/VENDORED b/vendor/klattsch/VENDORED
+index 6f2d797..5650a9d 100644
+--- a/vendor/klattsch/VENDORED
++++ b/vendor/klattsch/VENDORED
+@@ -7,4 +7,5 @@ tgies/klattsch @ 63dc2c6 (MIT), vendored with patches:
+   src/engine/sequencer.js: [TC=n] gives every event that curve; [CO=x] coarticulation: formants move in their own events, a vowel starts at
+     and ends toward each neighbouring consonant's locus-equation value F + x (k F + c - F) ([COR=x] at VC; [COCV=ms], [COVC=ms]; [TCF=n]
+     the formant events' curve), from bank fields vowel, locus {F1..F3: [k, c]}, locusVC, locusBurst (a stop's burst at the vowel's onset
+-    formants), transparent (HH: the next vowel's formants), smooth (liquids: no step); without [CO]/[TC] the schedule is unchanged
++    formants), transparent (HH: the next vowel's formants), smooth (liquids: no step); under [CO] formant events never go back in
++    time and the schedule is sorted by time (stably); without [CO]/[TC] the schedule is unchanged
+-- 
+2.43.0
+
+
+From c9162287ea7e5e786f4ace5a390f8b98ef87ad1d Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 20 Oct 2026 23:30:23 +0000
+Subject: [PATCH 4/4] coarticulation: coarticulated formant trajectories (locus
+ equations, ease-out transitions), opt-in
+
+klattsing option "coarticulation" (true | {degree, codaDegree, curve, formantCurve, cv, vc, burst, hh,
+sonorants, loci}) emits klattsch [CO=x] [TC=n] [COCV] [COVC] directives and a generated bank <base>--co<hash>
+carrying per-place locus equations (fitted to the Kokoro corpus). Engine patch (inert without [CO]/[TC]):
+formants move in their own schedule events; a vowel starts at each neighbouring consonant's locus value
+F + x (k F + c - F) and moves to its target over COCV ms, and heads for the next consonant's value over its
+last COVC ms; HH takes the next vowel's formants, velar bursts front before front vowels, liquids glide;
+synth-core gains shaped (raised-cosine / ease-out), per-parameter transitions.
+
+fidelity (BASE = kokoro-durations + mitalk-bursts): 0.367 -> 0.756 (spec -0.26 -> +0.78, pros 0.27 -> 0.39);
+held-out 0.21 -> 0.54; am_michael 0.44 -> 0.82. Whisper pairs: 46.8% -> 69.1%, McNemar p = 1.6e-6.
+Defaults byte-identical (86-spec fixture; engine audio hash of all fixture strings unchanged).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013D7H5RPb4wjuAo6EWsSqmi
+---
+ klattsing/src/coarticulation.js         |   3 +
+ tools/voicelab/wip/README.md            |   1 -
+ tools/voicelab/wip/coarticulation.patch | 789 ------------------------
+ 3 files changed, 3 insertions(+), 790 deletions(-)
+ delete mode 100644 tools/voicelab/wip/coarticulation.patch
+
+diff --git a/klattsing/src/coarticulation.js b/klattsing/src/coarticulation.js
+index c88a52e..fe88e42 100644
+--- a/klattsing/src/coarticulation.js
++++ b/klattsing/src/coarticulation.js
+@@ -32,6 +32,9 @@
+ // sentences; the gain holds on climb.py's 20 held-out sentences (BASE 0.21 -> 0.54) and on the other voice,
+ // am_michael (0.44 -> 0.82). Of the 0.39: the ease-out curve alone (klattsch [TC=2], no loci) 0.19, the loci alone
+ // (all transitions linear) 0.21; the VC transitions are worth 0.13 (codaDegree 0: 0.63), liquids/glides 0.08, HH 0.02.
++// Whisper minimal pairs (tools/voicelab/pairs.py, BASE vs BASE + "coarticulation": true): 46.8% -> 69.1%, McNemar
++// p = 1.6e-6 (6 words lost, 37 gained); fricatives 15 -> 62%, liquids/glides 45 -> 82%, place of stops 36 -> 64%,
++// vowels 73 -> 67% (one word, n.s.).
+ import { VOWELS } from './phones.js';
+ 
+ export const LOCI = {
+diff --git a/tools/voicelab/wip/README.md b/tools/voicelab/wip/README.md
+index 3fef97f..16a6199 100644
+--- a/tools/voicelab/wip/README.md
++++ b/tools/voicelab/wip/README.md
+@@ -3,6 +3,5 @@
+ Patches from the feature tournament (agents in isolated worktrees) that were cut off by a usage limit before
+ they could finish, measure and commit. Apply on top of commit e0351f1 with `git apply`. Not merged: unverified.
+ 
+-- coarticulation.patch: smooth formant transitions + locus-equation consonant-vowel coarticulation (engine + klattsing)
+ - glottal-source.patch: LF-style voice source with spectral tilt, jitter/shimmer, pitch-synchronous aspiration (engine);
+   Whisper pairs: base 46.8%, feature 46.8% (no significant change in any class); fidelity not measured
+diff --git a/tools/voicelab/wip/coarticulation.patch b/tools/voicelab/wip/coarticulation.patch
+deleted file mode 100644
+index 018a47c..0000000
+--- a/tools/voicelab/wip/coarticulation.patch
++++ /dev/null
+@@ -1,789 +0,0 @@
+-diff --git a/klattsing/README.md b/klattsing/README.md
+-index 1d9ccc6..92eda96 100644
+---- a/klattsing/README.md
+-+++ b/klattsing/README.md
+-@@ -26,7 +26,7 @@ per syllable, or `"auto"`), `bpm`, `melody` (auto: `scale`, `long`, `short`, `la
+- (formant glide ms, a klattsch patch), `aspiration` (breath after P/T/K, default on), `accent`,
+- `dynamics` (loudness by stress, a klattsch patch; off by default), `durations` (`"v0"` for the first
+- reconstruction), `rules`; and the opt-in options below (`bankPatch`, `functionWords`, `intonation`,
+--`breathLevel`, `breathVoicing`, `pauseMs`, `accentDelta`).
+-+`breathLevel`, `breathVoicing`, `pauseMs`, `accentDelta`, `phoneDur`, `coarticulation`).
+- 
+- ## Options for optimizers (all opt-in; leaving them out gives exactly the strings from before)
+- 
+-@@ -42,6 +42,7 @@ reconstruction), `rules`; and the opt-in options below (`bankPatch`, `functionWo
+- | `pauseMs` | `250`, or `{",": ms, ".": ms, ..., default: 250}` | speak: silence after a phrase's punctuation (times `rate`) |
+- | `accentDelta` | speak `{g: 0.1, t: 0}`, sing `{g: 0.15, t: 0.15}` | effort (`g`) and tilt (`t`) added over a stressed vowel (with `accent`) |
+- | `phoneDur` | `{PHONE: [inherent, minimum]}` ms (`src/phones.js` `DUR`) | the duration table per call, merged over `DUR` (either `durations` version, speak and sing); `tools/voicelab/climb.py durations` fits it with `rules` |
+-+| `coarticulation` | `true` or `{degree: 2, codaDegree: (degree), curve: "out", formantCurve: (curve), cv: 60, vc: 50, burst: true, hh: true, sonorants: true, loci: {PHONE: {F1/F2/F3: [k, c]}}}` (off) | context-dependent formant trajectories (klattsch's `[CO=x]` patch, `src/coarticulation.js`): a vowel starts at each neighbouring consonant's locus-equation value `F + degree (k F + c - F)` (loci per place fitted to Kokoro; Sussman et al. 1991) and moves to its target over `cv` ms, and moves toward the next consonant's value over its last `vc` ms (`codaDegree`); HH takes the next vowel's formants (`hh`), velar bursts front before front vowels (`burst`), liquids and glides glide (`sonorants`); every transition eased out (`curve`: `out`, `cos`, `linear`). A generated bank `<base>--co<hash>` carries the loci. Timings and the string's phonemes are unchanged |
+- 
+- Presets fitted against Kokoro by `tools/voicelab/climb.py` are spec fragments in `presets/` (merge one into a spec:
+- `{"mode": "speak", "text": ..., ...preset}`): `kokoro-durations.json` (`rules`, `phoneDur`, `functionWords`) and
+-diff --git a/klattsing/src/banks.js b/klattsing/src/banks.js
+-index 6c56f02..4f1776a 100644
+---- a/klattsing/src/banks.js
+-+++ b/klattsing/src/banks.js
+-@@ -5,6 +5,8 @@
+- //   "bankPatch": { CODE: { field: value } }                fields changed on top of "bank" (default klatt1980-en),
+- //                                                          as a generated bank "<base>--<hash>" that extends it
+- //   "aspiration": "breath"                                 adds BR<vowel> entries, a bank "<base>--br<hash>" (below)
+-+//   "coarticulation": true | {...}                         adds klattsch's coarticulation fields (vowel, locus,
+-+//                                                          locusBurst, transparent): a bank "<base>--co<hash>"
+- // klattsch layers banks by whole phoneme entries, so a patched entry is the base's resolved entry with the
+- // patch's fields merged in (a field set to null is removed; an object value, e.g. glideTo, is merged one level).
+- import { createHash } from 'node:crypto';
+-@@ -13,6 +15,7 @@ import { dirname, join } from 'node:path';
+- import { fileURLToPath } from 'node:url';
+- import { banks, registerBank } from '../../vendor/klattsch/src/engine/banks/index.js';
+- import { VOWELS } from './phones.js';
+-+import { coartOptions, coartFields } from './coarticulation.js';
+- 
+- const BANK_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'banks');
+- 
+-@@ -95,9 +98,19 @@ export function breathBank(base, voicing) {
+-   return { schemaVersion: 1, name: `${base}--br${hash(canonical({ extends: base, phonemes }))}`, extends: base, phonemes };
+- }
+- 
+-+// coarticulation (src/coarticulation.js): the base's entries with the fields klattsch's [CO=x] reads merged in
+-+export function coartBank(base, c) {
+-+  ensureBank(base);
+-+  const resolved = banks.get(base);
+-+  if (!resolved) throw new Error(`unknown bank: ${base}`);
+-+  const phonemes = {};
+-+  for (const [code, f] of Object.entries(coartFields(coartOptions(c), (p) => !!resolved.phonemes[p]))) phonemes[code] = { ...resolved.phonemes[code], ...f };
+-+  return { schemaVersion: 1, name: `${base}--co${hash(canonical({ extends: base, phonemes }))}`, extends: base, phonemes };
+-+}
+-+
+- // spec -> the bank name to select with [bank=NAME] (undefined: klattsch's default), registering inline and
+- // generated banks in this process. A plain string bank without a patch is passed through untouched, as before.
+--// banksFor(spec) lists the banks a spec's string needs that are not files (inline, bankPatch, breath), parents
+-+// banksFor(spec) lists the banks a spec's string needs that are not files (inline, bankPatch, coarticulation, breath), parents
+- // first, for a renderer in another process: a --print string naming one renders only where it is registered.
+- export const bankName = (o) => chain(o).name;
+- export const banksFor = (o) => chain(o).banks;
+-@@ -117,6 +130,7 @@ function chain(o) {
+-   // generated banks are content-addressed: a name already registered is the same bank
+-   const add = (b) => { if (!banks.list().includes(b.name)) registerBank(b); out.push(b); name = b.name; };
+-   if (o.bankPatch && Object.keys(o.bankPatch).length) add(patchedBank(name || banks.defaultName, o.bankPatch));
+-+  if (o.coarticulation) add(coartBank(name || banks.defaultName, o.coarticulation));
+-   if (o.aspiration === 'breath') add(breathBank(name || banks.defaultName, o.breathVoicing));
+-   return { name, banks: out };
+- }
+-diff --git a/klattsing/src/coarticulation.js b/klattsing/src/coarticulation.js
+-new file mode 100644
+-index 0000000..f6eb7df
+---- /dev/null
+-+++ b/klattsing/src/coarticulation.js
+-@@ -0,0 +1,107 @@
+-+// Coarticulated formant trajectories (opt-in: spec "coarticulation"), carried out by klattsch's [CO=x] patch.
+-+//
+-+// Without it klattsch moves all parameters linearly over a fixed transition (35 ms, or [TR]) into each phoneme's
+-+// fixed targets: a stop's burst formants are the same before every vowel, a vowel ends on its own target right
+-+// up to a following closure, HH keeps neutral formants (500/1500/2500) whatever vowel it breathes into.
+-+// With it:
+-+//   - CV: a vowel after a consonant starts at the consonant's locus-equation value for that vowel,
+-+//     F_onset = F + x (k F + c - F) (x = degree; x = 1: the locus equation F_onset = k F + c of Sussman, McCaffrey
+-+//     & Matthews 1991, a place's onset pointing at its locus as in Delattre, Liberman & Cooper 1955), and moves to
+-+//     its target over `cv` ms; after a liquid or glide (sonorants) it moves from the consonant's own formants;
+-+//   - VC: a vowel before a consonant moves toward that consonant's value over its last `vc` ms (at most 60% of
+-+//     it, so a short vowel between two consonants never reaches its target: Lindblom's 1963 undershoot);
+-+//   - HH takes the following vowel's formants (Klatt 1980: [h] is a voiceless copy of the next vowel), and after
+-+//     P/T/K the CV transition starts at the release, under the aspiration;
+-+//   - a velar's burst takes the following vowel's onset formants (fronted before front vowels);
+-+//   - an obstruent or nasal reaches its own formants in 3 ms (the vowel carries the transitions; fricative and
+-+//     nasal resonances start abruptly), other parameters (amplitudes, voicing, F0) keep their usual timing;
+-+//   - curve: the shape of every transition ("out": ease-out u(2-u), fast at first and settling, the shape of
+-+//     Kokoro's F2 after a consonant (median remaining share 0.71 / 0.47 / 0.30 / 0.16 at 10 / 20 / 30 / 40 ms;
+-+//     (1 - t/60)^2: 0.69 / 0.44 / 0.25 / 0.11); "cos": raised cosine; "linear": klattsch's own ramps).
+-+//     formantCurve: the formants' own (default: curve). In voicelab fidelity the curve matters through the other
+-+//     parameters (amplitude and voicing onsets, F0): formants linear lose 0.005, raised cosine 0.01, while
+-+//     everything else linear loses 0.18.
+-+// Loci per place, fitted to the Kokoro corpus (am_onyx, 100 Harvard sentences; Praat Burg formants 5 ms into
+-+// each vowel vs at its midpoint, robust least squares; F2 slopes: labial 0.71, alveolar 0.53, velar 0.86,
+-+// against 0.87 / 0.43 / 0.66 in Sussman et al. 1991). Unreliable fits (r < 0.3, too few tokens) are replaced:
+-+// postalveolar F1 and F3 by the alveolar ones; Y has no F3 locus.
+-+// degree 2 (the default) pulls twice as far as those fits: the 25 ms analysis window 5 ms into the vowel
+-+// averages the boundary with the vowel, and Kokoro's connected-speech vowels undershoot more than the
+-+// equations alone give. voicelab fidelity (BASE = kokoro-durations + mitalk-bursts) peaks there:
+-+// degree 1 0.70, 1.5 0.74, 2 0.76, 2.5 0.74 (BASE 0.37).
+-+import { VOWELS } from './phones.js';
+-+
+-+export const LOCI = {
+-+  labial:       { phones: 'P B M',       F1: [0.905, -7],  F2: [0.705, 311], F3: [0.523, 1125] },
+-+  labiodental:  { phones: 'F V',         F1: [0.691, 146], F2: [0.36, 906],  F3: [0.477, 1248] },
+-+  dental:       { phones: 'TH DH',       F1: [0.294, 263], F2: [0.516, 673], F3: [0.154, 2115] },
+-+  alveolar:     { phones: 'T D N',       F1: [0.54, 176],  F2: [0.531, 763], F3: [0.141, 2136] },
+-+  alveolarFric: { phones: 'S Z',         F1: [0.448, 197], F2: [0.575, 620], F3: [0.043, 2337] },
+-+  postalveolar: { phones: 'SH ZH CH JH', F1: [0.54, 176],  F2: [0.39, 1225], F3: [0.141, 2136] },
+-+  velar:        { phones: 'K G NG',      F1: [0.445, 209], F2: [0.862, 345], F3: [0.862, 374] },
+-+  // liquids and glides (sonorants: true): VC boundaries; a vowel after one moves from its formants over cv ms
+-+  lateral:      { phones: 'L', smooth: true, F1: [0.638, 144], F2: [0.545, 338], F3: [0.381, 1619] },
+-+  rhotic:       { phones: 'R', smooth: true, F1: [0.546, 178], F2: [0.321, 761], F3: [0.268, 1177] },
+-+  labiovelar:   { phones: 'W', smooth: true, F1: [0.513, 162], F2: [0.248, 600], F3: [0.441, 1302] },
+-+  palatal:      { phones: 'Y', smooth: true, F1: [0.538, 103], F2: [0.399, 1290] },
+-+};
+-+export const VELAR_STOPS = ['K', 'G'];
+-+export const CURVE = { linear: 0, cos: 1, out: 2 };
+-+// the option's defaults ("coarticulation": true)
+-+export const COARTICULATION = {
+-+  degree: 2, codaDegree: null, curve: 'out', formantCurve: null, cv: 60, vc: 50, burst: true, hh: true, sonorants: true,
+-+};
+-+const curveCode = (c, what) => {
+-+  if (typeof c === 'number' && Object.values(CURVE).includes(c)) return c;
+-+  if (c in CURVE) return CURVE[c];
+-+  throw new Error(`coarticulation.${what}: ${c} (linear, cos, out)`);
+-+};
+-+
+-+// "coarticulation": true | {degree, codaDegree, curve, formantCurve, cv, vc, burst, hh, sonorants, loci}
+-+//   -> the full option, or null (off)
+-+export function coartOptions(c) {
+-+  if (!c) return null;
+-+  const o = { ...COARTICULATION, ...(c === true ? {} : Object.fromEntries(Object.entries(c).filter(([, v]) => v !== undefined))) };
+-+  curveCode(o.curve, 'curve');
+-+  if (o.formantCurve !== null) curveCode(o.formantCurve, 'formantCurve');
+-+  for (const k of ['degree', 'cv', 'vc']) if (typeof o[k] !== 'number' || !(o[k] >= 0)) throw new Error(`coarticulation.${k}: expected a number >= 0`);
+-+  if (o.codaDegree !== null && !(o.codaDegree >= 0)) throw new Error('coarticulation.codaDegree: expected a number >= 0');
+-+  lociOf(o);
+-+  return o;
+-+}
+-+
+-+// phone -> {F1: [k, c], ...}: LOCI by place (liquids and glides unless sonorants: false), with o.loci
+-+// ({PHONE: {F2: [k, c], ...}}, or PHONE: null for none) merged over them
+-+export function lociOf(o) {
+-+  const out = {};
+-+  for (const { phones, smooth, ...eq } of Object.values(LOCI)) {
+-+    if (!smooth || o?.sonorants !== false) for (const p of phones.split(' ')) out[p] = { ...eq };
+-+  }
+-+  for (const [p, eq] of Object.entries(o?.loci ?? {})) {
+-+    for (const [k, v] of Object.entries(eq ?? {})) {
+-+      if (!/^F[123]$/.test(k) || !Array.isArray(v) || v.length !== 2 || !v.every(Number.isFinite)) {
+-+        throw new Error(`coarticulation.loci.${p}.${k}: expected F1/F2/F3: [slope, intercept Hz]`);
+-+      }
+-+    }
+-+    out[p] = eq === null ? undefined : { ...(out[p] ?? {}), ...eq };
+-+  }
+-+  return out;
+-+}
+-+
+-+// the klattsch bank fields that carry it: {CODE: fields to merge into the base bank's entry}
+-+export function coartFields(o, has) {
+-+  const fields = {};
+-+  for (const v of VOWELS) if (has(v)) fields[v] = { vowel: true };
+-+  const smooth = new Set(Object.values(LOCI).filter((x) => x.smooth).flatMap((x) => x.phones.split(' ')));
+-+  for (const [p, locus] of Object.entries(lociOf(o))) if (locus && has(p)) fields[p] = { locus, ...(smooth.has(p) ? { smooth: true } : {}) };
+-+  if (o.burst) for (const p of VELAR_STOPS) if (fields[p]) fields[p].locusBurst = true;
+-+  if (o.hh && has('HH')) fields.HH = { transparent: true };
+-+  return fields;
+-+}
+-+
+-+// the directives that switch it on in klattsch
+-+export function coartDirectives(o) {
+-+  const curve = curveCode(o.curve, 'curve'), fc = o.formantCurve === null ? curve : curveCode(o.formantCurve, 'formantCurve');
+-+  return [`[CO=${o.degree}]`, o.codaDegree !== null && o.codaDegree !== o.degree ? `[COR=${o.codaDegree}]` : '',
+-+    curve ? `[TC=${curve}]` : '', fc !== curve ? `[TCF=${fc}]` : '', `[COCV=${o.cv}]`, `[COVC=${o.vc}]`].filter(Boolean).join(' ');
+-+}
+-diff --git a/klattsing/src/compile.js b/klattsing/src/compile.js
+-index c9fb08b..8e0dd8d 100644
+---- a/klattsing/src/compile.js
+-+++ b/klattsing/src/compile.js
+-@@ -9,6 +9,7 @@ import { timeWordsV0 } from './durations_v0.js';
+- import { FUNCTION_WORDS } from './function_words.js';
+- import { bankName, BREATH_PREFIX } from './banks.js';
+- import { DUR } from './phones.js';
+-+import { coartOptions, coartDirectives } from './coarticulation.js';
+- 
+- const DIPH = { AY: ['AA', 'IY'], EY: ['EH', 'IY'], OW: ['AO', 'UW'], AW: ['AA', 'UW'], OY: ['AO', 'IY'] };
+- const NOTE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+-@@ -79,8 +80,8 @@ const av = (s, o) => (!o.dynamics ? '' : `[AV=${(o.dynamics === true ? DYNAMICS
+- // dynamics (true | {stress: gain}; off by default until voicelab says otherwise), voice }
+- const voiceOf = (o) => VOICES[o.voice] ?? o.voice ?? VOICES.speak;
+- function prefix(o) {
+--  const bank = bankName(o);
+--  return [bank ? `[bank=${bank}]` : '', o.transition ? `[TR=${o.transition}]` : '', voiceOf(o)].filter(Boolean).join(' ');
+-+  const bank = bankName(o), co = coartOptions(o.coarticulation);
+-+  return [bank ? `[bank=${bank}]` : '', o.transition ? `[TR=${o.transition}]` : '', co ? coartDirectives(co) : '', voiceOf(o)].filter(Boolean).join(' ');
+- }
+- const asp = (s, o) => (o.aspiration !== false && s.aspMs ? `r${f1(s.aspMs)} HH ` : '');
+- // the klattsch aspiration (h) a voice string leaves set, so "breath" can restore it
+-diff --git a/klattsing/test/coarticulation.test.js b/klattsing/test/coarticulation.test.js
+-new file mode 100644
+-index 0000000..732c8b8
+---- /dev/null
+-+++ b/klattsing/test/coarticulation.test.js
+-@@ -0,0 +1,225 @@
+-+// "coarticulation" (klattsing) and klattsch's [CO=x] / [TC=n] patch: locus-equation boundaries, VC transitions,
+-+// HH taking the next vowel's formants, velar bursts, shaped transitions; all of it inert unless asked for.
+-+import { test } from 'node:test';
+-+import assert from 'node:assert/strict';
+-+import { createHash } from 'node:crypto';
+-+import { readFileSync } from 'node:fs';
+-+import { speak, sing, toKlattsch, durationsOf } from '../src/compile.js';
+-+import { bankName, banksFor, coartBank } from '../src/banks.js';
+-+import { LOCI, lociOf, coartOptions, coartDirectives, COARTICULATION } from '../src/coarticulation.js';
+-+import { timelineOf } from '../src/timeline.js';
+-+import { compileString, renderToBuffer, FormantSynth, PARAMS, banks } from '../../vendor/klattsch/src/engine/index.js';
+-+import '../../bin/klatt-render.mjs';
+-+
+-+const REF = JSON.parse(readFileSync(new URL('./reference.fixture.json', import.meta.url), 'utf8'));
+-+const KLATT = banks.get('klatt1980-en').phonemes;
+-+const formantEvents = (c) => c.schedule.filter((e) => e.params && e.params.join() === 'F1,F2,F3');
+-+const near = (a, b, tol = 1e-6) => Math.abs(a - b) <= tol;
+-+
+-+test('defaults: no coarticulation option (or false/null) gives the reference strings, no curve or params in the schedule', () => {
+-+  for (const { spec, out } of REF) {
+-+    assert.equal(toKlattsch({ ...spec, coarticulation: false }), out);
+-+    assert.equal(toKlattsch({ ...spec, coarticulation: null }), out);
+-+  }
+-+  for (const { out } of REF.slice(0, 20)) {
+-+    for (const e of compileString(out).schedule) assert.ok(!('curve' in e) && !('params' in e), out);
+-+  }
+-+});
+-+
+-+test('defaults: the engine renders default strings sample for sample as before the patch', () => {
+-+  // sha1 of the float audio (16 kHz) of every 7th reference string and one with [TR]/[AV], from the engine before [CO]/[TC]
+-+  const h = createHash('sha1');
+-+  const strings = REF.filter((_, i) => i % 7 === 0).map((r) => r.out).concat(['[TR=70] [AV=0.8] HH AH L OW p200 b=C3 (D IY P) (S IY)']);
+-+  for (const s of strings) {
+-+    const c = compileString(s);
+-+    for (const v of c.voices) if (v.schedule.length) h.update(Buffer.from(renderToBuffer({ sampleRate: 16000, schedule: v.schedule, totalMs: v.totalMs }).buffer));
+-+  }
+-+  assert.equal(h.digest('hex'), 'e0357552625a2441483dbe796f2ccc1812624e53');
+-+});
+-+
+-+test('option: directives in the prefix and a generated bank with the coarticulation fields', () => {
+-+  const s = speak({ text: 'Keep the cat.', bank: 'mitalk-bursts', coarticulation: true });
+-+  assert.match(s, /^\[bank=mitalk-bursts--co[0-9a-f]{12}\] \[CO=2\] \[TC=2\] \[COCV=60\] \[COVC=50\] g0\.5/);
+-+  assert.deepEqual(compileString(s).warnings, []);
+-+  const name = bankName({ bank: 'mitalk-bursts', coarticulation: true });
+-+  assert.equal(name, bankName({ bank: 'mitalk-bursts', coarticulation: {} }), 'true = the defaults');
+-+  assert.notEqual(name, bankName({ bank: 'mitalk-bursts', coarticulation: { burst: false } }));
+-+  const b = banks.get(name).phonemes;
+-+  assert.equal(b.IY.vowel, true); assert.equal(b.AA.vowel, true); assert.equal(b.S.vowel, undefined);
+-+  assert.deepEqual(b.D.locus, { F1: LOCI.alveolar.F1, F2: LOCI.alveolar.F2, F3: LOCI.alveolar.F3 });
+-+  assert.equal(b.K.locusBurst, true); assert.equal(b.T.locusBurst, undefined); assert.equal(b.NG.locusBurst, undefined);
+-+  assert.equal(b.HH.transparent, true);
+-+  assert.equal(b.D.burstMs, banks.get('mitalk-bursts').phonemes.D.burstMs, 'the base entry is kept');
+-+  assert.deepEqual(banksFor({ bank: 'mitalk-bursts', coarticulation: true }).map((x) => x.name), [name]);
+-+  // with bankPatch and breath: patch, then coarticulation, then the breath entries (which inherit vowel: true)
+-+  const chain = banksFor({ bank: 'mitalk-bursts', bankPatch: { AA: { F1: 700 } }, coarticulation: true, aspiration: 'breath' });
+-+  assert.deepEqual(chain.map((x) => x.name.replace(/[0-9a-f]{12}/g, '#')), ['mitalk-bursts--#', 'mitalk-bursts--#--co#', 'mitalk-bursts--#--co#--br#']);
+-+  assert.equal(banks.get(chain[2].name).phonemes.BRAA.vowel, true);
+-+  assert.equal(banks.get(chain[2].name).phonemes.AA.F1, 700);
+-+  assert.match(speak({ text: 'a', coarticulation: { degree: 0.5, codaDegree: 0.25, curve: 'linear', cv: 40, vc: 30 } }),
+-+    /\[CO=0\.5\] \[COR=0\.25\] \[COCV=40\] \[COVC=30\]/);
+-+  assert.throws(() => speak({ text: 'a', coarticulation: { curve: 'wobbly' } }), /curve/);
+-+  assert.throws(() => speak({ text: 'a', coarticulation: { cv: -1 } }), /cv/);
+-+  assert.throws(() => speak({ text: 'a', coarticulation: { loci: { D: { F2: [0.5] } } } }), /loci\.D\.F2/);
+-+  assert.deepEqual(coartOptions(true), COARTICULATION);
+-+  assert.equal(coartDirectives(coartOptions({ curve: 'cos' })), '[CO=2] [TC=1] [COCV=60] [COVC=50]');
+-+  assert.equal(coartDirectives(coartOptions({ formantCurve: 'linear' })), '[CO=2] [TC=2] [TCF=0] [COCV=60] [COVC=50]');
+-+  assert.equal(coartDirectives(coartOptions({ curve: 0, formantCurve: 'out' })), '[CO=2] [TCF=2] [COCV=60] [COVC=50]');
+-+  assert.throws(() => coartOptions({ formantCurve: 7 }), /formantCurve/);
+-+  // liquids and glides: loci that glide (smooth), unless sonorants: false
+-+  assert.deepEqual(b.L.locus.F2, LOCI.lateral.F2); assert.equal(b.L.smooth, true); assert.equal(b.D.smooth, undefined);
+-+  assert.equal(banks.get(bankName({ bank: 'mitalk-bursts', coarticulation: { sonorants: false } })).phonemes.L.locus, undefined);
+-+  assert.deepEqual(lociOf({ loci: { D: { F2: [0.4, 1200] } } }).D.F2, [0.4, 1200]);
+-+  assert.equal(lociOf({ loci: { D: null } }).D, undefined);
+-+});
+-+
+-+test('durations and timeline: the same phonemes and times with or without coarticulation', () => {
+-+  const spec = { mode: 'speak', text: 'Pin the top, then stop.', bank: 'mitalk-bursts' };
+-+  assert.deepEqual(durationsOf({ ...spec, coarticulation: true }), durationsOf(spec));
+-+  const a = timelineOf(spec), b = timelineOf({ ...spec, coarticulation: true });
+-+  assert.deepEqual(b.phones, a.phones); assert.equal(b.totalMs, a.totalMs);
+-+  const sungSpec = { mode: 'sing', text: 'Lower the bucket', bpm: 168, notes: [['E2', 3], ['G2', 3], ['F2', 3], ['A2', 3], ['G2', 4]] };
+-+  assert.deepEqual(timelineOf({ ...sungSpec, coarticulation: true }).phones, timelineOf(sungSpec).phones);
+-+  assert.deepEqual(compileString(sing({ ...sungSpec, coarticulation: true })).warnings, []);
+-+});
+-+
+-+// a hand-written klattsch string over a bank carrying the fields
+-+const BANK = coartBank('klatt1980-en', true).name;
+-+if (!banks.list().includes(BANK)) speak({ text: 'a', coarticulation: true });
+-+const co = (s, pre = '[CO=1]') => compileString(`[bank=${BANK}] ${pre} ${s}`);
+-+
+-+test('CV: the vowel starts at the locus-equation value for it, then moves to its target', () => {
+-+  const c = co('r100 D r200 AA');
+-+  assert.deepEqual(c.warnings, []);
+-+  const aa = c.phrases.find((p) => p.phoneme === 'AA');
+-+  const fe = formantEvents(c).filter((e) => e.atMs >= aa.tStartMs - 1e-9);
+-+  const [k, b] = LOCI.alveolar.F2;
+-+  assert.ok(near(fe[0].target.F2, KLATT.AA.F2 + (k * KLATT.AA.F2 + b - KLATT.AA.F2)), `${fe[0].target.F2}`);
+-+  assert.ok(near(fe[0].atMs, aa.tStartMs) && fe[0].transitionMs <= 3);
+-+  assert.ok(near(fe[1].target.F2, KLATT.AA.F2) && fe[1].transitionMs === 60 && fe[1].curve === undefined);
+-+  // degree x scales the pull; 0 starts on the vowel's own target
+-+  const half = formantEvents(co('r100 D r200 AA', '[CO=0.5]')).find((e) => e.atMs >= aa.tStartMs - 1e-9);
+-+  assert.ok(near(half.target.F2, KLATT.AA.F2 + 0.5 * (k * KLATT.AA.F2 + b - KLATT.AA.F2)));
+-+  const none = formantEvents(co('r100 D r200 AA', '[CO=0]')).find((e) => e.atMs >= aa.tStartMs - 1e-9);
+-+  assert.ok(near(none.target.F2, KLATT.AA.F2));
+-+  // other parameters move in their own events, at their usual times (formants excluded)
+-+  const other = c.schedule.filter((e) => e.params && e.params.includes('A1'));
+-+  assert.ok(other.length && other.every((e) => !e.params.includes('F2') && e.params.length === PARAMS.length - 3));
+-+  // the formant scale applies to the boundary too
+-+  const sc = formantEvents(co('s0.9 r100 D r200 AA')).find((e) => e.atMs >= aa.tStartMs - 1e-9);
+-+  assert.ok(near(sc.target.F2, 0.9 * fe[0].target.F2, 1e-6));
+-+});
+-+
+-+test('velars: the burst and the vowel onset front before front vowels', () => {
+-+  const burstF2 = (v) => {
+-+    const c = co(`r100 G r200 ${v}`), g = c.phrases.find((p) => p.phoneme === 'G');
+-+    return formantEvents(c).find((e) => e.atMs > g.tStartMs + 1).target.F2;   // at the burst
+-+  };
+-+  const [k, b] = LOCI.velar.F2;
+-+  assert.ok(near(burstF2('IY'), k * KLATT.IY.F2 + b));
+-+  assert.ok(near(burstF2('UW'), k * KLATT.UW.F2 + b));
+-+  assert.ok(burstF2('IY') > burstF2('UW') + 500, 'fronted before IY');
+-+  // with burst: false the burst keeps the stop's own formants
+-+  const nb = coartBank('klatt1980-en', { burst: false }).name;
+-+  speak({ text: 'a', coarticulation: { burst: false } });
+-+  const c = compileString(`[bank=${nb}] [CO=1] r100 G r200 IY`), g = c.phrases.find((p) => p.phoneme === 'G');
+-+  assert.equal(formantEvents(c).find((e) => e.atMs > g.tStartMs + 1).target.F2, KLATT.G.F2);
+-+});
+-+
+-+test('VC: the vowel moves toward the next consonant\'s value over its last COVC ms (at most 60% of it)', () => {
+-+  const c = co('[COVC=40] r200 AA r100 D'), aa = c.phrases.find((p) => p.phoneme === 'AA');
+-+  const last = formantEvents(c).filter((e) => e.atMs < aa.tEndMs).at(-1);
+-+  const [k, b] = LOCI.alveolar.F2;
+-+  assert.ok(near(last.atMs, aa.tEndMs - 40) && last.transitionMs === 40);
+-+  assert.ok(near(last.target.F2, k * KLATT.AA.F2 + b));
+-+  const short = co('r50 AA r100 D'), a2 = short.phrases.find((p) => p.phoneme === 'AA');
+-+  const l2 = formantEvents(short).filter((e) => e.atMs < a2.tEndMs).at(-1);
+-+  assert.ok(near(l2.transitionMs, 30) && near(l2.atMs, a2.tEndMs - 30), 'capped at 60% of a short vowel');
+-+  // [COR=x] sets the VC pull on its own
+-+  const r0 = co('r200 AA r100 D', '[CO=1] [COR=0]'), a3 = r0.phrases.find((p) => p.phoneme === 'AA');
+-+  assert.ok(near(formantEvents(r0).filter((e) => e.atMs < a3.tEndMs).at(-1).target.F2, KLATT.AA.F2));
+-+  // a diphthong ends from its glide target
+-+  const ay = co('r200 AY r100 D'), a4 = ay.phrases.find((p) => p.phoneme === 'AY');
+-+  assert.ok(near(formantEvents(ay).filter((e) => e.atMs < a4.tEndMs).at(-1).target.F2, k * KLATT.AY.glideTo.F2 + b));
+-+  // no consonant with a locus after the vowel: no VC event
+-+  const al = co('r200 AA r100 IY'), a5 = al.phrases.find((p) => p.phoneme === 'AA');
+-+  assert.equal(formantEvents(al).filter((e) => e.atMs > a5.tStartMs + 1 && e.atMs < a5.tEndMs).length, 0);
+-+});
+-+
+-+test('HH takes the next vowel\'s formants; after a stop the CV transition starts at the release', () => {
+-+  const c = co('r80 HH r200 IY'), hh = c.phrases.find((p) => p.phoneme === 'HH');
+-+  const first = formantEvents(c).find((e) => e.atMs >= hh.tStartMs);
+-+  assert.deepEqual([first.target.F1, first.target.F2, first.target.F3], [KLATT.IY.F1, KLATT.IY.F2, KLATT.IY.F3]);
+-+  const k2 = co('r80 K r25 HH r200 AA'), h2 = k2.phrases.find((p) => p.phoneme === 'HH'), aa = k2.phrases.find((p) => p.phoneme === 'AA');
+-+  const ev = formantEvents(k2).filter((e) => e.atMs >= h2.tStartMs - 1e-9);
+-+  const [k, b] = LOCI.velar.F2;
+-+  assert.ok(near(ev[0].target.F2, k * KLATT.AA.F2 + b), 'HH at the velar boundary for AA');
+-+  assert.ok(near(ev[1].target.F2, KLATT.AA.F2) && ev[1].transitionMs === 60, 'then toward AA');
+-+  assert.equal(ev.length, 2, 'no new formant event when the vowel starts');
+-+  assert.ok(ev.every((e) => e.atMs < aa.tStartMs));
+-+  // without coarticulation HH keeps its own formants
+-+  const plain = compileString('r80 HH r200 IY');
+-+  assert.equal(plain.schedule[0].target.F2, KLATT.HH.F2);
+-+});
+-+
+-+test('liquids and glides: entered at the usual pace, and a vowel after one glides from its formants', () => {
+-+  const c = co('r200 AA r100 L r200 IY'), l = c.phrases.find((p) => p.phoneme === 'L'), iy = c.phrases.find((p) => p.phoneme === 'IY');
+-+  const fe = formantEvents(c);
+-+  const vc = fe.filter((e) => e.atMs < l.tStartMs).at(-1), [k, b] = LOCI.lateral.F2;
+-+  assert.ok(near(vc.target.F2, k * KLATT.AA.F2 + b), 'VC toward the lateral boundary');
+-+  const intoL = fe.find((e) => near(e.atMs, l.tStartMs));
+-+  assert.ok(intoL.target.F2 === KLATT.L.F2 && intoL.transitionMs === 35, `${intoL.transitionMs}`);
+-+  const intoIY = fe.filter((e) => near(e.atMs, iy.tStartMs));
+-+  assert.equal(intoIY.length, 1);
+-+  assert.ok(intoIY[0].target.F2 === KLATT.IY.F2 && intoIY[0].transitionMs === 60, 'no jump: from L itself over COCV');
+-+});
+-+
+-+test('obstruents reach their own formants at once; a phoneme-free pause breaks the context', () => {
+-+  const c = co('r200 AA r100 S'), s = c.phrases.find((p) => p.phoneme === 'S');
+-+  const e = formantEvents(c).find((x) => near(x.atMs, s.tStartMs));
+-+  assert.ok(e.target.F3 === KLATT.S.F3 && e.transitionMs <= 3);
+-+  const p = co('r100 D p200 r200 AA'), aa = p.phrases.find((x) => x.phoneme === 'AA');
+-+  const fe = formantEvents(p).find((x) => x.atMs >= aa.tStartMs - 1e-9);
+-+  assert.ok(near(fe.target.F2, KLATT.AA.F2), 'no locus across a pause');
+-+});
+-+
+-+test('[TCF=n]: the formant events\' own curve', () => {
+-+  const c = co('r100 D r200 AA', '[CO=1] [TC=2] [TCF=0]');
+-+  assert.ok(formantEvents(c).every((e) => e.curve === undefined));
+-+  assert.ok(c.schedule.filter((e) => !formantEvents(c).includes(e)).every((e) => e.curve === 2));
+-+  assert.ok(formantEvents(co('r100 D r200 AA', '[CO=1] [TCF=1]')).every((e) => e.curve === 1));
+-+  // [TC] alone, without [CO]: every event shaped, all parameters together
+-+  const t = compileString('[TC=2] r100 D r200 AA');
+-+  assert.ok(t.schedule.every((e) => e.curve === 2 && !('params' in e)));
+-+});
+-+
+-+test('synth: shaped transitions (raised cosine, ease-out) and per-parameter events', () => {
+-+  const sr = 1000, at = (synth, n) => { synth.process(new Float32Array(n)); return synth.current; };
+-+  const ev = (curve, params) => [{ atMs: 0, target: { F2: 2000, A1: 1 }, transitionMs: 100, ...(curve ? { curve } : {}), ...(params ? { params } : {}) }];
+-+  const lin = new FormantSynth({ sampleRate: sr, schedule: ev(0) });
+-+  assert.equal(lin.shaped, false);
+-+  assert.ok(near(at(lin, 50).F2, 1500 + 500 * 0.5, 1e-6));
+-+  const cos = new FormantSynth({ sampleRate: sr, schedule: ev(1) });
+-+  assert.equal(cos.shaped, true);
+-+  assert.ok(near(at(cos, 25).F2, 1500 + 500 * (0.5 - 0.5 * Math.cos(Math.PI * 0.25)), 1e-6));
+-+  const out = new FormantSynth({ sampleRate: sr, schedule: ev(2) });
+-+  assert.ok(near(at(out, 50).F2, 1500 + 500 * 0.75, 1e-6));
+-+  assert.ok(near(at(out, 60).F2, 2000) && near(out.current.A1, 1), 'reaches the target');
+-+  // params: only the named parameters move; another event keeps running for the rest
+-+  const two = new FormantSynth({
+-+    sampleRate: sr, schedule: [{ atMs: 0, target: { F2: 2000, A1: 1 }, transitionMs: 100 },
+-+      { atMs: 20, target: { F2: 1000 }, transitionMs: 10, params: ['F2'] }],
+-+  });
+-+  const c1 = at(two, 30);
+-+  assert.ok(near(c1.F2, 1000) && near(c1.A1, 0.3, 1e-9), `${c1.F2} ${c1.A1}`);
+-+  assert.ok(near(at(two, 70).A1, 1));
+-+  // live setTarget in shaped mode: a linear move of every parameter
+-+  out.setTarget({ F1: 700 }, 10);
+-+  assert.ok(near(at(out, 5).F1, 500 + 200 * 0.5, 1e-6));
+-+  // a coarticulated render: finite, not silent, same length
+-+  const spec = { mode: 'speak', text: 'Keep the cat, he said.', bank: 'mitalk-bursts' };
+-+  const c = compileString(speak({ ...spec, coarticulation: true })), d = compileString(speak(spec));
+-+  assert.equal(c.totalMs, d.totalMs);
+-+  const y = renderToBuffer({ sampleRate: 16000, schedule: c.schedule, totalMs: c.totalMs });
+-+  assert.ok(y.every(Number.isFinite) && Math.max(...y.map(Math.abs)) > 0.05);
+-+});
+-diff --git a/tools/voicelab/pairs.py b/tools/voicelab/pairs.py
+-index d47ac62..0ddcd39 100644
+---- a/tools/voicelab/pairs.py
+-+++ b/tools/voicelab/pairs.py
+-@@ -71,7 +71,8 @@ def render(cfg, words, path):
+-         sf.write(path, np.concatenate(parts), sr); return
+-     specs = []
+-     for i, w in enumerate(words):
+--        base = {k: v for k, v in cfg.items() if k in ("bank", "transition", "aspiration", "voice", "rules", "accent", "gate", "hold", "durations", "dynamics")}
+-+        base = {k: v for k, v in cfg.items() if k in ("bank", "transition", "aspiration", "voice", "rules", "accent", "gate", "hold", "durations", "dynamics",
+-+                                                      "coarticulation")}
+-         if cfg.get("mode", "speak") == "sing":
+-             nsyl = 2 if NUM[i] == "seven" else 1
+-             notes = [["E2", 4 // nsyl]] * nsyl + [["r", 2], ["G2", 8]]
+-diff --git a/vendor/klattsch/VENDORED b/vendor/klattsch/VENDORED
+-index a49c071..6f2d797 100644
+---- a/vendor/klattsch/VENDORED
+-+++ b/vendor/klattsch/VENDORED
+-@@ -2,3 +2,9 @@ tgies/klattsch @ 63dc2c6 (MIT), vendored with patches:
+-   src/engine/sequencer.js: [TR=ms] sets the formant transition into steady phonemes (default 35 ms, at most 40% of the phoneme; with TR, up to 90%)
+-   src/engine/sequencer.js: [AV=x] scales loudness (the synth's gain, default 3.5) and glides with the phoneme's transition
+-   src/engine/sequencer.js: a stop's bank entry may set burstMs (default 25 ms for all)
+-+  src/engine/synth-core.js: shaped, per-parameter transitions: a schedule event may carry curve (1 raised cosine, 2 ease-out) and params
+-+    (the parameters it moves; the others keep their own transitions); a schedule without either renders through the original code
+-+  src/engine/sequencer.js: [TC=n] gives every event that curve; [CO=x] coarticulation: formants move in their own events, a vowel starts at
+-+    and ends toward each neighbouring consonant's locus-equation value F + x (k F + c - F) ([COR=x] at VC; [COCV=ms], [COVC=ms]; [TCF=n]
+-+    the formant events' curve), from bank fields vowel, locus {F1..F3: [k, c]}, locusVC, locusBurst (a stop's burst at the vowel's onset
+-+    formants), transparent (HH: the next vowel's formants), smooth (liquids: no step); without [CO]/[TC] the schedule is unchanged
+-diff --git a/vendor/klattsch/src/engine/sequencer.js b/vendor/klattsch/src/engine/sequencer.js
+-index 5500fdb..e4d01fd 100644
+---- a/vendor/klattsch/src/engine/sequencer.js
+-+++ b/vendor/klattsch/src/engine/sequencer.js
+-@@ -1,6 +1,11 @@
+- // Phoneme-string parser and schedule compiler
+- 
+- import { banks, resolveBank } from './banks/index.js';
+-+import { PARAMS } from './synth-core.js';
+-+
+-+// (sonicpi-toolchain patch) coarticulation ([CO=x]): formant frequencies move in their own schedule events
+-+const FORMANTS = ['F1', 'F2', 'F3'];
+-+const NON_FORMANTS = PARAMS.filter((k) => !FORMANTS.includes(k));
+- 
+- const PAUSE_MS = { ',': 100, ';': 200, '.': 300 };
+- 
+-@@ -28,6 +33,12 @@ const DEFAULTS = Object.freeze({
+-   sentenceFinalHoldMs: 0,
+-   fadeOutMs: 100,
+-   trailOffMs: 150,
+-+  // (sonicpi-toolchain patch) coarticulation: CV transition (locus -> vowel), VC transition (vowel -> locus),
+-+  // the step onto a locus or an obstruent's own formants, and the most of a vowel the VC transition may take
+-+  coCvMs: 60,
+-+  coVcMs: 50,
+-+  coJumpMs: 3,
+-+  coVcShare: 0.6,
+- });
+- 
+- const HOMOGLYPH_MAP = {
+-@@ -250,6 +261,93 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+-     return out;
+-   };
+- 
+-+  // (sonicpi-toolchain patch) coarticulation, active while [CO=x] is set (x: how far a vowel's formants are
+-+  // pulled toward a consonant's locus at a CV boundary, 0 none; [COR=x] the same at a VC boundary, default x;
+-+  // a bare [CO] switches it off).
+-+  // In this mode formant frequencies (F1-F3) move only in their own events, so a consonant's locus can set
+-+  // where a vowel's formants start (CV) and end (VC) while the other parameters keep their usual timing.
+-+  // Bank fields it reads (none of them does anything without [CO]):
+-+  //   vowel: true         a vowel (a nucleus that takes loci)
+-+  //   locus: {F1: [k, c], F2: [k, c], F3: [k, c]}   a consonant's locus equations (Sussman et al. 1991):
+-+  //                       next to a vowel with formant F, the boundary value is F + x (k F + c - F)
+-+  //   locusVC: {...}      the same at the consonant's VC boundaries (default: locus)
+-+  //   locusBurst: true    a stop whose burst takes the following vowel's CV boundary formants (velars)
+-+  //   transparent: true   takes the formants of the vowel after it (HH), through the locus before it
+-+  //   smooth: true        a consonant with a locus whose formants glide (liquids, glides): a vowel after it moves
+-+  //                       from the consonant's own formants over COCV, and it is entered at the usual pace
+-+  // Timing: [COCV=ms] locus -> vowel target, [COVC=ms] vowel target -> locus (at most coVcShare of the
+-+  // vowel); a consonant with a locus reaches its own formants in coJumpMs (the vowel carries the transitions).
+-+  // A phoneme's neighbours are the phonemes next to it with only directives between (a pause breaks it).
+-+  // [TC=n] shapes the transitions (1 raised cosine, 2 ease-out; synth-core CURVES), with or without [CO];
+-+  // [TCF=n] the formant events' own (default TC).
+-+  const prevPh = new Map(), nextPh = new Map();
+-+  {
+-+    let last = null;
+-+    for (const t of tokens) {
+-+      if (t.type === 'phoneme') { if (last) { nextPh.set(last, t); prevPh.set(t, last); } last = t; }
+-+      else if (t.type === 'pause' || t.type === 'unknown' || (t.type === 'directive' && t.key === 'pause')) last = null;
+-+    }
+-+  }
+-+  const entryOf = (t) => (t ? phonemes[t.code] : undefined);
+-+  const rawF = (p, end = false) => {
+-+    const src = end && p.glideTo ? { ...p, ...p.glideTo } : p;
+-+    return { F1: src.F1, F2: src.F2, F3: src.F3 };
+-+  };
+-+  const scaleF = (F) => ({ F1: F.F1 * scale, F2: F.F2 * scale, F3: F.F3 * scale });
+-+  // the boundary formants between consonant entry c and vowel formants V (unscaled), scaled
+-+  const boundary = (c, V, vc) => {
+-+    const L = (vc && c.locusVC) || c.locus, x = vc ? (extras.COR ?? extras.CO) : extras.CO, out = {};
+-+    for (const k of FORMANTS) out[k] = (L[k] ? V[k] + x * (L[k][0] * V[k] + L[k][1] - V[k]) : V[k]) * scale;
+-+    return out;
+-+  };
+-+  const moveFormants = (F, transitionMs, atMs, curve = extras.TCF ?? extras.TC) => {
+-+    schedule.push({
+-+      atMs, target: { F1: F.F1, F2: F.F2, F3: F.F3 }, transitionMs: Math.max(transitionMs, 0.1),
+-+      params: FORMANTS, ...(curve ? { curve } : {}),
+-+    });
+-+  };
+-+  const sameF = (a, b) => a && b && FORMANTS.every((k) => a[k] === b[k]);
+-+  // the vowel a stop's burst or an HH belongs to: the next phoneme, or the one after an HH
+-+  const vowelAfter = (t) => {
+-+    let n = nextPh.get(t);
+-+    if (entryOf(n)?.transparent) n = nextPh.get(n);
+-+    return entryOf(n)?.vowel ? n : null;
+-+  };
+-+  const cvMs = () => extras.COCV ?? DEFAULTS.coCvMs;
+-+  // formants into phoneme t (entry p) at its start (timeMs); usualMs: the transition its other parameters take
+-+  const formantsIn = (t, p, usualMs, slotMs) => {
+-+    if (extras.CO === undefined) return;
+-+    const prev = prevPh.get(t), pe = entryOf(prev), jump = Math.min(DEFAULTS.coJumpMs, slotMs * 0.5);
+-+    if (p.transparent) {
+-+      const v = nextPh.get(t), ve = entryOf(v);
+-+      if (ve?.vowel) {
+-+        const V = rawF(ve);
+-+        moveFormants(pe?.locus ? boundary(pe, V, false) : scaleF(V), jump, timeMs);
+-+        moveFormants(scaleF(V), cvMs(), timeMs + jump);   // the CV transition starts at the release
+-+        return;
+-+      }
+-+    }
+-+    if (p.vowel && pe) {
+-+      if (pe.transparent && nextPh.get(prev) === t) return;           // under way since the HH
+-+      if (pe.vowel && sameF(rawF(pe), rawF(p))) return;                // the same vowel continues (breath part)
+-+      if (pe.locus && pe.smooth) { moveFormants(scaleF(rawF(p)), cvMs(), timeMs); return; }   // from the liquid itself
+-+      if (pe.locus) {
+-+        moveFormants(boundary(pe, rawF(p), false), jump, timeMs);
+-+        moveFormants(scaleF(rawF(p)), cvMs(), timeMs + jump);
+-+        return;
+-+      }
+-+    }
+-+    moveFormants(scaleF(rawF(p)), p.locus && !p.smooth ? jump : usualMs, timeMs);
+-+  };
+-+  // a vowel's formants toward the locus of the consonant after it, over its last COVC ms (slot: [start, start+ms])
+-+  const formantsOut = (t, p, slotStart, slotMs) => {
+-+    if (extras.CO === undefined || !p.vowel) return;
+-+    const ne = entryOf(nextPh.get(t));
+-+    if (!ne?.locus || ne.transparent) return;
+-+    const ms = Math.min(extras.COVC ?? DEFAULTS.coVcMs, slotMs * DEFAULTS.coVcShare);
+-+    moveFormants(boundary(ne, rawF(p, true), true), ms, slotStart + slotMs - ms);
+-+  };
+-+
+-   const renderPhoneme = (t, slotMs) => {
+-     const p = phonemes[t.code];
+-     if (!p) {
+-@@ -258,6 +356,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+-     }
+-     const startF0 = t.stressed ? f0 + DEFAULTS.stressF0Lift : f0;
+-     const endF0 = startF0 + t.pitchDelta;
+-+    const slotStart = timeMs;
+-     if (p.isStop) {
+-       // (sonicpi-toolchain patch) a bank entry's burstMs sets its release burst (MITalk: P 5, T 15, K 25 ms)
+-       const burstMs = Math.min(p.burstMs ?? DEFAULTS.stopBurstMs, slotMs * 0.3);
+-@@ -265,26 +364,38 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+-       silence(Math.min(20, silenceMs * 0.4));
+-       timeMs += silenceMs;
+-       emit(scaled(p, startF0), Math.min(5, burstMs * 0.2));
+-+      if (extras.CO !== undefined) {
+-+        // the burst's formants: its own, or (locusBurst, velars) the following vowel's CV boundary
+-+        const v = p.locusBurst && p.locus ? vowelAfter(t) : null;
+-+        moveFormants(v ? boundary(p, rawF(entryOf(v)), false) : scaleF(rawF(p)), Math.min(5, burstMs * 0.2), timeMs);
+-+      }
+-       timeMs += burstMs;
+-       return slotMs;
+-     } else if (p.glideTo) {
+-       const onset = slotMs * 0.25, glide = slotMs * 0.50, offset = slotMs * 0.25;
+-       emit(scaled(p, startF0), Math.min(20, onset));
+-+      formantsIn(t, p, Math.min(20, onset), slotMs);
+-       timeMs += onset;
+-       emit(scaled(p, endF0, p.glideTo), glide);
+-+      if (extras.CO !== undefined) moveFormants(scaleF(rawF(p, true)), glide, timeMs);
+-       timeMs += glide + offset;
+-+      formantsOut(t, p, slotStart, slotMs);
+-       return slotMs;
+-     } else if (t.pitchDelta !== 0) {
+-       emit(scaled(p, startF0), Math.min(25, slotMs * 0.25));
+-+      formantsIn(t, p, Math.min(25, slotMs * 0.25), slotMs);
+-       timeMs += slotMs * 0.25;
+-       emit(scaled(p, endF0), slotMs * 0.6);
+-       timeMs += slotMs * 0.75;
+-+      formantsOut(t, p, slotStart, slotMs);
+-       return slotMs;
+-     } else {
+-       // [TR=ms] (sonicpi-toolchain patch): how long formants take to move into a phoneme
+-       const trans = Math.min(extras.TR ?? DEFAULTS.defaultTransitionMs, slotMs * (extras.TR ? 0.9 : 0.4));
+-       emit(scaled(p, startF0), trans);
+-+      formantsIn(t, p, trans, slotMs);
+-       timeMs += slotMs;
+-+      formantsOut(t, p, slotStart, slotMs);
+-       return slotMs;
+-     }
+-   };
+-@@ -319,6 +430,9 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+-       // [AV=x] (sonicpi-toolchain patch): loudness multiplier, moved like any other parameter
+-       target: { ...target, ...extras, ...stateExtras(), ...(extras.AV !== undefined ? { gain: 3.5 * extras.AV } : {}) },
+-       transitionMs,
+-+      // [TC=n], [CO=x] (sonicpi-toolchain patch): shaped transitions; formants left to their own events
+-+      ...(extras.TC ? { curve: extras.TC } : {}),
+-+      ...(extras.CO !== undefined ? { params: NON_FORMANTS } : {}),
+-     });
+-   };
+-   const silence = (transitionMs = 30) => emit({ A1: 0, A2: 0, A3: 0 }, transitionMs);
+-diff --git a/vendor/klattsch/src/engine/synth-core.js b/vendor/klattsch/src/engine/synth-core.js
+-index 6decea1..ae1bb7c 100644
+---- a/vendor/klattsch/src/engine/synth-core.js
+-+++ b/vendor/klattsch/src/engine/synth-core.js
+-@@ -42,6 +42,23 @@ export const DEFAULT = {
+-   effort: 0.5,
+- };
+- 
+-+// (sonicpi-toolchain patch) shaped, per-parameter transitions. A schedule event may carry
+-+//   curve:  1 raised cosine (0.5 - 0.5 cos(pi u)), 2 ease-out (u (2 - u): fast at first, settling, like
+-+//           the formant movement after a consonant release), 0 or absent linear
+-+//   params: the parameters it moves (absent: all of them, as before); the others keep their own transitions
+-+// A schedule whose events carry neither renders through the original linear code, sample for sample.
+-+export const CURVES = {
+-+  1: (u) => 0.5 - 0.5 * Math.cos(Math.PI * u),
+-+  2: (u) => u * (2 - u),
+-+};
+-+const isShaped = (events) => events.some((e) => e.curve || e.params);
+-+const toEvents = (events, sr) => events.map((e) => ({
+-+  atSample: Math.floor((e.atMs ?? 0) * sr / 1000),
+-+  target: e.target,
+-+  transitionSamples: Math.max(1, Math.floor((e.transitionMs ?? 30) * sr / 1000)),
+-+  ...(e.curve || e.params ? { curve: e.curve ?? 0, params: e.params ?? null } : {}),
+-+}));
+-+
+- export class FormantSynth {
+-   constructor({ sampleRate, initialTarget, schedule } = {}) {
+-     if (!sampleRate || sampleRate <= 0) {
+-@@ -63,19 +80,54 @@ export class FormantSynth {
+-     this.bp2 = new BandpassBiquad();
+-     this.bp3 = new BandpassBiquad();
+- 
+--    this.schedule = (schedule ?? []).map(e => ({
+--      atSample: Math.floor((e.atMs ?? 0) * this.sr / 1000),
+--      target: e.target,
+--      transitionSamples: Math.max(1, Math.floor((e.transitionMs ?? 30) * this.sr / 1000)),
+--    }));
+-+    this.schedule = toEvents(schedule ?? [], this.sr);
+-     this.scheduleIdx = 0;
+-     this.sampleCounter = 0;
+-+    this.shaped = isShaped(this.schedule);
+-+    this.moves = [];        // shaped mode: running transitions { n, N, shape, keys, from, to }
+-+    this.mover = {};        // shaped mode: param -> the transition moving it
+-+  }
+-+
+-+  // shaped mode: start moving `params` (default all) toward target over N samples along curve
+-+  startMove(target, N, curve = 0, params = null) {
+-+    const keys = [];
+-+    const move = { n: 0, N, shape: CURVES[curve] ?? null, keys, from: {}, to: {} };
+-+    for (const k of params ?? PARAMS) {
+-+      if (k in target) this.target[k] = target[k];
+-+      const old = this.mover[k];
+-+      if (old) old.keys.splice(old.keys.indexOf(k), 1);
+-+      this.mover[k] = move;
+-+      keys.push(k);
+-+      move.from[k] = this.current[k];
+-+      move.to[k] = this.target[k];
+-+    }
+-+    this.moves.push(move);
+-+  }
+-+
+-+  // shaped mode: advance every running transition one sample
+-+  stepMoves() {
+-+    const cur = this.current;
+-+    let done = 0;
+-+    for (const m of this.moves) {
+-+      m.n++;
+-+      if (m.n >= m.N) {
+-+        for (const k of m.keys) { cur[k] = m.to[k]; this.mover[k] = undefined; }
+-+        m.keys.length = 0;
+-+        done++;
+-+        continue;
+-+      }
+-+      const u = m.n / m.N, w = m.shape ? m.shape(u) : u;
+-+      for (const k of m.keys) cur[k] = m.from[k] + (m.to[k] - m.from[k]) * w;
+-+      if (!m.keys.length) done++;
+-+    }
+-+    if (done) this.moves = this.moves.filter((m) => m.keys.length && m.n < m.N);
+-   }
+- 
+-   // Schedule a new target. transitionMs samples are linearly interpolated
+-   // from current state to the new target
+-   setTarget(target, transitionMs = 30) {
+-     const N = Math.max(1, Math.floor(transitionMs * this.sr / 1000));
+-+    if (this.shaped) { this.startMove(target, N); return; }
+-     this.transitionSamples = N;
+-     for (const k of PARAMS) {
+-       if (k in target) this.target[k] = target[k];
+-@@ -86,13 +138,15 @@ export class FormantSynth {
+-   // startCounter presets the schedule clock: negative delays the first event,
+-   // positive drains already-past events on the first process() call.
+-   queueSchedule(events, startCounter = 0) {
+--    this.schedule = events.map(e => ({
+--      atSample: Math.floor((e.atMs ?? 0) * this.sr / 1000),
+--      target: e.target,
+--      transitionSamples: Math.max(1, Math.floor((e.transitionMs ?? 30) * this.sr / 1000)),
+--    }));
+-+    this.schedule = toEvents(events, this.sr);
+-     this.scheduleIdx = 0;
+-     this.sampleCounter = startCounter;
+-+    if (isShaped(this.schedule) && !this.shaped) {
+-+      // switching to shaped mode mid-flight: carry the linear transition that is running
+-+      this.shaped = true;
+-+      if (this.transitionSamples > 0) this.startMove({}, this.transitionSamples);
+-+      this.transitionSamples = 0;
+-+    }
+-   }
+- 
+-   reset(initialTarget) {
+-@@ -112,12 +166,25 @@ export class FormantSynth {
+-     this.schedule = [];
+-     this.scheduleIdx = 0;
+-     this.sampleCounter = 0;
+-+    this.shaped = false;
+-+    this.moves = [];
+-+    this.mover = {};
+-   }
+- 
+-   // Render `out.length` samples into the given Float32Array
+-   process(out) {
+-     const cur = this.current;
+-     for (let i = 0; i < out.length; i++) {
+-+      if (this.shaped) {
+-+        // (sonicpi-toolchain patch) shaped, per-parameter transitions
+-+        while (this.scheduleIdx < this.schedule.length
+-+            && this.schedule[this.scheduleIdx].atSample <= this.sampleCounter) {
+-+          const evt = this.schedule[this.scheduleIdx++];
+-+          this.startMove(evt.target, evt.transitionSamples, evt.curve, evt.params);
+-+        }
+-+        this.sampleCounter++;
+-+        if (this.moves.length) this.stepMoves();
+-+      } else {
+-       // Drain any baked-in schedule events whose time has arrived
+-       while (this.scheduleIdx < this.schedule.length
+-           && this.schedule[this.scheduleIdx].atSample <= this.sampleCounter) {
+-@@ -138,6 +205,7 @@ export class FormantSynth {
+-           for (const k of PARAMS) cur[k] = this.target[k];
+-         }
+-       }
+-+      }
+- 
+-       // Vibrato LFO modulates F0 around its target value
+-       this.vibratoPhase += 2 * Math.PI * cur.vibratoRate / this.sr;
+-- 
+2.43.0
+
