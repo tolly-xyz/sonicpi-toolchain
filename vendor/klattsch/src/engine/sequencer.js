@@ -40,14 +40,16 @@ const DEFAULTS = Object.freeze({
   coJumpMs: 3,
   coVcShare: 0.6,
   // (sonicpi-toolchain patch) [NAS=x]: share of a vowel nasalized before a nasal consonant ([NASVC]) and after
-  // one ([NASCV]), and the nasal parameters of a fully nasalized vowel: a parallel nasal formant AN at FNP 250 Hz,
-  // the low nasal pole of nasalized vowels (P0: Hawkins & Stevens 1985, Chen 1997), the pairs neutral, and the
-  // whole at GN (the oral formants weaken: Kokoro's vowels next to nasals are quieter than its other vowels, not
-  // louder). Klatt's (1980) recipe, a zero raised above the pole (FNZ ~450), took 10 dB off everything above it and
-  // made the vowels less Kokoro-like at every strength tried (voicelab fidelity); these values were fitted there.
+  // one ([NASCV]; carryover nasalization is shorter than anticipatory in English, Cohn 1990), and the nasal
+  // parameters of a fully nasalized vowel: a parallel nasal formant AN at FNP 250 Hz, the low nasal pole of
+  // nasalized vowels (P0: Hawkins & Stevens 1985, Chen 1997), the pairs neutral, the level unchanged (GN 1).
+  // AN is set so that the last third of a vowel before a nasal gains what Kokoro's do over its other vowel ends
+  // below 300 Hz (+4 dB; above 300 Hz they lose nothing). Klatt's (1980) recipe, a zero raised above the pole
+  // (FNZ ~450), took 10 dB off everything above it and made the vowels less Kokoro-like at every strength tried
+  // (voicelab fidelity). (Kokoro's vowels are quieter at their ends before nasals, but as much before any consonant.)
   nasalVC: 0.8,
   nasalCV: 0.5,
-  nasalized: Object.freeze({ FNP: 250, BNP: 100, FNZ: 250, BNZ: 100, AN: 0.8, GN: 0.3 }),
+  nasalized: Object.freeze({ FNP: 250, BNP: 100, FNZ: 250, BNZ: 100, AN: 0.4 }),
 });
 const NASAL_FREQ = /^(F|B)N[PZ]2?$/;   // nasal pole/zero frequencies and bandwidths: they follow the formant scale
 
@@ -376,8 +378,9 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
   // [CO]: no pause between) is nasalized: from the first [NASVC] of it before a nasal consonant it glides to the
   // nasalized values (DEFAULTS.nasalized, over which the consonant's bank field nasalizes {...} is laid), and after
   // one it starts nasalized and is back to neutral after [NASCV] of it; x scales the nasalization (0: murmurs
-  // only). The vowel's nasal glides are nasalOnly events, which move only the nasal parameters. Without [NAS]
-  // nothing here runs.
+  // only). [NASMS=ms] caps each nasalized span at ms (a long sung vowel stays oral until its last ms before a
+  // nasal, as singers keep it; absent: the shares alone). The vowel's nasal glides are nasalOnly events, which
+  // move only the nasal parameters. Without [NAS] nothing here runs.
   const nasalMode = () => extras.NAS !== undefined;
   let pendingNasal = null;     // nasal parameters for the next emit (the first event of a phoneme)
   let nasalUsed = false;       // [NAS] was on: after a bare [NAS] the next event puts the nasal parameters back
@@ -399,7 +402,9 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
     nasalOnlyEvents++;
   };
   // before a phoneme renders: its first event's nasal parameters; after: the vowel's nasal glides
-  const nasalBefore = (t, p) => {
+  // [NASMS=ms]: a share of slotMs, capped at ms (unchanged when absent or not binding)
+  const nasalCap = (share, slotMs) => (extras.NASMS !== undefined && slotMs * share > extras.NASMS ? Math.max(0, extras.NASMS) / slotMs : share);
+  const nasalBefore = (t, p, slotMs) => {
     if (!nasalMode()) {
       if (nasalUsed) { pendingNasal = nasalScaled(NASAL_DEFAULT); nasalUsed = false; }
       return null;
@@ -409,7 +414,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
     if (!(extras.NAS > 0) || p.nasal || p.isStop || !((p.voicing ?? 0) >= 1)) return null;
     const prevN = nasalOf(prevPh.get(t)), nextN = nasalOf(nextPh.get(t));
     if (!prevN && !nextN) return null;
-    const cv = extras.NASCV ?? DEFAULTS.nasalCV, vc = extras.NASVC ?? DEFAULTS.nasalVC;
+    const cv = nasalCap(extras.NASCV ?? DEFAULTS.nasalCV, slotMs), vc = nasalCap(extras.NASVC ?? DEFAULTS.nasalVC, slotMs);
     if (prevN) pendingNasal = nasalizedBy(prevN);
     else if (vc >= 1) pendingNasal = nasalizedBy(nextN);
     return { start: timeMs, prevN, nextN, cv, vc };
@@ -431,7 +436,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
       warnings.push(`unknown phoneme: ${t.code}`);
       return 0;
     }
-    const nasalPlan = nasalBefore(t, p);
+    const nasalPlan = nasalBefore(t, p, slotMs);
     const r = renderPhonemeEvents(t, p, slotMs);
     pendingNasal = null;
     nasalAfter(nasalPlan, slotMs);
