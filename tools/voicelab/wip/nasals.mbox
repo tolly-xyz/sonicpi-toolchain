@@ -1,7 +1,7 @@
-From 101fa377e6af325d26991690ad420b130d227d13 Mon Sep 17 00:00:00 2001
+From f2cf91160d34ed7f2d908cccb33c6cd04eae9838 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Tue, 20 Oct 2026 23:47:17 +0000
-Subject: [PATCH 1/6] wip nasals: engine nasal pole-zero path, [NAS] vowel
+Subject: [PATCH 1/8] wip nasals: engine nasal pole-zero path, [NAS] vowel
  nasalization, klattsing nasals option
 
 ---
@@ -547,69 +547,71 @@ index 44ee825..8ef8cca 100644
 2.43.0
 
 
-From 663fd6422b7bdd7d0df78c2b961014a248d974f6 Mon Sep 17 00:00:00 2001
+From 82c51413150941fe76f83361ba4e0bbc105868c4 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 21 Oct 2026 12:05:25 +0000
-Subject: [PATCH 2/6] wip nasals: applied predecessor series onto main
+Subject: [PATCH 2/8] wip nasals: applied predecessor series onto main
  (coarticulation + glottal), nasal path in shaped mode too; mbox removed
 
 ---
- tools/voicelab/wip/README.md   |   2 +-
- tools/voicelab/wip/nasals.mbox | 557 ---------------------------------
- 2 files changed, 1 insertion(+), 558 deletions(-)
+ tools/voicelab/wip/README.md   |    1 -
+ tools/voicelab/wip/nasals.mbox | 1922 --------------------------------
+ 2 files changed, 1923 deletions(-)
  delete mode 100644 tools/voicelab/wip/nasals.mbox
 
 diff --git a/tools/voicelab/wip/README.md b/tools/voicelab/wip/README.md
-index 53b5e59..099a65a 100644
+index b20bb35..585e9b5 100644
 --- a/tools/voicelab/wip/README.md
 +++ b/tools/voicelab/wip/README.md
-@@ -2,4 +2,4 @@
+@@ -1,7 +1,6 @@
+ # Feature tournament work in progress
  
- Commit series from the agents' worktrees (apply with `git am -3`), saved so a container restart can't lose them.
- coarticulation and glottal-source are merged into main; these remain:
--- nasals.mbox, stops.mbox: unfinished (wip commits on 45d6e2e), cut off by a usage limit.
-+- stops.mbox: unfinished (wip commits on 45d6e2e), cut off by a usage limit.
+ Commit series from agents' worktrees (apply with `git am -3`), saved so a container restart or usage limit can't lose them.
+-- nasals.mbox: engine nasal pole-zero path, [NAS] vowel nasalization, fitted murmurs; on top of coarticulation + glottal; not yet measured.
+ - stops.mbox: voice bar, Kokoro-fitted bursts, vowel-formant aspiration, flaps, unreleased stops; on top of coarticulation + glottal; not yet measured.
+ 
+ Singing (pairs.py sing mode, E2): base 41.0%, +coarticulation 51.8%, +glottal 25.2% - the LF source is a speech
 diff --git a/tools/voicelab/wip/nasals.mbox b/tools/voicelab/wip/nasals.mbox
 deleted file mode 100644
-index b5d3683..0000000
+index be13bfd..0000000
 --- a/tools/voicelab/wip/nasals.mbox
 +++ /dev/null
-@@ -1,557 +0,0 @@
--From 80e6f56ffff83bbbd13c4650140a392dca15988c Mon Sep 17 00:00:00 2001
+@@ -1,1922 +0,0 @@
+-From 101fa377e6af325d26991690ad420b130d227d13 Mon Sep 17 00:00:00 2001
 -From: Claude <noreply@anthropic.com>
 -Date: Tue, 20 Oct 2026 23:47:17 +0000
--Subject: [PATCH] wip nasals: engine nasal pole-zero path, [NAS] vowel
+-Subject: [PATCH 1/6] wip nasals: engine nasal pole-zero path, [NAS] vowel
 - nasalization, klattsing nasals option
 -
 ----
 - klattsing/src/banks.js                   | 13 ++++
-- klattsing/src/compile.js                 |  3 +-
-- klattsing/src/nasals.js                  | 56 +++++++++++++++
-- klattsing/test/audio-hash.mjs            | 28 ++++++++
+- klattsing/src/compile.js                 |  4 +-
+- klattsing/src/nasals.js                  | 56 +++++++++++++++++
+- klattsing/test/audio-hash.mjs            | 28 +++++++++
 - klattsing/test/audio.fixture.json        |  1 +
-- tools/voicelab/pairs.py                  |  3 +-
-- vendor/klattsch/src/engine/dsp.js        | 43 ++++++++++++
-- vendor/klattsch/src/engine/sequencer.js  | 89 +++++++++++++++++++++++-
-- vendor/klattsch/src/engine/synth-core.js | 76 ++++++++++++++++++--
-- 9 files changed, 305 insertions(+), 7 deletions(-)
+- tools/voicelab/pairs.py                  |  2 +-
+- vendor/klattsch/src/engine/dsp.js        | 43 +++++++++++++
+- vendor/klattsch/src/engine/sequencer.js  | 76 ++++++++++++++++++++++-
+- vendor/klattsch/src/engine/synth-core.js | 78 ++++++++++++++++++++++--
+- 9 files changed, 292 insertions(+), 9 deletions(-)
 - create mode 100644 klattsing/src/nasals.js
 - create mode 100644 klattsing/test/audio-hash.mjs
 - create mode 100644 klattsing/test/audio.fixture.json
 -
 -diff --git a/klattsing/src/banks.js b/klattsing/src/banks.js
--index 6c56f02..6f000e5 100644
+-index 4f1776a..dc4c32e 100644
 ---- a/klattsing/src/banks.js
 -+++ b/klattsing/src/banks.js
--@@ -13,6 +13,7 @@ import { dirname, join } from 'node:path';
-- import { fileURLToPath } from 'node:url';
+-@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 - import { banks, registerBank } from '../../vendor/klattsch/src/engine/banks/index.js';
 - import { VOWELS } from './phones.js';
+- import { coartOptions, coartFields } from './coarticulation.js';
 -+import { nasalOptions, nasalEntries } from './nasals.js';
 - 
 - const BANK_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'banks');
 - 
--@@ -95,6 +96,16 @@ export function breathBank(base, voicing) {
--   return { schemaVersion: 1, name: `${base}--br${hash(canonical({ extends: base, phonemes }))}`, extends: base, phonemes };
+-@@ -108,6 +109,16 @@ export function coartBank(base, c) {
+-   return { schemaVersion: 1, name: `${base}--co${hash(canonical({ extends: base, phonemes }))}`, extends: base, phonemes };
 - }
 - 
 -+// "nasals" (src/nasals.js): M, N, NG with murmur fields (nasal pole-zero pairs) for klattsch's [NAS], generated
@@ -624,34 +626,35 @@ index b5d3683..0000000
 -+
 - // spec -> the bank name to select with [bank=NAME] (undefined: klattsch's default), registering inline and
 - // generated banks in this process. A plain string bank without a patch is passed through untouched, as before.
-- // banksFor(spec) lists the banks a spec's string needs that are not files (inline, bankPatch, breath), parents
--@@ -116,6 +127,8 @@ function chain(o) {
+- // banksFor(spec) lists the banks a spec's string needs that are not files (inline, bankPatch, coarticulation, breath), parents
+-@@ -129,6 +140,8 @@ function chain(o) {
 -   }
 -   // generated banks are content-addressed: a name already registered is the same bank
 -   const add = (b) => { if (!banks.list().includes(b.name)) registerBank(b); out.push(b); name = b.name; };
 -+  const nas = nasalOptions(o);
 -+  if (nas) add(nasalBank(name || banks.defaultName, nas));
 -   if (o.bankPatch && Object.keys(o.bankPatch).length) add(patchedBank(name || banks.defaultName, o.bankPatch));
+-   if (o.coarticulation) add(coartBank(name || banks.defaultName, o.coarticulation));
 -   if (o.aspiration === 'breath') add(breathBank(name || banks.defaultName, o.breathVoicing));
--   return { name, banks: out };
 -diff --git a/klattsing/src/compile.js b/klattsing/src/compile.js
--index c9fb08b..aff7492 100644
+-index ce9023f..3724b3f 100644
 ---- a/klattsing/src/compile.js
 -+++ b/klattsing/src/compile.js
--@@ -9,6 +9,7 @@ import { timeWordsV0 } from './durations_v0.js';
-- import { FUNCTION_WORDS } from './function_words.js';
+-@@ -10,6 +10,7 @@ import { FUNCTION_WORDS } from './function_words.js';
 - import { bankName, BREATH_PREFIX } from './banks.js';
 - import { DUR } from './phones.js';
+- import { coartOptions, coartDirectives } from './coarticulation.js';
 -+import { nasalOptions, nasalDirectives } from './nasals.js';
 - 
 - const DIPH = { AY: ['AA', 'IY'], EY: ['EH', 'IY'], OW: ['AO', 'UW'], AW: ['AA', 'UW'], OY: ['AO', 'IY'] };
 - const NOTE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
--@@ -80,7 +81,7 @@ const av = (s, o) => (!o.dynamics ? '' : `[AV=${(o.dynamics === true ? DYNAMICS
-- const voiceOf = (o) => VOICES[o.voice] ?? o.voice ?? VOICES.speak;
+-@@ -96,7 +97,8 @@ export function glottalDirs(g) {
+- }
 - function prefix(o) {
--   const bank = bankName(o);
---  return [bank ? `[bank=${bank}]` : '', o.transition ? `[TR=${o.transition}]` : '', voiceOf(o)].filter(Boolean).join(' ');
--+  return [bank ? `[bank=${bank}]` : '', o.transition ? `[TR=${o.transition}]` : '', nasalDirectives(nasalOptions(o)), voiceOf(o)].filter(Boolean).join(' ');
+-   const bank = bankName(o), co = coartOptions(o.coarticulation);
+--  return [bank ? `[bank=${bank}]` : '', o.transition ? `[TR=${o.transition}]` : '', co ? coartDirectives(co) : '', glottalDirs(o.glottal), voiceOf(o)].filter(Boolean).join(' ');
+-+  return [bank ? `[bank=${bank}]` : '', o.transition ? `[TR=${o.transition}]` : '', co ? coartDirectives(co) : '', glottalDirs(o.glottal),
+-+    nasalDirectives(nasalOptions(o)), voiceOf(o)].filter(Boolean).join(' ');
 - }
 - const asp = (s, o) => (o.aspiration !== false && s.aspMs ? `r${f1(s.aspMs)} HH ` : '');
 - // the klattsch aspiration (h) a voice string leaves set, so "breath" can restore it
@@ -759,21 +762,20 @@ index b5d3683..0000000
 -@@ -0,0 +1 @@
 -+["61434142ea0ce4fa","241287dada1863e9","8081e3c1b6e20b8d","f6f5894b2ed5fa7d","dfb1b5247e3cfd20","7ea05fe79d684b0f","d917c5aa63470f57","094af513032f2d99","963ffc2aea4ff7e3","f1437a19c493b9a1","e9a070424e4a6d5c","dd9d9ccc9d5c8001","4ea20e6ce87996df","3cb0cb6ab2a12a12","3493df8fd8efdade","3b2196d0ac54373a","14f1e13aaf9307e1","bd72520b87c56326","5691703d50c3759e","3b8f0402ba2fb7fe","746d44c32f99a473","b82529dffc86d9cd","18881b916acf329d","332dc1c2d2f1d631","57455b3850367537","261ba9880dce9685","3c1c8580273e8051","d1c5fa73e4e29bfa","646c8c94c46e1872","7dd9b5ffe135fa6f","d85067cd6f1e4516","5255b868233461c4","aa8da8be2abcf0d0","aefe7b2b83e80508","300018b2d64860e1","b6821d60f951e0de","f877ee0a1756ac0d","b775a1421fef79f5","3a5ad5807ffcec0b","3bf1101f6bdb3917","10d07729b53518f0","f5025f2cd0910d61","e2d2e5cf90acffbe","6b71688df5c98d14","57ead182e08777a5","234a6afd237b4d38","150edb9914d43e5b","70efcfb5215eb63b","a3e6aa311a605c32","bd78a7c80035e110","627e5414fe5a223f","6751544d719d63af","1ce212cac81faefd","4a3f41319c42baee","147c40f0cbb38791","9f53f41e110b8757","2fcdc99259b6843e","8b1741e5db399a7f","2dae3006ae71b956","ae0f3d60ac2774fb","9329c4cb46428dc3","9d53d80e77c5632b","c5599d93cf8ac885","8b4953e7401f3365","ca8e881161f20745","38bba61ae5959794","496ed5277126e899","0ea3b8f2a18f51fe","861c4e7685109e8e","e745eea4d6e3538c","e0c80f7931250fc6","9b8f09d10f03ff36","69ae30b86aee0fd8","37ffceae40b05eb8","3d3d5de6651cb6ac","4e00e9585a461fb9","053862d5399f146f","bdb68b9983b4230d","756dafbcb828426c","0d7baaabebb5e2bb","1e1337e66786587f","b9684d850abc9aa7","cb11eada69d1c6c9","ea9be2d00ba65462","6bf5fe40e5db1549","a0fb1cae6299e7b2","ea471f16576c3121","2fc30771e6239707","4e531b4b9566da55"]
 -diff --git a/tools/voicelab/pairs.py b/tools/voicelab/pairs.py
--index d47ac62..69bb35e 100644
+-index 64c477c..1b05847 100644
 ---- a/tools/voicelab/pairs.py
 -+++ b/tools/voicelab/pairs.py
--@@ -71,7 +71,8 @@ def render(cfg, words, path):
--         sf.write(path, np.concatenate(parts), sr); return
+-@@ -72,7 +72,7 @@ def render(cfg, words, path):
 -     specs = []
 -     for i, w in enumerate(words):
---        base = {k: v for k, v in cfg.items() if k in ("bank", "transition", "aspiration", "voice", "rules", "accent", "gate", "hold", "durations", "dynamics")}
--+        base = {k: v for k, v in cfg.items() if k in ("bank", "transition", "aspiration", "voice", "rules", "accent", "gate", "hold", "durations", "dynamics",
--+                                                      "nasals")}
+-         base = {k: v for k, v in cfg.items() if k in ("bank", "transition", "aspiration", "voice", "rules", "accent", "gate", "hold", "durations", "dynamics",
+--                                                      "coarticulation", "glottal")}
+-+                                                      "coarticulation", "glottal", "nasals")}
 -         if cfg.get("mode", "speak") == "sing":
 -             nsyl = 2 if NUM[i] == "seven" else 1
 -             notes = [["E2", 4 // nsyl]] * nsyl + [["r", 2], ["G2", 8]]
 -diff --git a/vendor/klattsch/src/engine/dsp.js b/vendor/klattsch/src/engine/dsp.js
--index 9631806..d97fcb6 100644
+-index 5ff03e3..16e6438 100644
 ---- a/vendor/klattsch/src/engine/dsp.js
 -+++ b/vendor/klattsch/src/engine/dsp.js
 -@@ -40,6 +40,49 @@ export class BandpassBiquad {
@@ -827,21 +829,22 @@ index b5d3683..0000000
 - // Peak |value| is pi / (2·Tn) ~= 9.82, so we divide by 10 to keep amplitude
 - // near unity.
 -diff --git a/vendor/klattsch/src/engine/sequencer.js b/vendor/klattsch/src/engine/sequencer.js
--index 5500fdb..f1c30ec 100644
+-index aec95ab..acd8b44 100644
 ---- a/vendor/klattsch/src/engine/sequencer.js
 -+++ b/vendor/klattsch/src/engine/sequencer.js
--@@ -1,6 +1,7 @@
+-@@ -1,7 +1,7 @@
 - // Phoneme-string parser and schedule compiler
 - 
 - import { banks, resolveBank } from './banks/index.js';
--+import { NASAL_PARAMS, NASAL_DEFAULT } from './synth-core.js';
+--import { PARAMS } from './synth-core.js';
+-+import { PARAMS, NASAL_PARAMS, NASAL_DEFAULT } from './synth-core.js';
 - 
-- const PAUSE_MS = { ',': 100, ';': 200, '.': 300 };
-- 
--@@ -28,7 +29,13 @@ const DEFAULTS = Object.freeze({
--   sentenceFinalHoldMs: 0,
--   fadeOutMs: 100,
--   trailOffMs: 150,
+- // (sonicpi-toolchain patch) coarticulation ([CO=x]): formant frequencies move in their own schedule events
+- const FORMANTS = ['F1', 'F2', 'F3'];
+-@@ -39,7 +39,13 @@ const DEFAULTS = Object.freeze({
+-   coVcMs: 50,
+-   coJumpMs: 3,
+-   coVcShare: 0.6,
 -+  // (sonicpi-toolchain patch) [NAS=x]: share of a vowel nasalized before a nasal consonant ([NASVC]) and after
 -+  // one ([NASCV]), and the nasal parameters of a fully nasalized vowel (a nasal pole-zero pair, Klatt 1980)
 -+  nasalVC: 0.5,
@@ -852,7 +855,7 @@ index b5d3683..0000000
 - 
 - const HOMOGLYPH_MAP = {
 -   // Greek uppercase that look like Latin uppercase
--@@ -246,16 +253,91 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+-@@ -257,7 +263,10 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
 -     // engine reading them tracks the running formant scale like F1-3 do.
 -     for (const k of Object.keys(src)) {
 -       if (/^(F|BW)[4-9]$/.test(k)) out[k] = src[k] * scale;
@@ -863,27 +866,20 @@ index b5d3683..0000000
 -     return out;
 -   };
 - 
--+  // (sonicpi-toolchain patch) nasals. Once [NAS=x] is set, every phoneme's first event (and every silence) carries
--+  // all nasal parameters: a nasal consonant's own (bank fields FNP, BNP, FNZ, BNZ, AN, FNP2 ..., and nasal: true),
--+  // neutral ones (the pairs cancel, AN 0) for everything else, so a murmur never leaks into what follows. A vowel-
--+  // like neighbour of a nasal consonant (voicing >= 1, not a stop, not nasal; no pause between) is nasalized: from
--+  // the first [NASVC] of it before a nasal consonant it glides to the nasalized values (DEFAULTS.nasalized, over
--+  // which the consonant's bank field nasalizes {...} is laid), and after one it starts nasalized and is back to
--+  // neutral after [NASCV] of it; x scales the nasalization (0: murmurs only). The vowel's nasal glides are
--+  // nasalOnly events, which move only the nasal parameters. Without [NAS] nothing here runs.
--+  let nasalNeighbours = null;
--+  const nasalMode = () => nasalNeighbours !== null && extras.NAS !== undefined;
--+  if (opts.extras?.NAS !== undefined || tokens.some((t) => t.type === 'directive' && t.key === 'NAS')) {
--+    nasalNeighbours = new Map();
--+    let prev = null;
--+    for (const t of tokens) {
--+      if (t.type === 'pause' || (t.type === 'directive' && t.key === 'pause')) { prev = null; continue; }
--+      if (t.type !== 'phoneme') continue;
--+      nasalNeighbours.set(t, { prev, next: null });
--+      if (prev) nasalNeighbours.get(prev).next = t;
--+      prev = t;
--+    }
--+  }
+-@@ -356,12 +365,70 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+-     moveFormants(boundary(ne, rawF(p, true), true), ms, slotStart + slotMs - ms);
+-   };
+- 
+-+  // (sonicpi-toolchain patch) nasals, active while [NAS=x] is set. Every phoneme's first event (and every silence)
+-+  // carries all nasal parameters: a nasal consonant's own (bank fields FNP, BNP, FNZ, BNZ, AN, FNP2 ..., and
+-+  // nasal: true), neutral ones (the pairs cancel, AN 0) for everything else, so a murmur never leaks into what
+-+  // follows. A vowel-like neighbour of a nasal consonant (voicing >= 1, not a stop, not nasal; neighbours as for
+-+  // [CO]: no pause between) is nasalized: from the first [NASVC] of it before a nasal consonant it glides to the
+-+  // nasalized values (DEFAULTS.nasalized, over which the consonant's bank field nasalizes {...} is laid), and after
+-+  // one it starts nasalized and is back to neutral after [NASCV] of it; x scales the nasalization (0: murmurs
+-+  // only). The vowel's nasal glides are nasalOnly events, which move only the nasal parameters. Without [NAS]
+-+  // nothing here runs.
+-+  const nasalMode = () => extras.NAS !== undefined;
 -+  let pendingNasal = null;     // nasal parameters for the next emit (the first event of a phoneme)
 -+  let nasalOnlyEvents = 0;
 -+  const nasalScaled = (x) => {
@@ -891,7 +887,7 @@ index b5d3683..0000000
 -+    for (const k of NASAL_PARAMS) if (k in x) out[k] = NASAL_FREQ.test(k) ? x[k] * scale : x[k];
 -+    return out;
 -+  };
--+  const nasalOf = (code) => { const e = code ? phonemes[code] : null; return e && e.nasal ? e : null; };
+-+  const nasalOf = (t) => { const e = entryOf(t); return e && e.nasal ? e : null; };
 -+  // the nasal parameters of a vowel next to nasal consonant entry n, at strength x
 -+  const nasalizedBy = (n) => {
 -+    const x = extras.NAS, full = { ...NASAL_DEFAULT, ...DEFAULTS.nasalized, ...(n.nasalizes ?? {}) }, out = {};
@@ -899,9 +895,7 @@ index b5d3683..0000000
 -+    return nasalScaled(out);
 -+  };
 -+  const nasalOnly = (atMs, target, transitionMs) => {
--+    const ex = {};
--+    for (const k of NASAL_PARAMS) if (k in extras) ex[k] = extras[k];
--+    schedule.push({ atMs, target: { ...target, ...ex }, transitionMs, nasalOnly: true });
+-+    schedule.push({ atMs, target, transitionMs, nasalOnly: true });
 -+    nasalOnlyEvents++;
 -+  };
 -+  // before a phoneme renders: its first event's nasal parameters; after: the vowel's nasal glides
@@ -909,8 +903,7 @@ index b5d3683..0000000
 -+    if (!nasalMode()) return null;
 -+    pendingNasal = nasalScaled(NASAL_DEFAULT);
 -+    if (p.nasal || p.isStop || !((p.voicing ?? 0) >= 1)) return null;
--+    const nb = nasalNeighbours.get(t) ?? {};
--+    const prevN = nasalOf(nb.prev?.code), nextN = nasalOf(nb.next?.code);
+-+    const prevN = nasalOf(prevPh.get(t)), nextN = nasalOf(nextPh.get(t));
 -+    if (!prevN && !nextN) return null;
 -+    const cv = extras.NASCV ?? DEFAULTS.nasalCV, vc = extras.NASVC ?? DEFAULTS.nasalVC;
 -+    if (prevN) pendingNasal = nasalizedBy(prevN);
@@ -943,8 +936,8 @@ index b5d3683..0000000
 -+  const renderPhonemeEvents = (t, p, slotMs) => {
 -     const startF0 = t.stressed ? f0 + DEFAULTS.stressF0Lift : f0;
 -     const endF0 = startF0 + t.pitchDelta;
--     if (p.isStop) {
--@@ -314,6 +396,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+-     const slotStart = timeMs;
+-@@ -433,6 +500,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
 -   });
 - 
 -   const emit = (target, transitionMs) => {
@@ -952,8 +945,8 @@ index b5d3683..0000000
 -     schedule.push({
 -       atMs: timeMs,
 -       // [AV=x] (sonicpi-toolchain patch): loudness multiplier, moved like any other parameter
--@@ -321,7 +404,8 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
--       transitionMs,
+-@@ -443,7 +511,8 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+-       ...(extras.CO !== undefined ? { params: NON_FORMANTS } : {}),
 -     });
 -   };
 --  const silence = (transitionMs = 30) => emit({ A1: 0, A2: 0, A3: 0 }, transitionMs);
@@ -962,26 +955,26 @@ index b5d3683..0000000
 - 
 -   for (const t of tokens) {
 -     if (t.type === 'unknown') {
--@@ -475,6 +559,9 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
--   // Hold the final phrase highlighted
+-@@ -598,7 +667,8 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
 -   if (phrases.length) phrases[phrases.length - 1].tEndMs = timeMs;
 - 
--+  // (sonicpi-toolchain patch) a vowel's nasal glides were pushed after its own events: put them in time order
--+  if (nasalOnlyEvents) schedule.sort((a, b) => a.atMs - b.atMs);
--+
+-   // (sonicpi-toolchain patch) [CO]: the synth applies events in array order
+--  if (formantEvents) schedule.sort((a, b) => a.atMs - b.atMs);
+-+  // (sonicpi-toolchain patch) [NAS]: a vowel's nasal glides were pushed after its own events
+-+  if (formantEvents || nasalOnlyEvents) schedule.sort((a, b) => a.atMs - b.atMs);
+- 
 -   return { schedule, totalMs: timeMs, warnings, phrases, source, engine };
 - }
-- 
 -diff --git a/vendor/klattsch/src/engine/synth-core.js b/vendor/klattsch/src/engine/synth-core.js
--index 6decea1..58cf070 100644
+-index 44ee825..8ef8cca 100644
 ---- a/vendor/klattsch/src/engine/synth-core.js
 -+++ b/vendor/klattsch/src/engine/synth-core.js
 -@@ -10,7 +10,7 @@
 - // `schedule` is an array of { atMs, target, transitionMs } events; the synth
 - // applies them in time order. Or drive it live with setTarget()
 - 
---import { BandpassBiquad, glottalPulse, xorshift, softClip } from './dsp.js';
--+import { BandpassBiquad, KlattResonator, KlattAntiresonator, glottalPulse, xorshift, softClip } from './dsp.js';
+--import { BandpassBiquad, glottalPulse, xorshift, softClip, lfShape, lfPulse, tiltCoef } from './dsp.js';
+-+import { BandpassBiquad, KlattResonator, KlattAntiresonator, glottalPulse, xorshift, softClip, lfShape, lfPulse, tiltCoef } from './dsp.js';
 - 
 - export const PARAMS = [
 -   'F0', 'voicing',
@@ -994,8 +987,8 @@ index b5d3683..0000000
 -+// and BNP = BNZ), a second pair FNP2/BNP2, FNZ2/BNZ2 (the murmur's place-dependent oral side-branch zero), and
 -+// AN, a parallel nasal formant at FNP (fed by the excitation, like A1-A3). The nasal path runs only once a target
 -+// (schedule event, setTarget, initialTarget) has carried one of these keys; until then every sample is computed
--+// exactly as before. Nasal parameters glide with their own clock, so an event may move only them
--+// ({ nasalOnly: true }) without retiming the other parameters' transitions.
+-+// exactly as before. Nasal parameters glide linearly on their own clock (in both the linear and the shaped mode),
+-+// so an event may move only them ({ nasalOnly: true }) without retiming the other parameters' transitions.
 -+export const NASAL_PARAMS = ['FNP', 'BNP', 'FNZ', 'BNZ', 'AN', 'FNP2', 'BNP2', 'FNZ2', 'BNZ2'];
 -+export const NASAL_DEFAULT = Object.freeze({
 -+  FNP: 250, BNP: 100, FNZ: 250, BNZ: 100, AN: 0,
@@ -1006,33 +999,30 @@ index b5d3683..0000000
 - export const DEFAULT = {
 -   F0: 120, voicing: 0,
 -   F1: 500, BW1: 80,  A1: 0,
--@@ -40,6 +54,7 @@ export const DEFAULT = {
--   aspiration: 0,
--   tilt: 0,
--   effort: 0.5,
--+  ...NASAL_DEFAULT,
-- };
+-@@ -62,6 +76,7 @@ const toEvents = (events, sr) => events.map((e) => ({
+-   target: e.target,
+-   transitionSamples: Math.max(1, Math.floor((e.transitionMs ?? 30) * sr / 1000)),
+-   ...(e.curve || e.params ? { curve: e.curve ?? 0, params: e.params ?? null } : {}),
+-+  ...(e.nasalOnly ? { nasalOnly: true } : {}),
+- }));
 - 
 - export class FormantSynth {
--@@ -62,20 +77,47 @@ export class FormantSynth {
--     this.bp1 = new BandpassBiquad();
+-@@ -85,6 +100,7 @@ export class FormantSynth {
 -     this.bp2 = new BandpassBiquad();
 -     this.bp3 = new BandpassBiquad();
+-     this.resetSource();
 -+    this.initNasal(init);
 - 
--     this.schedule = (schedule ?? []).map(e => ({
--       atSample: Math.floor((e.atMs ?? 0) * this.sr / 1000),
--       target: e.target,
--       transitionSamples: Math.max(1, Math.floor((e.transitionMs ?? 30) * this.sr / 1000)),
--+      ...(e.nasalOnly ? { nasalOnly: true } : {}),
--     }));
+-     this.schedule = toEvents(schedule ?? [], this.sr);
 -     this.scheduleIdx = 0;
--     this.sampleCounter = 0;
+-@@ -129,11 +145,44 @@ export class FormantSynth {
+-     if (done) this.moves = this.moves.filter((m) => m.keys.length && m.n < m.N);
 -   }
 - 
 -+  // (sonicpi-toolchain patch) nasal path state; this.nasal turns on with the first target that has a nasal key
 -+  initNasal(init) {
 -+    this.nasal = hasNasal(init);
+-+    for (const k of NASAL_PARAMS) if (!(k in this.current)) { this.current[k] = NASAL_DEFAULT[k]; this.target[k] = NASAL_DEFAULT[k]; }
 -+    this.nasalSamples = 0;
 -+    this.nasalIncrement = {};
 -+    for (const k of NASAL_PARAMS) this.nasalIncrement[k] = 0;
@@ -1054,54 +1044,57 @@ index b5d3683..0000000
 -+    }
 -+  }
 -+
+-+  // advance the nasal parameters one sample
+-+  stepNasal() {
+-+    const cur = this.current;
+-+    for (const k of NASAL_PARAMS) cur[k] += this.nasalIncrement[k];
+-+    if (--this.nasalSamples === 0) for (const k of NASAL_PARAMS) cur[k] = this.target[k];
+-+  }
+-+
 -   // Schedule a new target. transitionMs samples are linearly interpolated
 -   // from current state to the new target
 -   setTarget(target, transitionMs = 30) {
+-     if ('GS' in target) this.setSource(target);
 -     const N = Math.max(1, Math.floor(transitionMs * this.sr / 1000));
 -+    this.retargetNasal(target, N);
+-     if (this.shaped) { this.startMove(target, N); return; }
 -     this.transitionSamples = N;
 -     for (const k of PARAMS) {
--       if (k in target) this.target[k] = target[k];
--@@ -90,6 +132,7 @@ export class FormantSynth {
--       atSample: Math.floor((e.atMs ?? 0) * this.sr / 1000),
--       target: e.target,
--       transitionSamples: Math.max(1, Math.floor((e.transitionMs ?? 30) * this.sr / 1000)),
--+      ...(e.nasalOnly ? { nasalOnly: true } : {}),
--     }));
--     this.scheduleIdx = 0;
--     this.sampleCounter = startCounter;
--@@ -109,6 +152,7 @@ export class FormantSynth {
+-@@ -169,6 +218,7 @@ export class FormantSynth {
+-     const init = initialTarget ?? {};
+-     this.current = { ...DEFAULT, ...init };
 -     this.target = { ...this.current };
+-+    this.initNasal(init);
 -     for (const k of PARAMS) this.increment[k] = 0;
 -     this.transitionSamples = 0;
--+    this.initNasal(init);
 -     this.schedule = [];
--     this.scheduleIdx = 0;
--     this.sampleCounter = 0;
--@@ -123,6 +167,8 @@ export class FormantSynth {
+-@@ -308,6 +358,8 @@ export class FormantSynth {
+-         while (this.scheduleIdx < this.schedule.length
+-             && this.schedule[this.scheduleIdx].atSample <= this.sampleCounter) {
+-           const evt = this.schedule[this.scheduleIdx++];
+-+          this.retargetNasal(evt.target, evt.transitionSamples);
+-+          if (evt.nasalOnly) continue;      // (sonicpi-toolchain patch) moves the nasal parameters alone
+-           if (sourceEvent(evt.target, this.src.GS)) this.setSource(evt.target);   // the voice source in shaped mode too
+-           this.startMove(evt.target, evt.transitionSamples, evt.curve, evt.params);
+-         }
+-@@ -318,6 +370,8 @@ export class FormantSynth {
+-       while (this.scheduleIdx < this.schedule.length
 -           && this.schedule[this.scheduleIdx].atSample <= this.sampleCounter) {
 -         const evt = this.schedule[this.scheduleIdx++];
+-+        this.retargetNasal(evt.target, evt.transitionSamples);
+-+        if (evt.nasalOnly) continue;        // (sonicpi-toolchain patch) moves the nasal parameters alone
+-         if (sourceEvent(evt.target, this.src.GS)) this.setSource(evt.target);
 -         const N = evt.transitionSamples;
--+        this.retargetNasal(evt.target, N);
--+        if (evt.nasalOnly) continue;
 -         this.transitionSamples = N;
--         for (const k of PARAMS) {
--           if (k in evt.target) this.target[k] = evt.target[k];
--@@ -138,6 +184,13 @@ export class FormantSynth {
--           for (const k of PARAMS) cur[k] = this.target[k];
+-@@ -336,6 +390,7 @@ export class FormantSynth {
 -         }
 -       }
--+      if (this.nasalSamples > 0) {
--+        for (const k of NASAL_PARAMS) cur[k] += this.nasalIncrement[k];
--+        this.nasalSamples--;
--+        if (this.nasalSamples === 0) {
--+          for (const k of NASAL_PARAMS) cur[k] = this.target[k];
--+        }
--+      }
+-       }
+-+      if (this.nasalSamples > 0) this.stepNasal();
 - 
 -       // Vibrato LFO modulates F0 around its target value
 -       this.vibratoPhase += 2 * Math.PI * cur.vibratoRate / this.sr;
--@@ -164,9 +217,24 @@ export class FormantSynth {
+-@@ -367,9 +422,24 @@ export class FormantSynth {
 -       this.bp2.setFreq(cur.F2, cur.BW2, this.sr);
 -       this.bp3.setFreq(cur.F3, cur.BW3, this.sr);
 - 
@@ -1132,14 +1125,1388 @@ index b5d3683..0000000
 --- 
 -2.43.0
 -
+-
+-From 663fd6422b7bdd7d0df78c2b961014a248d974f6 Mon Sep 17 00:00:00 2001
+-From: Claude <noreply@anthropic.com>
+-Date: Wed, 21 Oct 2026 12:05:25 +0000
+-Subject: [PATCH 2/6] wip nasals: applied predecessor series onto main
+- (coarticulation + glottal), nasal path in shaped mode too; mbox removed
+-
+----
+- tools/voicelab/wip/README.md   |   2 +-
+- tools/voicelab/wip/nasals.mbox | 557 ---------------------------------
+- 2 files changed, 1 insertion(+), 558 deletions(-)
+- delete mode 100644 tools/voicelab/wip/nasals.mbox
+-
+-diff --git a/tools/voicelab/wip/README.md b/tools/voicelab/wip/README.md
+-index 53b5e59..099a65a 100644
+---- a/tools/voicelab/wip/README.md
+-+++ b/tools/voicelab/wip/README.md
+-@@ -2,4 +2,4 @@
+- 
+- Commit series from the agents' worktrees (apply with `git am -3`), saved so a container restart can't lose them.
+- coarticulation and glottal-source are merged into main; these remain:
+--- nasals.mbox, stops.mbox: unfinished (wip commits on 45d6e2e), cut off by a usage limit.
+-+- stops.mbox: unfinished (wip commits on 45d6e2e), cut off by a usage limit.
+-diff --git a/tools/voicelab/wip/nasals.mbox b/tools/voicelab/wip/nasals.mbox
+-deleted file mode 100644
+-index b5d3683..0000000
+---- a/tools/voicelab/wip/nasals.mbox
+-+++ /dev/null
+-@@ -1,557 +0,0 @@
+--From 80e6f56ffff83bbbd13c4650140a392dca15988c Mon Sep 17 00:00:00 2001
+--From: Claude <noreply@anthropic.com>
+--Date: Tue, 20 Oct 2026 23:47:17 +0000
+--Subject: [PATCH] wip nasals: engine nasal pole-zero path, [NAS] vowel
+-- nasalization, klattsing nasals option
+--
+-----
+-- klattsing/src/banks.js                   | 13 ++++
+-- klattsing/src/compile.js                 |  3 +-
+-- klattsing/src/nasals.js                  | 56 +++++++++++++++
+-- klattsing/test/audio-hash.mjs            | 28 ++++++++
+-- klattsing/test/audio.fixture.json        |  1 +
+-- tools/voicelab/pairs.py                  |  3 +-
+-- vendor/klattsch/src/engine/dsp.js        | 43 ++++++++++++
+-- vendor/klattsch/src/engine/sequencer.js  | 89 +++++++++++++++++++++++-
+-- vendor/klattsch/src/engine/synth-core.js | 76 ++++++++++++++++++--
+-- 9 files changed, 305 insertions(+), 7 deletions(-)
+-- create mode 100644 klattsing/src/nasals.js
+-- create mode 100644 klattsing/test/audio-hash.mjs
+-- create mode 100644 klattsing/test/audio.fixture.json
+--
+--diff --git a/klattsing/src/banks.js b/klattsing/src/banks.js
+--index 6c56f02..6f000e5 100644
+----- a/klattsing/src/banks.js
+--+++ b/klattsing/src/banks.js
+--@@ -13,6 +13,7 @@ import { dirname, join } from 'node:path';
+-- import { fileURLToPath } from 'node:url';
+-- import { banks, registerBank } from '../../vendor/klattsch/src/engine/banks/index.js';
+-- import { VOWELS } from './phones.js';
+--+import { nasalOptions, nasalEntries } from './nasals.js';
+-- 
+-- const BANK_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'banks');
+-- 
+--@@ -95,6 +96,16 @@ export function breathBank(base, voicing) {
+--   return { schemaVersion: 1, name: `${base}--br${hash(canonical({ extends: base, phonemes }))}`, extends: base, phonemes };
+-- }
+-- 
+--+// "nasals" (src/nasals.js): M, N, NG with murmur fields (nasal pole-zero pairs) for klattsch's [NAS], generated
+--+// per bank and options, extending it
+--+export function nasalBank(base, n) {
+--+  ensureBank(base);
+--+  const resolved = banks.get(base);
+--+  if (!resolved) throw new Error(`unknown bank: ${base}`);
+--+  const phonemes = nasalEntries(resolved, n);
+--+  return { schemaVersion: 1, name: `${base}--nas${hash(canonical({ extends: base, phonemes }))}`, extends: base, phonemes };
+--+}
+--+
+-- // spec -> the bank name to select with [bank=NAME] (undefined: klattsch's default), registering inline and
+-- // generated banks in this process. A plain string bank without a patch is passed through untouched, as before.
+-- // banksFor(spec) lists the banks a spec's string needs that are not files (inline, bankPatch, breath), parents
+--@@ -116,6 +127,8 @@ function chain(o) {
+--   }
+--   // generated banks are content-addressed: a name already registered is the same bank
+--   const add = (b) => { if (!banks.list().includes(b.name)) registerBank(b); out.push(b); name = b.name; };
+--+  const nas = nasalOptions(o);
+--+  if (nas) add(nasalBank(name || banks.defaultName, nas));
+--   if (o.bankPatch && Object.keys(o.bankPatch).length) add(patchedBank(name || banks.defaultName, o.bankPatch));
+--   if (o.aspiration === 'breath') add(breathBank(name || banks.defaultName, o.breathVoicing));
+--   return { name, banks: out };
+--diff --git a/klattsing/src/compile.js b/klattsing/src/compile.js
+--index c9fb08b..aff7492 100644
+----- a/klattsing/src/compile.js
+--+++ b/klattsing/src/compile.js
+--@@ -9,6 +9,7 @@ import { timeWordsV0 } from './durations_v0.js';
+-- import { FUNCTION_WORDS } from './function_words.js';
+-- import { bankName, BREATH_PREFIX } from './banks.js';
+-- import { DUR } from './phones.js';
+--+import { nasalOptions, nasalDirectives } from './nasals.js';
+-- 
+-- const DIPH = { AY: ['AA', 'IY'], EY: ['EH', 'IY'], OW: ['AO', 'UW'], AW: ['AA', 'UW'], OY: ['AO', 'IY'] };
+-- const NOTE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+--@@ -80,7 +81,7 @@ const av = (s, o) => (!o.dynamics ? '' : `[AV=${(o.dynamics === true ? DYNAMICS
+-- const voiceOf = (o) => VOICES[o.voice] ?? o.voice ?? VOICES.speak;
+-- function prefix(o) {
+--   const bank = bankName(o);
+---  return [bank ? `[bank=${bank}]` : '', o.transition ? `[TR=${o.transition}]` : '', voiceOf(o)].filter(Boolean).join(' ');
+--+  return [bank ? `[bank=${bank}]` : '', o.transition ? `[TR=${o.transition}]` : '', nasalDirectives(nasalOptions(o)), voiceOf(o)].filter(Boolean).join(' ');
+-- }
+-- const asp = (s, o) => (o.aspiration !== false && s.aspMs ? `r${f1(s.aspMs)} HH ` : '');
+-- // the klattsch aspiration (h) a voice string leaves set, so "breath" can restore it
+--diff --git a/klattsing/src/nasals.js b/klattsing/src/nasals.js
+--new file mode 100644
+--index 0000000..bc584dc
+----- /dev/null
+--+++ b/klattsing/src/nasals.js
+--@@ -0,0 +1,56 @@
+--+// "nasals": nasal murmurs with a nasal pole-zero pair and a place-dependent zero, and nasalized vowels next to
+--+// nasal consonants (klattsch [NAS=x], a patch to the vendored engine: vendor/klattsch/VENDORED).
+--+//   "nasals": true                                   the defaults below
+--+//   "nasals": { strength, vc, cv, murmur: { M: {field: value}, ... }, nasalized: {FNP, BNP, FNZ, BNZ, AN} }
+--+// strength: [NAS=x], how strongly a vowel next to M/N/NG is nasalized (0: murmurs only); vc / cv: [NASVC] /
+--+// [NASCV], the share of a vowel before / after a nasal consonant that is nasalized (klattsch's defaults 0.5 / 0.3
+--+// when left out); murmur: fields laid over NASAL_MURMUR per phoneme (null removes one); nasalized: the nasal
+--+// parameters of a fully nasalized vowel (klattsch's default FNP 250, BNP 100, FNZ 450, BNZ 100, AN 0).
+--+// The murmur entries go into a generated bank "<base>--nas<hash>" that extends the spec's bank (before bankPatch,
+--+// so a bankPatch can still change them).
+--+//
+--+// Engine parameters (Klatt 1980, "Software for a cascade/parallel formant synthesizer", JASA 67: FNP/BNP, FNZ/BNZ,
+--+// AN): FNP/FNZ, a pole-zero pair in cascade with the excitation, both unity gain at 0 Hz: with the zero above the
+--+// pole it lifts the lowest harmonics and takes 20 log((FNP / FNZ)^2) dB off everything above the zero, the murmur's
+--+// low, heavily damped spectrum. FNP2/FNZ2: a second pair, here a notch (pole and zero at one frequency, the pole
+--+// broader), the antiresonance of the closed oral cavity, whose frequency marks the place of articulation: about
+--+// 750-1250 Hz for /m/, 1450-2200 Hz for /n/, above 3000 Hz for /ng/ (Fujimura 1962, JASA 34; Stevens 1998,
+--+// Acoustic Phonetics, ch. 9). AN: a parallel nasal formant at FNP.
+--+export const NASAL_MURMUR = {
+--+  M: { FNP: 270, BNP: 100, FNZ: 450, BNZ: 100, AN: 0, FNP2: 1000, BNP2: 600, FNZ2: 1000, BNZ2: 150 },
+--+  N: { FNP: 270, BNP: 100, FNZ: 450, BNZ: 100, AN: 0, FNP2: 1800, BNP2: 800, FNZ2: 1800, BNZ2: 200 },
+--+  NG: { FNP: 270, BNP: 100, FNZ: 450, BNZ: 100, AN: 0, FNP2: 3000, BNP2: 1000, FNZ2: 3000, BNZ2: 300 },
+--+};
+--+
+--+export function nasalOptions(o) {
+--+  if (!o.nasals) return null;
+--+  const x = o.nasals === true ? {} : o.nasals;
+--+  if (typeof x !== 'object' || Array.isArray(x)) throw new Error(`nasals: true or an object, got ${JSON.stringify(o.nasals)}`);
+--+  for (const k of Object.keys(x)) {
+--+    if (!['strength', 'vc', 'cv', 'murmur', 'nasalized'].includes(k)) throw new Error(`nasals.${k}: unknown (strength, vc, cv, murmur, nasalized)`);
+--+  }
+--+  for (const k of ['strength', 'vc', 'cv']) {
+--+    if (x[k] != null && !(typeof x[k] === 'number' && Number.isFinite(x[k]) && x[k] >= 0)) throw new Error(`nasals.${k}: a number >= 0`);
+--+  }
+--+  return { strength: x.strength ?? 1, vc: x.vc ?? null, cv: x.cv ?? null, murmur: x.murmur ?? {}, nasalized: x.nasalized ?? null };
+--+}
+--+
+--+// the klattsch directives that switch the nasal rendering on
+--+export function nasalDirectives(n) {
+--+  if (!n) return '';
+--+  return [`[NAS=${n.strength}]`, n.vc != null ? `[NASVC=${n.vc}]` : '', n.cv != null ? `[NASCV=${n.cv}]` : ''].filter(Boolean).join(' ');
+--+}
+--+
+--+// the bank entries: each nasal's resolved base entry with the murmur fields (and nasal: true, nasalizes) laid over it
+--+export function nasalEntries(resolved, n) {
+--+  const phonemes = {};
+--+  for (const code of new Set([...Object.keys(NASAL_MURMUR), ...Object.keys(n.murmur)])) {
+--+    const base = resolved.phonemes[code];
+--+    if (!base) continue;
+--+    const e = { ...base, ...NASAL_MURMUR[code], nasal: true };
+--+    for (const [k, v] of Object.entries(n.murmur[code] ?? {})) { if (v === null) delete e[k]; else e[k] = v; }
+--+    if (n.nasalized) e.nasalizes = { ...n.nasalized };
+--+    phonemes[code] = e;
+--+  }
+--+  return phonemes;
+--+}
+--diff --git a/klattsing/test/audio-hash.mjs b/klattsing/test/audio-hash.mjs
+--new file mode 100644
+--index 0000000..e984ab7
+----- /dev/null
+--+++ b/klattsing/test/audio-hash.mjs
+--@@ -0,0 +1,28 @@
+--+// Golden audio: sha1 of klattsch's rendered samples for the reference specs (and the voicelab BASE config),
+--+// so engine patches can be checked to leave every default render bit-identical.
+--+//   node klattsing/test/audio-hash.mjs > klattsing/test/audio.fixture.json   (only with an unpatched engine)
+--+import { createHash } from 'node:crypto';
+--+import { readFileSync } from 'node:fs';
+--+import { toKlattsch } from '../src/compile.js';
+--+import { compileString, renderToBuffer } from '../../vendor/klattsch/src/engine/index.js';
+--+import '../../bin/klatt-render.mjs';
+--+
+--+const REF = JSON.parse(readFileSync(new URL('./reference.fixture.json', import.meta.url), 'utf8'));
+--+const PRESET = JSON.parse(readFileSync(new URL('../presets/kokoro-durations.json', import.meta.url), 'utf8'));
+--+export const SPECS = [
+--+  ...REF.map((r) => r.spec),
+--+  ...['The birch canoe slid on the smooth planks.', 'Nine men ran home in the morning, singing a song.', 'mine nine ram ran rang sum sun sung']
+--+    .map((text) => ({ mode: 'speak', ...PRESET, bank: 'mitalk-bursts', text })),
+--+];
+--+export function audioHash(spec, sampleRate = 16000) {
+--+  const c = compileString(toKlattsch(spec));
+--+  const h = createHash('sha1');
+--+  for (const v of c.voices) {
+--+    if (!v.schedule.length) continue;
+--+    h.update(Buffer.from(renderToBuffer({ sampleRate, schedule: v.schedule, totalMs: v.totalMs }).buffer));
+--+  }
+--+  return h.digest('hex').slice(0, 16);
+--+}
+--+if (process.argv[1] && process.argv[1].endsWith('audio-hash.mjs')) {
+--+  console.log(JSON.stringify(SPECS.map((s) => audioHash(s))));
+--+}
+--diff --git a/klattsing/test/audio.fixture.json b/klattsing/test/audio.fixture.json
+--new file mode 100644
+--index 0000000..7ee37b1
+----- /dev/null
+--+++ b/klattsing/test/audio.fixture.json
+--@@ -0,0 +1 @@
+--+["61434142ea0ce4fa","241287dada1863e9","8081e3c1b6e20b8d","f6f5894b2ed5fa7d","dfb1b5247e3cfd20","7ea05fe79d684b0f","d917c5aa63470f57","094af513032f2d99","963ffc2aea4ff7e3","f1437a19c493b9a1","e9a070424e4a6d5c","dd9d9ccc9d5c8001","4ea20e6ce87996df","3cb0cb6ab2a12a12","3493df8fd8efdade","3b2196d0ac54373a","14f1e13aaf9307e1","bd72520b87c56326","5691703d50c3759e","3b8f0402ba2fb7fe","746d44c32f99a473","b82529dffc86d9cd","18881b916acf329d","332dc1c2d2f1d631","57455b3850367537","261ba9880dce9685","3c1c8580273e8051","d1c5fa73e4e29bfa","646c8c94c46e1872","7dd9b5ffe135fa6f","d85067cd6f1e4516","5255b868233461c4","aa8da8be2abcf0d0","aefe7b2b83e80508","300018b2d64860e1","b6821d60f951e0de","f877ee0a1756ac0d","b775a1421fef79f5","3a5ad5807ffcec0b","3bf1101f6bdb3917","10d07729b53518f0","f5025f2cd0910d61","e2d2e5cf90acffbe","6b71688df5c98d14","57ead182e08777a5","234a6afd237b4d38","150edb9914d43e5b","70efcfb5215eb63b","a3e6aa311a605c32","bd78a7c80035e110","627e5414fe5a223f","6751544d719d63af","1ce212cac81faefd","4a3f41319c42baee","147c40f0cbb38791","9f53f41e110b8757","2fcdc99259b6843e","8b1741e5db399a7f","2dae3006ae71b956","ae0f3d60ac2774fb","9329c4cb46428dc3","9d53d80e77c5632b","c5599d93cf8ac885","8b4953e7401f3365","ca8e881161f20745","38bba61ae5959794","496ed5277126e899","0ea3b8f2a18f51fe","861c4e7685109e8e","e745eea4d6e3538c","e0c80f7931250fc6","9b8f09d10f03ff36","69ae30b86aee0fd8","37ffceae40b05eb8","3d3d5de6651cb6ac","4e00e9585a461fb9","053862d5399f146f","bdb68b9983b4230d","756dafbcb828426c","0d7baaabebb5e2bb","1e1337e66786587f","b9684d850abc9aa7","cb11eada69d1c6c9","ea9be2d00ba65462","6bf5fe40e5db1549","a0fb1cae6299e7b2","ea471f16576c3121","2fc30771e6239707","4e531b4b9566da55"]
+--diff --git a/tools/voicelab/pairs.py b/tools/voicelab/pairs.py
+--index d47ac62..69bb35e 100644
+----- a/tools/voicelab/pairs.py
+--+++ b/tools/voicelab/pairs.py
+--@@ -71,7 +71,8 @@ def render(cfg, words, path):
+--         sf.write(path, np.concatenate(parts), sr); return
+--     specs = []
+--     for i, w in enumerate(words):
+---        base = {k: v for k, v in cfg.items() if k in ("bank", "transition", "aspiration", "voice", "rules", "accent", "gate", "hold", "durations", "dynamics")}
+--+        base = {k: v for k, v in cfg.items() if k in ("bank", "transition", "aspiration", "voice", "rules", "accent", "gate", "hold", "durations", "dynamics",
+--+                                                      "nasals")}
+--         if cfg.get("mode", "speak") == "sing":
+--             nsyl = 2 if NUM[i] == "seven" else 1
+--             notes = [["E2", 4 // nsyl]] * nsyl + [["r", 2], ["G2", 8]]
+--diff --git a/vendor/klattsch/src/engine/dsp.js b/vendor/klattsch/src/engine/dsp.js
+--index 9631806..d97fcb6 100644
+----- a/vendor/klattsch/src/engine/dsp.js
+--+++ b/vendor/klattsch/src/engine/dsp.js
+--@@ -40,6 +40,49 @@ export class BandpassBiquad {
+--   }
+-- }
+-- 
+--+// (sonicpi-toolchain patch) Klatt (1980) digital resonator and antiresonator, both with unity gain at 0 Hz:
+--+//   resonator      y[n] = A x[n] + B y[n-1] + C y[n-2]   C = -exp(-2 pi BW T), B = 2 exp(-pi BW T) cos(2 pi F T), A = 1 - B - C
+--+//   antiresonator  y[n] = A' x[n] + B' x[n-1] + C' x[n-2]   A' = 1/A, B' = -B/A, C' = -C/A (A, B, C of a resonator at F, BW)
+--+// A resonator and an antiresonator at the same F and BW cancel exactly (Klatt's FNP = FNZ for non-nasal sounds).
+--+// Coefficients are recomputed only when frequency or bandwidth changes. Used only by the nasal path (synth-core).
+--+function klattCoefs(f, bw, sr) {
+--+  f = Math.max(0, Math.min(sr * 0.45, f));
+--+  bw = Math.max(1, bw);
+--+  const T = 1 / sr;
+--+  const C = -Math.exp(-2 * Math.PI * bw * T);
+--+  const B = 2 * Math.exp(-Math.PI * bw * T) * Math.cos(2 * Math.PI * f * T);
+--+  return [1 - B - C, B, C];
+--+}
+--+export class KlattResonator {
+--+  constructor() { this.y1 = 0; this.y2 = 0; this.a = 1; this.b = 0; this.c = 0; this.lastF = -1; this.lastBW = -1; }
+--+  setFreq(f, bw, sr) {
+--+    if (f === this.lastF && bw === this.lastBW) return;
+--+    this.lastF = f; this.lastBW = bw;
+--+    [this.a, this.b, this.c] = klattCoefs(f, bw, sr);
+--+  }
+--+  process(x) {
+--+    const y = this.a * x + this.b * this.y1 + this.c * this.y2;
+--+    this.y2 = this.y1; this.y1 = y;
+--+    return y;
+--+  }
+--+  reset() { this.y1 = 0; this.y2 = 0; }
+--+}
+--+export class KlattAntiresonator {
+--+  constructor() { this.x1 = 0; this.x2 = 0; this.a = 1; this.b = 0; this.c = 0; this.lastF = -1; this.lastBW = -1; }
+--+  setFreq(f, bw, sr) {
+--+    if (f === this.lastF && bw === this.lastBW) return;
+--+    this.lastF = f; this.lastBW = bw;
+--+    const [A, B, C] = klattCoefs(f, bw, sr);
+--+    this.a = 1 / A; this.b = -B / A; this.c = -C / A;
+--+  }
+--+  process(x) {
+--+    const y = this.a * x + this.b * this.x1 + this.c * this.x2;
+--+    this.x2 = this.x1; this.x1 = x;
+--+    return y;
+--+  }
+--+  reset() { this.x1 = 0; this.x2 = 0; }
+--+}
+--+
+-- // Derivative of the Rosenberg glottal pulse. Phase normalized to [0, 1).
+-- // Peak |value| is pi / (2·Tn) ~= 9.82, so we divide by 10 to keep amplitude
+-- // near unity.
+--diff --git a/vendor/klattsch/src/engine/sequencer.js b/vendor/klattsch/src/engine/sequencer.js
+--index 5500fdb..f1c30ec 100644
+----- a/vendor/klattsch/src/engine/sequencer.js
+--+++ b/vendor/klattsch/src/engine/sequencer.js
+--@@ -1,6 +1,7 @@
+-- // Phoneme-string parser and schedule compiler
+-- 
+-- import { banks, resolveBank } from './banks/index.js';
+--+import { NASAL_PARAMS, NASAL_DEFAULT } from './synth-core.js';
+-- 
+-- const PAUSE_MS = { ',': 100, ';': 200, '.': 300 };
+-- 
+--@@ -28,7 +29,13 @@ const DEFAULTS = Object.freeze({
+--   sentenceFinalHoldMs: 0,
+--   fadeOutMs: 100,
+--   trailOffMs: 150,
+--+  // (sonicpi-toolchain patch) [NAS=x]: share of a vowel nasalized before a nasal consonant ([NASVC]) and after
+--+  // one ([NASCV]), and the nasal parameters of a fully nasalized vowel (a nasal pole-zero pair, Klatt 1980)
+--+  nasalVC: 0.5,
+--+  nasalCV: 0.3,
+--+  nasalized: Object.freeze({ FNP: 250, BNP: 100, FNZ: 450, BNZ: 100, AN: 0 }),
+-- });
+--+const NASAL_FREQ = /^(F|B)N[PZ]2?$/;   // nasal pole/zero frequencies and bandwidths: they follow the formant scale
+-- 
+-- const HOMOGLYPH_MAP = {
+--   // Greek uppercase that look like Latin uppercase
+--@@ -246,16 +253,91 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+--     // engine reading them tracks the running formant scale like F1-3 do.
+--     for (const k of Object.keys(src)) {
+--       if (/^(F|BW)[4-9]$/.test(k)) out[k] = src[k] * scale;
+--+      else if (NASAL_FREQ.test(k)) out[k] = src[k] * scale;    // (sonicpi-toolchain patch) a bank's nasal pole/zero
+--     }
+--+    // (sonicpi-toolchain patch) a bank's nasal fields act only with [NAS] (which also resets them after a nasal)
+--+    if (!nasalMode()) for (const k of NASAL_PARAMS) delete out[k];
+--     return out;
+--   };
+-- 
+--+  // (sonicpi-toolchain patch) nasals. Once [NAS=x] is set, every phoneme's first event (and every silence) carries
+--+  // all nasal parameters: a nasal consonant's own (bank fields FNP, BNP, FNZ, BNZ, AN, FNP2 ..., and nasal: true),
+--+  // neutral ones (the pairs cancel, AN 0) for everything else, so a murmur never leaks into what follows. A vowel-
+--+  // like neighbour of a nasal consonant (voicing >= 1, not a stop, not nasal; no pause between) is nasalized: from
+--+  // the first [NASVC] of it before a nasal consonant it glides to the nasalized values (DEFAULTS.nasalized, over
+--+  // which the consonant's bank field nasalizes {...} is laid), and after one it starts nasalized and is back to
+--+  // neutral after [NASCV] of it; x scales the nasalization (0: murmurs only). The vowel's nasal glides are
+--+  // nasalOnly events, which move only the nasal parameters. Without [NAS] nothing here runs.
+--+  let nasalNeighbours = null;
+--+  const nasalMode = () => nasalNeighbours !== null && extras.NAS !== undefined;
+--+  if (opts.extras?.NAS !== undefined || tokens.some((t) => t.type === 'directive' && t.key === 'NAS')) {
+--+    nasalNeighbours = new Map();
+--+    let prev = null;
+--+    for (const t of tokens) {
+--+      if (t.type === 'pause' || (t.type === 'directive' && t.key === 'pause')) { prev = null; continue; }
+--+      if (t.type !== 'phoneme') continue;
+--+      nasalNeighbours.set(t, { prev, next: null });
+--+      if (prev) nasalNeighbours.get(prev).next = t;
+--+      prev = t;
+--+    }
+--+  }
+--+  let pendingNasal = null;     // nasal parameters for the next emit (the first event of a phoneme)
+--+  let nasalOnlyEvents = 0;
+--+  const nasalScaled = (x) => {
+--+    const out = {};
+--+    for (const k of NASAL_PARAMS) if (k in x) out[k] = NASAL_FREQ.test(k) ? x[k] * scale : x[k];
+--+    return out;
+--+  };
+--+  const nasalOf = (code) => { const e = code ? phonemes[code] : null; return e && e.nasal ? e : null; };
+--+  // the nasal parameters of a vowel next to nasal consonant entry n, at strength x
+--+  const nasalizedBy = (n) => {
+--+    const x = extras.NAS, full = { ...NASAL_DEFAULT, ...DEFAULTS.nasalized, ...(n.nasalizes ?? {}) }, out = {};
+--+    for (const k of NASAL_PARAMS) out[k] = NASAL_DEFAULT[k] + x * (full[k] - NASAL_DEFAULT[k]);
+--+    return nasalScaled(out);
+--+  };
+--+  const nasalOnly = (atMs, target, transitionMs) => {
+--+    const ex = {};
+--+    for (const k of NASAL_PARAMS) if (k in extras) ex[k] = extras[k];
+--+    schedule.push({ atMs, target: { ...target, ...ex }, transitionMs, nasalOnly: true });
+--+    nasalOnlyEvents++;
+--+  };
+--+  // before a phoneme renders: its first event's nasal parameters; after: the vowel's nasal glides
+--+  const nasalBefore = (t, p) => {
+--+    if (!nasalMode()) return null;
+--+    pendingNasal = nasalScaled(NASAL_DEFAULT);
+--+    if (p.nasal || p.isStop || !((p.voicing ?? 0) >= 1)) return null;
+--+    const nb = nasalNeighbours.get(t) ?? {};
+--+    const prevN = nasalOf(nb.prev?.code), nextN = nasalOf(nb.next?.code);
+--+    if (!prevN && !nextN) return null;
+--+    const cv = extras.NASCV ?? DEFAULTS.nasalCV, vc = extras.NASVC ?? DEFAULTS.nasalVC;
+--+    if (prevN) pendingNasal = nasalizedBy(prevN);
+--+    else if (vc >= 1) pendingNasal = nasalizedBy(nextN);
+--+    return { start: timeMs, prevN, nextN, cv, vc };
+--+  };
+--+  const nasalAfter = (plan, slotMs) => {
+--+    if (!plan) return;
+--+    const { start, prevN, nextN, cv, vc } = plan;
+--+    if (prevN && nextN && cv + vc >= 1) {
+--+      nasalOnly(start + slotMs * Math.min(cv, 1 - vc / 2), nasalizedBy(nextN), Math.max(1, slotMs * 0.25));
+--+      return;
+--+    }
+--+    if (prevN && cv < 1) nasalOnly(start + slotMs * Math.min(cv * 0.5, 0.1), nasalScaled(NASAL_DEFAULT), Math.max(1, slotMs * Math.max(cv - Math.min(cv * 0.5, 0.1), 0.01)));
+--+    if (nextN && vc < 1 && vc > 0) nasalOnly(start + slotMs * (1 - vc), nasalizedBy(nextN), slotMs * vc);
+--+  };
+--+
+--   const renderPhoneme = (t, slotMs) => {
+--     const p = phonemes[t.code];
+--     if (!p) {
+--       warnings.push(`unknown phoneme: ${t.code}`);
+--       return 0;
+--     }
+--+    const nasalPlan = nasalBefore(t, p);
+--+    const r = renderPhonemeEvents(t, p, slotMs);
+--+    pendingNasal = null;
+--+    nasalAfter(nasalPlan, slotMs);
+--+    return r;
+--+  };
+--+  const renderPhonemeEvents = (t, p, slotMs) => {
+--     const startF0 = t.stressed ? f0 + DEFAULTS.stressF0Lift : f0;
+--     const endF0 = startF0 + t.pitchDelta;
+--     if (p.isStop) {
+--@@ -314,6 +396,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+--   });
+-- 
+--   const emit = (target, transitionMs) => {
+--+    if (pendingNasal) { target = { ...pendingNasal, ...target }; pendingNasal = null; }
+--     schedule.push({
+--       atMs: timeMs,
+--       // [AV=x] (sonicpi-toolchain patch): loudness multiplier, moved like any other parameter
+--@@ -321,7 +404,8 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+--       transitionMs,
+--     });
+--   };
+---  const silence = (transitionMs = 30) => emit({ A1: 0, A2: 0, A3: 0 }, transitionMs);
+--+  const silence = (transitionMs = 30) => emit(
+--+    nasalMode() ? { ...nasalScaled(NASAL_DEFAULT), A1: 0, A2: 0, A3: 0 } : { A1: 0, A2: 0, A3: 0 }, transitionMs);
+-- 
+--   for (const t of tokens) {
+--     if (t.type === 'unknown') {
+--@@ -475,6 +559,9 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+--   // Hold the final phrase highlighted
+--   if (phrases.length) phrases[phrases.length - 1].tEndMs = timeMs;
+-- 
+--+  // (sonicpi-toolchain patch) a vowel's nasal glides were pushed after its own events: put them in time order
+--+  if (nasalOnlyEvents) schedule.sort((a, b) => a.atMs - b.atMs);
+--+
+--   return { schedule, totalMs: timeMs, warnings, phrases, source, engine };
+-- }
+-- 
+--diff --git a/vendor/klattsch/src/engine/synth-core.js b/vendor/klattsch/src/engine/synth-core.js
+--index 6decea1..58cf070 100644
+----- a/vendor/klattsch/src/engine/synth-core.js
+--+++ b/vendor/klattsch/src/engine/synth-core.js
+--@@ -10,7 +10,7 @@
+-- // `schedule` is an array of { atMs, target, transitionMs } events; the synth
+-- // applies them in time order. Or drive it live with setTarget()
+-- 
+---import { BandpassBiquad, glottalPulse, xorshift, softClip } from './dsp.js';
+--+import { BandpassBiquad, KlattResonator, KlattAntiresonator, glottalPulse, xorshift, softClip } from './dsp.js';
+-- 
+-- export const PARAMS = [
+--   'F0', 'voicing',
+--@@ -27,6 +27,20 @@ export const PARAMS = [
+--   'effort',         // 0..1 glottal pulse shape (0=lax, 1=tense)
+-- ];
+-- 
+--+// (sonicpi-toolchain patch) Nasal parameters (Klatt 1980 names): a nasal pole-zero pair FNP/BNP, FNZ/BNZ in
+--+// cascade with the excitation (resonator then antiresonator, each unity gain at 0 Hz; they cancel when FNP = FNZ
+--+// and BNP = BNZ), a second pair FNP2/BNP2, FNZ2/BNZ2 (the murmur's place-dependent oral side-branch zero), and
+--+// AN, a parallel nasal formant at FNP (fed by the excitation, like A1-A3). The nasal path runs only once a target
+--+// (schedule event, setTarget, initialTarget) has carried one of these keys; until then every sample is computed
+--+// exactly as before. Nasal parameters glide with their own clock, so an event may move only them
+--+// ({ nasalOnly: true }) without retiming the other parameters' transitions.
+--+export const NASAL_PARAMS = ['FNP', 'BNP', 'FNZ', 'BNZ', 'AN', 'FNP2', 'BNP2', 'FNZ2', 'BNZ2'];
+--+export const NASAL_DEFAULT = Object.freeze({
+--+  FNP: 250, BNP: 100, FNZ: 250, BNZ: 100, AN: 0,
+--+  FNP2: 1500, BNP2: 100, FNZ2: 1500, BNZ2: 100,
+--+});
+--+const hasNasal = (t) => { for (const k of NASAL_PARAMS) if (k in t) return true; return false; };
+--+
+-- export const DEFAULT = {
+--   F0: 120, voicing: 0,
+--   F1: 500, BW1: 80,  A1: 0,
+--@@ -40,6 +54,7 @@ export const DEFAULT = {
+--   aspiration: 0,
+--   tilt: 0,
+--   effort: 0.5,
+--+  ...NASAL_DEFAULT,
+-- };
+-- 
+-- export class FormantSynth {
+--@@ -62,20 +77,47 @@ export class FormantSynth {
+--     this.bp1 = new BandpassBiquad();
+--     this.bp2 = new BandpassBiquad();
+--     this.bp3 = new BandpassBiquad();
+--+    this.initNasal(init);
+-- 
+--     this.schedule = (schedule ?? []).map(e => ({
+--       atSample: Math.floor((e.atMs ?? 0) * this.sr / 1000),
+--       target: e.target,
+--       transitionSamples: Math.max(1, Math.floor((e.transitionMs ?? 30) * this.sr / 1000)),
+--+      ...(e.nasalOnly ? { nasalOnly: true } : {}),
+--     }));
+--     this.scheduleIdx = 0;
+--     this.sampleCounter = 0;
+--   }
+-- 
+--+  // (sonicpi-toolchain patch) nasal path state; this.nasal turns on with the first target that has a nasal key
+--+  initNasal(init) {
+--+    this.nasal = hasNasal(init);
+--+    this.nasalSamples = 0;
+--+    this.nasalIncrement = {};
+--+    for (const k of NASAL_PARAMS) this.nasalIncrement[k] = 0;
+--+    this.rnp = new KlattResonator();
+--+    this.rnz = new KlattAntiresonator();
+--+    this.rnp2 = new KlattResonator();
+--+    this.rnz2 = new KlattAntiresonator();
+--+    this.bpn = new BandpassBiquad();
+--+  }
+--+
+--+  // move the nasal parameters a target names to it over N samples (their own clock)
+--+  retargetNasal(target, N) {
+--+    if (!hasNasal(target)) return;
+--+    this.nasal = true;
+--+    this.nasalSamples = N;
+--+    for (const k of NASAL_PARAMS) {
+--+      if (k in target) this.target[k] = target[k];
+--+      this.nasalIncrement[k] = (this.target[k] - this.current[k]) / N;
+--+    }
+--+  }
+--+
+--   // Schedule a new target. transitionMs samples are linearly interpolated
+--   // from current state to the new target
+--   setTarget(target, transitionMs = 30) {
+--     const N = Math.max(1, Math.floor(transitionMs * this.sr / 1000));
+--+    this.retargetNasal(target, N);
+--     this.transitionSamples = N;
+--     for (const k of PARAMS) {
+--       if (k in target) this.target[k] = target[k];
+--@@ -90,6 +132,7 @@ export class FormantSynth {
+--       atSample: Math.floor((e.atMs ?? 0) * this.sr / 1000),
+--       target: e.target,
+--       transitionSamples: Math.max(1, Math.floor((e.transitionMs ?? 30) * this.sr / 1000)),
+--+      ...(e.nasalOnly ? { nasalOnly: true } : {}),
+--     }));
+--     this.scheduleIdx = 0;
+--     this.sampleCounter = startCounter;
+--@@ -109,6 +152,7 @@ export class FormantSynth {
+--     this.target = { ...this.current };
+--     for (const k of PARAMS) this.increment[k] = 0;
+--     this.transitionSamples = 0;
+--+    this.initNasal(init);
+--     this.schedule = [];
+--     this.scheduleIdx = 0;
+--     this.sampleCounter = 0;
+--@@ -123,6 +167,8 @@ export class FormantSynth {
+--           && this.schedule[this.scheduleIdx].atSample <= this.sampleCounter) {
+--         const evt = this.schedule[this.scheduleIdx++];
+--         const N = evt.transitionSamples;
+--+        this.retargetNasal(evt.target, N);
+--+        if (evt.nasalOnly) continue;
+--         this.transitionSamples = N;
+--         for (const k of PARAMS) {
+--           if (k in evt.target) this.target[k] = evt.target[k];
+--@@ -138,6 +184,13 @@ export class FormantSynth {
+--           for (const k of PARAMS) cur[k] = this.target[k];
+--         }
+--       }
+--+      if (this.nasalSamples > 0) {
+--+        for (const k of NASAL_PARAMS) cur[k] += this.nasalIncrement[k];
+--+        this.nasalSamples--;
+--+        if (this.nasalSamples === 0) {
+--+          for (const k of NASAL_PARAMS) cur[k] = this.target[k];
+--+        }
+--+      }
+-- 
+--       // Vibrato LFO modulates F0 around its target value
+--       this.vibratoPhase += 2 * Math.PI * cur.vibratoRate / this.sr;
+--@@ -164,9 +217,24 @@ export class FormantSynth {
+--       this.bp2.setFreq(cur.F2, cur.BW2, this.sr);
+--       this.bp3.setFreq(cur.F3, cur.BW3, this.sr);
+-- 
+---      const y = (this.bp1.process(exc) * cur.A1
+---              +  this.bp2.process(exc) * cur.A2
+---              +  this.bp3.process(exc) * cur.A3) * cur.gain * tremoloMod;
+--+      let y;
+--+      if (!this.nasal) {
+--+        y = (this.bp1.process(exc) * cur.A1
+--+          +  this.bp2.process(exc) * cur.A2
+--+          +  this.bp3.process(exc) * cur.A3) * cur.gain * tremoloMod;
+--+      } else {
+--+        // (sonicpi-toolchain patch) nasal pole-zero pairs in cascade before the parallel formants, AN in parallel
+--+        this.rnp.setFreq(cur.FNP, cur.BNP, this.sr);
+--+        this.rnz.setFreq(cur.FNZ, cur.BNZ, this.sr);
+--+        this.rnp2.setFreq(cur.FNP2, cur.BNP2, this.sr);
+--+        this.rnz2.setFreq(cur.FNZ2, cur.BNZ2, this.sr);
+--+        this.bpn.setFreq(cur.FNP, cur.BNP, this.sr);
+--+        const en = this.rnz2.process(this.rnp2.process(this.rnz.process(this.rnp.process(exc))));
+--+        y = (this.bp1.process(en) * cur.A1
+--+          +  this.bp2.process(en) * cur.A2
+--+          +  this.bp3.process(en) * cur.A3
+--+          +  this.bpn.process(exc) * cur.AN) * cur.gain * tremoloMod;
+--+      }
+-- 
+--       const tilted = y - cur.tilt * this.tiltPrev;
+--       this.tiltPrev = y;
+---- 
+--2.43.0
+--
+--- 
+-2.43.0
+-
+-
+-From 3f574d8eb8132f9486f2658949ff009f5a902d17 Mon Sep 17 00:00:00 2001
+-From: Claude <noreply@anthropic.com>
+-Date: Wed, 21 Oct 2026 12:18:35 +0000
+-Subject: [PATCH 3/6] wip nasals: audio golden test (incl. BASE), no nasal leak
+- after a bare [NAS]
+-
+----
+- klattsing/test/audio-hash.mjs           | 14 +++++++++-----
+- klattsing/test/audio.fixture.json       |  2 +-
+- klattsing/test/audio.test.js            | 14 ++++++++++++++
+- vendor/klattsch/src/engine/sequencer.js |  7 ++++++-
+- 4 files changed, 30 insertions(+), 7 deletions(-)
+- create mode 100644 klattsing/test/audio.test.js
+-
+-diff --git a/klattsing/test/audio-hash.mjs b/klattsing/test/audio-hash.mjs
+-index e984ab7..01b625a 100644
+---- a/klattsing/test/audio-hash.mjs
+-+++ b/klattsing/test/audio-hash.mjs
+-@@ -1,6 +1,8 @@
+--// Golden audio: sha1 of klattsch's rendered samples for the reference specs (and the voicelab BASE config),
+--// so engine patches can be checked to leave every default render bit-identical.
+--//   node klattsing/test/audio-hash.mjs > klattsing/test/audio.fixture.json   (only with an unpatched engine)
+-+// Golden audio: sha1 of klattsch's rendered samples for the reference specs and the voicelab configs (durations
+-+// preset + mitalk-bursts, alone and with coarticulation + glottal), so engine patches can be checked to leave every
+-+// render without them bit-identical (test/audio.test.js).
+-+//   node klattsing/test/audio-hash.mjs > klattsing/test/audio.fixture.json   (only with an engine without the patch
+-+//   under test: the fixture holds the audio from before it)
+- import { createHash } from 'node:crypto';
+- import { readFileSync } from 'node:fs';
+- import { toKlattsch } from '../src/compile.js';
+-@@ -9,10 +11,12 @@ import '../../bin/klatt-render.mjs';
+- 
+- const REF = JSON.parse(readFileSync(new URL('./reference.fixture.json', import.meta.url), 'utf8'));
+- const PRESET = JSON.parse(readFileSync(new URL('../presets/kokoro-durations.json', import.meta.url), 'utf8'));
+-+const TEXTS = ['The birch canoe slid on the smooth planks.', 'Nine men ran home in the morning, singing a song.', 'mine nine ram ran rang sum sun sung'];
+- export const SPECS = [
+-   ...REF.map((r) => r.spec),
+--  ...['The birch canoe slid on the smooth planks.', 'Nine men ran home in the morning, singing a song.', 'mine nine ram ran rang sum sun sung']
+--    .map((text) => ({ mode: 'speak', ...PRESET, bank: 'mitalk-bursts', text })),
+-+  ...TEXTS.map((text) => ({ mode: 'speak', ...PRESET, bank: 'mitalk-bursts', text })),
+-+  // the voicelab BASE of the feature tournament's round 2 (coarticulation + glottal)
+-+  ...TEXTS.map((text) => ({ mode: 'speak', ...PRESET, bank: 'mitalk-bursts', coarticulation: true, glottal: true, text })),
+- ];
+- export function audioHash(spec, sampleRate = 16000) {
+-   const c = compileString(toKlattsch(spec));
+-diff --git a/klattsing/test/audio.fixture.json b/klattsing/test/audio.fixture.json
+-index 7ee37b1..fade10e 100644
+---- a/klattsing/test/audio.fixture.json
+-+++ b/klattsing/test/audio.fixture.json
+-@@ -1 +1 @@
+--["61434142ea0ce4fa","241287dada1863e9","8081e3c1b6e20b8d","f6f5894b2ed5fa7d","dfb1b5247e3cfd20","7ea05fe79d684b0f","d917c5aa63470f57","094af513032f2d99","963ffc2aea4ff7e3","f1437a19c493b9a1","e9a070424e4a6d5c","dd9d9ccc9d5c8001","4ea20e6ce87996df","3cb0cb6ab2a12a12","3493df8fd8efdade","3b2196d0ac54373a","14f1e13aaf9307e1","bd72520b87c56326","5691703d50c3759e","3b8f0402ba2fb7fe","746d44c32f99a473","b82529dffc86d9cd","18881b916acf329d","332dc1c2d2f1d631","57455b3850367537","261ba9880dce9685","3c1c8580273e8051","d1c5fa73e4e29bfa","646c8c94c46e1872","7dd9b5ffe135fa6f","d85067cd6f1e4516","5255b868233461c4","aa8da8be2abcf0d0","aefe7b2b83e80508","300018b2d64860e1","b6821d60f951e0de","f877ee0a1756ac0d","b775a1421fef79f5","3a5ad5807ffcec0b","3bf1101f6bdb3917","10d07729b53518f0","f5025f2cd0910d61","e2d2e5cf90acffbe","6b71688df5c98d14","57ead182e08777a5","234a6afd237b4d38","150edb9914d43e5b","70efcfb5215eb63b","a3e6aa311a605c32","bd78a7c80035e110","627e5414fe5a223f","6751544d719d63af","1ce212cac81faefd","4a3f41319c42baee","147c40f0cbb38791","9f53f41e110b8757","2fcdc99259b6843e","8b1741e5db399a7f","2dae3006ae71b956","ae0f3d60ac2774fb","9329c4cb46428dc3","9d53d80e77c5632b","c5599d93cf8ac885","8b4953e7401f3365","ca8e881161f20745","38bba61ae5959794","496ed5277126e899","0ea3b8f2a18f51fe","861c4e7685109e8e","e745eea4d6e3538c","e0c80f7931250fc6","9b8f09d10f03ff36","69ae30b86aee0fd8","37ffceae40b05eb8","3d3d5de6651cb6ac","4e00e9585a461fb9","053862d5399f146f","bdb68b9983b4230d","756dafbcb828426c","0d7baaabebb5e2bb","1e1337e66786587f","b9684d850abc9aa7","cb11eada69d1c6c9","ea9be2d00ba65462","6bf5fe40e5db1549","a0fb1cae6299e7b2","ea471f16576c3121","2fc30771e6239707","4e531b4b9566da55"]
+-+["61434142ea0ce4fa","241287dada1863e9","8081e3c1b6e20b8d","f6f5894b2ed5fa7d","dfb1b5247e3cfd20","7ea05fe79d684b0f","d917c5aa63470f57","094af513032f2d99","963ffc2aea4ff7e3","f1437a19c493b9a1","e9a070424e4a6d5c","dd9d9ccc9d5c8001","4ea20e6ce87996df","3cb0cb6ab2a12a12","3493df8fd8efdade","3b2196d0ac54373a","14f1e13aaf9307e1","bd72520b87c56326","5691703d50c3759e","3b8f0402ba2fb7fe","746d44c32f99a473","b82529dffc86d9cd","18881b916acf329d","332dc1c2d2f1d631","57455b3850367537","261ba9880dce9685","3c1c8580273e8051","d1c5fa73e4e29bfa","646c8c94c46e1872","7dd9b5ffe135fa6f","d85067cd6f1e4516","5255b868233461c4","aa8da8be2abcf0d0","aefe7b2b83e80508","300018b2d64860e1","b6821d60f951e0de","f877ee0a1756ac0d","b775a1421fef79f5","3a5ad5807ffcec0b","3bf1101f6bdb3917","10d07729b53518f0","f5025f2cd0910d61","e2d2e5cf90acffbe","6b71688df5c98d14","57ead182e08777a5","234a6afd237b4d38","150edb9914d43e5b","70efcfb5215eb63b","a3e6aa311a605c32","bd78a7c80035e110","627e5414fe5a223f","6751544d719d63af","1ce212cac81faefd","4a3f41319c42baee","147c40f0cbb38791","9f53f41e110b8757","2fcdc99259b6843e","8b1741e5db399a7f","2dae3006ae71b956","ae0f3d60ac2774fb","9329c4cb46428dc3","9d53d80e77c5632b","c5599d93cf8ac885","8b4953e7401f3365","ca8e881161f20745","38bba61ae5959794","496ed5277126e899","0ea3b8f2a18f51fe","861c4e7685109e8e","e745eea4d6e3538c","e0c80f7931250fc6","9b8f09d10f03ff36","69ae30b86aee0fd8","37ffceae40b05eb8","3d3d5de6651cb6ac","4e00e9585a461fb9","053862d5399f146f","bdb68b9983b4230d","756dafbcb828426c","0d7baaabebb5e2bb","1e1337e66786587f","b9684d850abc9aa7","cb11eada69d1c6c9","ea9be2d00ba65462","6bf5fe40e5db1549","a0fb1cae6299e7b2","ea471f16576c3121","2fc30771e6239707","4e531b4b9566da55","a18304e2c0ff7001","316df53f34ba7657","7590d70333c6caf2"]
+-diff --git a/klattsing/test/audio.test.js b/klattsing/test/audio.test.js
+-new file mode 100644
+-index 0000000..0151a04
+---- /dev/null
+-+++ b/klattsing/test/audio.test.js
+-@@ -0,0 +1,14 @@
+-+// Golden audio (test/audio-hash.mjs): every reference spec and the voicelab configs (with coarticulation + glottal
+-+// too) render the same samples as with the engine from before the nasal patch ([NAS] and the nasal pole-zero path).
+-+import { test } from 'node:test';
+-+import assert from 'node:assert/strict';
+-+import { readFileSync } from 'node:fs';
+-+import { SPECS, audioHash } from './audio-hash.mjs';
+-+
+-+const FIXTURE = JSON.parse(readFileSync(new URL('./audio.fixture.json', import.meta.url), 'utf8'));
+-+
+-+test('engine: specs without "nasals" render bit-identical audio (reference specs, durations preset, BASE)', () => {
+-+  assert.equal(SPECS.length, FIXTURE.length);
+-+  const bad = SPECS.map((s, i) => [i, audioHash(s)]).filter(([i, h]) => h !== FIXTURE[i]);
+-+  assert.deepEqual(bad.map(([i]) => SPECS[i].text), []);
+-+});
+-diff --git a/vendor/klattsch/src/engine/sequencer.js b/vendor/klattsch/src/engine/sequencer.js
+-index acd8b44..2867ad2 100644
+---- a/vendor/klattsch/src/engine/sequencer.js
+-+++ b/vendor/klattsch/src/engine/sequencer.js
+-@@ -376,6 +376,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+-   // nothing here runs.
+-   const nasalMode = () => extras.NAS !== undefined;
+-   let pendingNasal = null;     // nasal parameters for the next emit (the first event of a phoneme)
+-+  let nasalUsed = false;       // [NAS] was on: after a bare [NAS] the next event puts the nasal parameters back
+-   let nasalOnlyEvents = 0;
+-   const nasalScaled = (x) => {
+-     const out = {};
+-@@ -395,7 +396,11 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+-   };
+-   // before a phoneme renders: its first event's nasal parameters; after: the vowel's nasal glides
+-   const nasalBefore = (t, p) => {
+--    if (!nasalMode()) return null;
+-+    if (!nasalMode()) {
+-+      if (nasalUsed) { pendingNasal = nasalScaled(NASAL_DEFAULT); nasalUsed = false; }
+-+      return null;
+-+    }
+-+    nasalUsed = true;
+-     pendingNasal = nasalScaled(NASAL_DEFAULT);
+-     if (p.nasal || p.isStop || !((p.voicing ?? 0) >= 1)) return null;
+-     const prevN = nasalOf(prevPh.get(t)), nextN = nasalOf(nextPh.get(t));
+--- 
+-2.43.0
+-
+-
+-From 17f70d374db7da0b4b81de5d222163350ceb8c35 Mon Sep 17 00:00:00 2001
+-From: Claude <noreply@anthropic.com>
+-Date: Wed, 21 Oct 2026 12:22:09 +0000
+-Subject: [PATCH 4/6] wip nasals: option validation, NASALS defaults, nasals +
+- compose tests, no nasalization at strength 0
+-
+----
+- klattsing/src/nasals.js                 |  58 +++++---
+- klattsing/test/compose.test.js          |  25 ++++
+- klattsing/test/nasals.test.js           | 180 ++++++++++++++++++++++++
+- vendor/klattsch/src/engine/sequencer.js |   2 +-
+- 4 files changed, 246 insertions(+), 19 deletions(-)
+- create mode 100644 klattsing/test/nasals.test.js
+-
+-diff --git a/klattsing/src/nasals.js b/klattsing/src/nasals.js
+-index bc584dc..e758da2 100644
+---- a/klattsing/src/nasals.js
+-+++ b/klattsing/src/nasals.js
+-@@ -1,38 +1,60 @@
+- // "nasals": nasal murmurs with a nasal pole-zero pair and a place-dependent zero, and nasalized vowels next to
+- // nasal consonants (klattsch [NAS=x], a patch to the vendored engine: vendor/klattsch/VENDORED).
+--//   "nasals": true                                   the defaults below
+--//   "nasals": { strength, vc, cv, murmur: { M: {field: value}, ... }, nasalized: {FNP, BNP, FNZ, BNZ, AN} }
+-+//   "nasals": true                                   the defaults below (NASALS, NASAL_MURMUR)
+-+//   "nasals": { strength, vc, cv, murmur: { M: {field: value}, ... }, nasalized: {FNP, BNP, FNZ, BNZ, AN, ...} }
+- // strength: [NAS=x], how strongly a vowel next to M/N/NG is nasalized (0: murmurs only); vc / cv: [NASVC] /
+--// [NASCV], the share of a vowel before / after a nasal consonant that is nasalized (klattsch's defaults 0.5 / 0.3
+--// when left out); murmur: fields laid over NASAL_MURMUR per phoneme (null removes one); nasalized: the nasal
+--// parameters of a fully nasalized vowel (klattsch's default FNP 250, BNP 100, FNZ 450, BNZ 100, AN 0).
+--// The murmur entries go into a generated bank "<base>--nas<hash>" that extends the spec's bank (before bankPatch,
+--// so a bankPatch can still change them).
+-+// [NASCV], the share of a vowel before / after a nasal consonant that is nasalized; murmur: fields laid over
+-+// NASAL_MURMUR per nasal (any bank field: F1, BW1, A2, ... and the nasal ones; null removes one); nasalized: the
+-+// nasal parameters of a fully nasalized vowel (bank field nasalizes on each nasal; klattsch's default FNP 250,
+-+// BNP 100, FNZ 450, BNZ 100, AN 0). The murmur entries go into a generated bank "<base>--nas<hash>" that extends
+-+// the spec's bank (before bankPatch, so a bankPatch can still change them, and before coarticulation).
+- //
+- // Engine parameters (Klatt 1980, "Software for a cascade/parallel formant synthesizer", JASA 67: FNP/BNP, FNZ/BNZ,
+- // AN): FNP/FNZ, a pole-zero pair in cascade with the excitation, both unity gain at 0 Hz: with the zero above the
+--// pole it lifts the lowest harmonics and takes 20 log((FNP / FNZ)^2) dB off everything above the zero, the murmur's
+--// low, heavily damped spectrum. FNP2/FNZ2: a second pair, here a notch (pole and zero at one frequency, the pole
+--// broader), the antiresonance of the closed oral cavity, whose frequency marks the place of articulation: about
+--// 750-1250 Hz for /m/, 1450-2200 Hz for /n/, above 3000 Hz for /ng/ (Fujimura 1962, JASA 34; Stevens 1998,
+--// Acoustic Phonetics, ch. 9). AN: a parallel nasal formant at FNP.
+-+// pole it lifts the lowest harmonics and takes 20 log((FNP / FNZ)^2) dB off everything above the zero. FNP2/FNZ2:
+-+// a second pair, here a notch (pole and zero at one frequency, the pole broader), the antiresonance of the closed
+-+// oral cavity, whose frequency marks the place of articulation (Fujimura 1962, JASA 34; Stevens 1998, Acoustic
+-+// Phonetics, ch. 9). AN: a parallel nasal formant at FNP, fed by the excitation as A1-A3 are.
+- export const NASAL_MURMUR = {
+-   M: { FNP: 270, BNP: 100, FNZ: 450, BNZ: 100, AN: 0, FNP2: 1000, BNP2: 600, FNZ2: 1000, BNZ2: 150 },
+-   N: { FNP: 270, BNP: 100, FNZ: 450, BNZ: 100, AN: 0, FNP2: 1800, BNP2: 800, FNZ2: 1800, BNZ2: 200 },
+-   NG: { FNP: 270, BNP: 100, FNZ: 450, BNZ: 100, AN: 0, FNP2: 3000, BNP2: 1000, FNZ2: 3000, BNZ2: 300 },
+- };
+-+// the option's defaults ("nasals": true); vc / cv null: klattsch's own (0.5 / 0.3)
+-+export const NASALS = { strength: 1, vc: null, cv: null, nasalized: null };
+-+const NASAL_FIELDS = ['FNP', 'BNP', 'FNZ', 'BNZ', 'AN', 'FNP2', 'BNP2', 'FNZ2', 'BNZ2'];
+-+const KEYS = ['strength', 'vc', 'cv', 'murmur', 'nasalized'];
+-+const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
+- 
+-+// "nasals": true | {...} -> the full option, or null (off)
+- export function nasalOptions(o) {
+-   if (!o.nasals) return null;
+-   const x = o.nasals === true ? {} : o.nasals;
+--  if (typeof x !== 'object' || Array.isArray(x)) throw new Error(`nasals: true or an object, got ${JSON.stringify(o.nasals)}`);
+--  for (const k of Object.keys(x)) {
+--    if (!['strength', 'vc', 'cv', 'murmur', 'nasalized'].includes(k)) throw new Error(`nasals.${k}: unknown (strength, vc, cv, murmur, nasalized)`);
+--  }
+-+  if (!isObj(x)) throw new Error(`nasals: true or an object, got ${JSON.stringify(o.nasals)}`);
+-+  for (const k of Object.keys(x)) if (!KEYS.includes(k)) throw new Error(`nasals.${k}: unknown (${KEYS.join(', ')})`);
+-   for (const k of ['strength', 'vc', 'cv']) {
+-     if (x[k] != null && !(typeof x[k] === 'number' && Number.isFinite(x[k]) && x[k] >= 0)) throw new Error(`nasals.${k}: a number >= 0`);
+-   }
+--  return { strength: x.strength ?? 1, vc: x.vc ?? null, cv: x.cv ?? null, murmur: x.murmur ?? {}, nasalized: x.nasalized ?? null };
+-+  if (x.murmur != null) {
+-+    if (!isObj(x.murmur)) throw new Error('nasals.murmur: {PHONE: {field: value}}');
+-+    for (const [p, f] of Object.entries(x.murmur)) {
+-+      if (!(p in NASAL_MURMUR)) throw new Error(`nasals.murmur.${p}: one of ${Object.keys(NASAL_MURMUR).join(', ')}`);
+-+      if (!isObj(f)) throw new Error(`nasals.murmur.${p}: {field: value}`);
+-+      for (const [k, v] of Object.entries(f)) {
+-+        if (v !== null && !(typeof v === 'number' && Number.isFinite(v))) throw new Error(`nasals.murmur.${p}.${k}: a number or null`);
+-+      }
+-+    }
+-+  }
+-+  if (x.nasalized != null) {
+-+    if (!isObj(x.nasalized)) throw new Error('nasals.nasalized: {FNP, BNP, FNZ, BNZ, AN, ...}');
+-+    for (const [k, v] of Object.entries(x.nasalized)) {
+-+      if (!NASAL_FIELDS.includes(k)) throw new Error(`nasals.nasalized.${k}: unknown (${NASAL_FIELDS.join(', ')})`);
+-+      if (!(typeof v === 'number' && Number.isFinite(v))) throw new Error(`nasals.nasalized.${k}: a number`);
+-+    }
+-+  }
+-+  const out = { ...NASALS, murmur: {} };
+-+  for (const k of KEYS) if (x[k] != null) out[k] = x[k];
+-+  return out;
+- }
+- 
+- // the klattsch directives that switch the nasal rendering on
+-@@ -44,7 +66,7 @@ export function nasalDirectives(n) {
+- // the bank entries: each nasal's resolved base entry with the murmur fields (and nasal: true, nasalizes) laid over it
+- export function nasalEntries(resolved, n) {
+-   const phonemes = {};
+--  for (const code of new Set([...Object.keys(NASAL_MURMUR), ...Object.keys(n.murmur)])) {
+-+  for (const code of Object.keys(NASAL_MURMUR)) {
+-     const base = resolved.phonemes[code];
+-     if (!base) continue;
+-     const e = { ...base, ...NASAL_MURMUR[code], nasal: true };
+-diff --git a/klattsing/test/compose.test.js b/klattsing/test/compose.test.js
+-index aa096c2..a7888e8 100644
+---- a/klattsing/test/compose.test.js
+-+++ b/klattsing/test/compose.test.js
+-@@ -37,3 +37,28 @@ test('under coarticulation the LF source stays on through formant-only events',
+-   for (let i = 0; i < buf.length; i += 160) { synth.process(buf.subarray(i, i + 160)); n++; on += synth.src.GS; }
+-   assert.ok(on / n > 0.95, `LF source on ${(100 * on / n).toFixed(0)}% of blocks`);
+- });
+-+
+-+// nasals (klattsch [NAS]) on top of both: its vowel nasalization rides in nasalOnly events (nasal parameters alone),
+-+// which must neither read as "GS absent" nor retime coarticulation's formant moves.
+-+test('nasals + coarticulation + glottal: each of the three still changes the sound', () => {
+-+  const text = 'Nine men ran home in the morning.';
+-+  const all = audio({ text, coarticulation: true, glottal: true, nasals: true });
+-+  assert.notEqual(all, audio({ text, coarticulation: true, glottal: true }), 'nasals ignored under coarticulation + glottal');
+-+  assert.notEqual(all, audio({ text, glottal: true, nasals: true }), 'coarticulation ignored under nasals');
+-+  assert.notEqual(all, audio({ text, coarticulation: true, nasals: true }), 'glottal source ignored under nasals');
+-+});
+-+
+-+test('under nasals + coarticulation the LF source stays on through nasalOnly and formant-only events', async () => {
+-+  const { FormantSynth } = await import('../../vendor/klattsch/src/engine/synth-core.js');
+-+  const spec = { text: 'Nine men ran home in the morning.', coarticulation: true, glottal: true, nasals: true };
+-+  for (const b of banksFor(spec)) registerBank(b);
+-+  const v = compileString(speak(spec)).voices[0];
+-+  assert.ok(v.schedule.some((e) => e.nasalOnly), 'expected nasalOnly events');
+-+  assert.ok(v.schedule.some((e) => e.params && e.params.join() === 'F1,F2,F3'), 'expected coarticulation formant events');
+-+  const synth = new FormantSynth({ sampleRate: 16000, schedule: v.schedule });
+-+  const buf = new Float32Array(Math.ceil(v.totalMs * 16));
+-+  let on = 0, n = 0;
+-+  for (let i = 0; i < buf.length; i += 160) { synth.process(buf.subarray(i, i + 160)); n++; on += synth.src.GS; }
+-+  assert.ok(on / n > 0.95, `LF source on ${(100 * on / n).toFixed(0)}% of blocks`);
+-+  assert.ok(synth.nasal, 'nasal path on');
+-+});
+-diff --git a/klattsing/test/nasals.test.js b/klattsing/test/nasals.test.js
+-new file mode 100644
+-index 0000000..f077749
+---- /dev/null
+-+++ b/klattsing/test/nasals.test.js
+-@@ -0,0 +1,180 @@
+-+// "nasals" (klattsing) and klattsch's [NAS=x] patch: a nasal pole-zero path in the synth (Klatt 1980 FNP/FNZ, a
+-+// second pair, AN), murmur fields per nasal consonant, nasalized vowels next to them; inert unless asked for.
+-+import { test } from 'node:test';
+-+import assert from 'node:assert/strict';
+-+import { readFileSync } from 'node:fs';
+-+import { speak, sing, toKlattsch, durationsOf } from '../src/compile.js';
+-+import { bankName, banksFor } from '../src/banks.js';
+-+import { NASAL_MURMUR, NASALS, nasalOptions, nasalDirectives } from '../src/nasals.js';
+-+import { timelineOf } from '../src/timeline.js';
+-+import { compileString, renderToBuffer, FormantSynth, banks } from '../../vendor/klattsch/src/engine/index.js';
+-+import { NASAL_PARAMS, NASAL_DEFAULT } from '../../vendor/klattsch/src/engine/synth-core.js';
+-+import { KlattResonator, KlattAntiresonator } from '../../vendor/klattsch/src/engine/dsp.js';
+-+import { registerBank } from '../../vendor/klattsch/src/engine/banks/index.js';
+-+import '../../bin/klatt-render.mjs';
+-+
+-+const REF = JSON.parse(readFileSync(new URL('./reference.fixture.json', import.meta.url), 'utf8'));
+-+const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+-+const render = (s, sr = 16000) => { const c = compileString(s); return renderToBuffer({ sampleRate: sr, schedule: c.schedule, totalMs: c.totalMs }); };
+-+const hasNasalKey = (t) => NASAL_PARAMS.some((k) => k in t);
+-+const rms = (x) => Math.sqrt(x.reduce((s, v) => s + v * v, 0) / Math.max(1, x.length));
+-+// gain in dB of a filter (x -> y per sample) at f Hz, from a steady sine
+-+function gainDb(make, f, sr = 16000) {
+-+  const flt = make(), n = sr, x = new Float64Array(n), y = new Float64Array(n);
+-+  for (let i = 0; i < n; i++) { x[i] = Math.sin(2 * Math.PI * f * i / sr); y[i] = flt(x[i]); }
+-+  return 20 * Math.log10(rms(y.subarray(n / 2)) / rms(x.subarray(n / 2)));
+-+}
+-+
+-+test('defaults: no nasals option (or false/null) gives the reference strings; no nasal keys in their schedules', () => {
+-+  for (const { spec, out } of REF) {
+-+    assert.equal(toKlattsch({ ...spec, nasals: false }), out);
+-+    assert.equal(toKlattsch({ ...spec, nasals: null }), out);
+-+  }
+-+  for (const { out } of REF.slice(0, 30)) {
+-+    for (const e of compileString(out).schedule) assert.ok(!hasNasalKey(e.target) && !e.nasalOnly, out);
+-+  }
+-+});
+-+
+-+test('dsp: Klatt resonator and antiresonator are unity at DC, cancel at equal F and BW, and give a notch', () => {
+-+  const sr = 16000;
+-+  const pair = (fp, bp, fz, bz) => () => { const r = new KlattResonator(), z = new KlattAntiresonator(); r.setFreq(fp, bp, sr); z.setFreq(fz, bz, sr); return (x) => z.process(r.process(x)); };
+-+  // equal: the identity (up to rounding)
+-+  const id = pair(300, 100, 300, 100)();
+-+  for (let i = 0; i < 200; i++) { const x = Math.sin(i * 0.37) + (i === 3 ? 1 : 0); assert.ok(Math.abs(id(x) - x) < 1e-9); }
+-+  // DC gain 1
+-+  const r = new KlattResonator(); r.setFreq(270, 100, sr); let y = 0; for (let i = 0; i < 4000; i++) y = r.process(1);
+-+  assert.ok(Math.abs(y - 1) < 1e-6, `resonator DC ${y}`);
+-+  // zero above the pole: (FNP / FNZ)^2 off the highs, a dip at FNZ
+-+  const g = (f) => gainDb(pair(270, 100, 450, 100), f, sr);
+-+  assert.ok(Math.abs(g(3000) - 40 * Math.log10(270 / 450)) < 1, `highs ${g(3000)}`);
+-+  assert.ok(g(270) > 5 && g(450) < g(270) - 10, `peak ${g(270)} dip ${g(450)}`);
+-+  // a notch: pole and zero at one frequency, the pole broader: 20 log(BNZ / BNP) at the centre, ~0 dB away from it
+-+  const n = (f) => gainDb(pair(1500, 600, 1500, 100), f, sr);
+-+  assert.ok(Math.abs(n(1500) - 20 * Math.log10(100 / 600)) < 1, `notch ${n(1500)}`);
+-+  assert.ok(Math.abs(n(300)) < 1 && Math.abs(n(5000)) < 1, `${n(300)} ${n(5000)}`);
+-+});
+-+
+-+test('engine: neutral nasal parameters (the pairs cancel, AN 0) render the non-nasal sound', () => {
+-+  const s = 'b110 r120 AA M AA N IY';
+-+  const plain = render(s);
+-+  const neutral = Object.entries(NASAL_DEFAULT).map(([k, v]) => `[${k}=${v}]`).join(' ');
+-+  const n = render(`${neutral} ${s}`);
+-+  assert.equal(n.length, plain.length);
+-+  let d = 0; for (let i = 0; i < n.length; i++) d = Math.max(d, Math.abs(n[i] - plain[i]));
+-+  assert.ok(d < 1e-4, `max difference ${d}`);
+-+  assert.ok(!same(render(`[FNZ=600] ${s}`), plain), 'a nasal directive switches the path on');
+-+});
+-+
+-+test('engine: a nasalOnly event moves the nasal parameters alone, on their own clock', () => {
+-+  const sr = 16000;
+-+  const schedule = [
+-+    { atMs: 0, target: { F0: 100, voicing: 1, A1: 1, F1: 500, FNP: 250, FNZ: 250 }, transitionMs: 1 },
+-+    { atMs: 10, target: { F1: 900 }, transitionMs: 100 },
+-+    { atMs: 50, target: { FNZ: 650 }, transitionMs: 20, nasalOnly: true },
+-+  ];
+-+  const synth = new FormantSynth({ sampleRate: sr, schedule });
+-+  const buf = new Float32Array(sr * 0.08);
+-+  synth.process(buf.subarray(0, sr * 0.06));                     // 60 ms: F1 halfway through its 100 ms glide
+-+  assert.ok(Math.abs(synth.current.F1 - 700) < 2, `F1 ${synth.current.F1}`);
+-+  assert.ok(Math.abs(synth.current.FNZ - 450) < 2, `FNZ ${synth.current.FNZ}`);
+-+  synth.process(buf.subarray(sr * 0.06));                        // 80 ms
+-+  assert.ok(Math.abs(synth.current.F1 - 780) < 2, 'the F1 glide was not retimed');
+-+  assert.equal(synth.current.FNZ, 650);
+-+  // shaped mode (coarticulation's per-parameter events) too
+-+  const shaped = new FormantSynth({ sampleRate: sr, schedule: schedule.map((e, i) => (i === 1 ? { ...e, params: ['F1'], curve: 0 } : e)) });
+-+  shaped.process(new Float32Array(sr * 0.06));
+-+  assert.ok(Math.abs(shaped.current.F1 - 700) < 2 && Math.abs(shaped.current.FNZ - 450) < 2, `${shaped.current.F1} ${shaped.current.FNZ}`);
+-+});
+-+
+-+test('sequencer: [NAS] gives a nasal its murmur fields, everything else neutral ones; inert without [NAS]', () => {
+-+  const bank = { schemaVersion: 1, name: 'nastest', extends: 'klatt1980-en', phonemes: {
+-+    M: { ...banks.get('klatt1980-en').phonemes.M, nasal: true, FNP: 260, FNZ: 500, AN: 0.3, FNP2: 1100, FNZ2: 1100, BNP2: 500, BNZ2: 80 } } };
+-+  registerBank(bank);
+-+  const plain = compileString('[bank=nastest] b100 AA M AA');
+-+  assert.ok(plain.schedule.every((e) => !hasNasalKey(e.target) && !e.nasalOnly), 'bank nasal fields act only with [NAS]');
+-+  const c = compileString('[bank=nastest] [NAS=0] b100 AA M AA');
+-+  const first = (code) => c.schedule.find((e) => e.target.F1 === banks.get('nastest').phonemes[code].F1 && hasNasalKey(e.target));
+-+  const m = first('M');
+-+  assert.deepEqual([m.target.FNP, m.target.FNZ, m.target.AN, m.target.FNZ2, m.target.BNZ2], [260, 500, 0.3, 1100, 80]);
+-+  const aa = first('AA');
+-+  for (const k of NASAL_PARAMS) assert.equal(aa.target[k], NASAL_DEFAULT[k], k);
+-+  assert.ok(!c.schedule.some((e) => e.nasalOnly), 'strength 0: no vowel nasalization');
+-+  // the formant scale moves the pole/zero frequencies like F1-F3
+-+  const s = compileString('[bank=nastest] [NAS=0] s1.1 b100 M').schedule.find((e) => e.target.FNZ2);
+-+  assert.ok(Math.abs(s.target.FNZ2 - 1210) < 1e-9 && Math.abs(s.target.FNZ - 550) < 1e-9 && s.target.AN === 0.3);
+-+  // after a bare [NAS] the next phoneme puts the neutral parameters back
+-+  const r = compileString('[bank=nastest] [NAS=0] b100 AA M [NAS] AA').schedule;
+-+  const lastNasal = [...r].reverse().find((e) => hasNasalKey(e.target));
+-+  assert.equal(lastNasal.target.FNZ, NASAL_DEFAULT.FNZ);
+-+});
+-+
+-+test('sequencer: vowels next to a nasal are nasalized over [NASVC] / [NASCV] of them, scaled by [NAS]', () => {
+-+  const bank = { schemaVersion: 1, name: 'nastest2', extends: 'klatt1980-en', phonemes: {
+-+    N: { ...banks.get('klatt1980-en').phonemes.N, nasal: true, FNP: 270, FNZ: 450, nasalizes: { FNP: 250, FNZ: 400, AN: 0.2 } } } };
+-+  registerBank(bank);
+-+  const c = compileString('[bank=nastest2] [NAS=0.5] [NASVC=0.4] [NASCV=0.3] r200 b100 AA N AA , AA');
+-+  const ev = c.schedule.filter((e) => e.nasalOnly);
+-+  const half = { FNZ: 250 + 0.5 * (400 - 250), AN: 0.1 };
+-+  // vowel 1 (0-200 ms): toward the nasalized values from 60% of it; vowel 2 (400-600) starts nasalized, neutral by 30%
+-+  assert.equal(ev.length, 2);
+-+  assert.ok(Math.abs(ev[0].atMs - 120) < 1e-9 && Math.abs(ev[0].transitionMs - 80) < 1e-9 && ev[0].target.FNZ === half.FNZ && Math.abs(ev[0].target.AN - half.AN) < 1e-12);
+-+  assert.ok(ev[1].atMs > 400 && ev[1].atMs + ev[1].transitionMs <= 400 + 60 + 1e-9 && ev[1].target.FNZ === NASAL_DEFAULT.FNZ);
+-+  const v2 = c.schedule.find((e) => !e.nasalOnly && e.atMs === 400);
+-+  assert.equal(v2.target.FNZ, half.FNZ, 'the vowel after the nasal starts nasalized');
+-+  const v3 = c.schedule.find((e) => !e.nasalOnly && e.atMs > 600 && e.target.A1 > 0);
+-+  assert.equal(v3.target.FNZ, NASAL_DEFAULT.FNZ, 'a pause breaks the context');
+-+  assert.deepEqual(c.schedule.map((e) => e.atMs), [...c.schedule.map((e) => e.atMs)].sort((a, b) => a - b), 'in time order');
+-+});
+-+
+-+test('option: directives, generated bank, validation; durations and timing unchanged', () => {
+-+  const spec = { mode: 'speak', text: 'Nine men ran home.', bank: 'mitalk-bursts' };
+-+  const plain = speak(spec), s = speak({ ...spec, nasals: true });
+-+  const name = bankName({ ...spec, nasals: true });
+-+  assert.match(name, /^mitalk-bursts--nas[0-9a-f]{12}$/);
+-+  assert.equal(s, plain.replace('[bank=mitalk-bursts]', `[bank=${name}]`).replace(' g0.5', ` ${nasalDirectives(nasalOptions({ nasals: true }))} g0.5`));
+-+  assert.match(s, /\[NAS=[\d.]+\]/);
+-+  assert.deepEqual(compileString(s).warnings, []);
+-+  const b = banks.get(name).phonemes;
+-+  for (const p of ['M', 'N', 'NG']) {
+-+    assert.equal(b[p].nasal, true);
+-+    for (const [k, v] of Object.entries(NASAL_MURMUR[p])) assert.deepEqual(b[p][k], v, `${p}.${k}`);
+-+  }
+-+  assert.equal(b.AA.nasal, undefined);
+-+  assert.equal(bankName({ ...spec, nasals: {} }), name, 'true = the defaults');
+-+  const m2 = bankName({ ...spec, nasals: { murmur: { M: { FNZ2: 900 } } } });
+-+  assert.notEqual(m2, name); assert.equal(banks.get(m2).phonemes.M.FNZ2, 900);
+-+  assert.equal(banks.get(bankName({ ...spec, nasals: { murmur: { M: { AN: null } } } })).phonemes.M.AN, undefined, 'null removes a field');
+-+  // chain: nasal entries first, then bankPatch, coarticulation (which keep the nasal fields)
+-+  const chain = banksFor({ ...spec, nasals: true, bankPatch: { M: { A1: 0.5 } }, coarticulation: true });
+-+  assert.deepEqual(chain.map((x) => x.name.replace(/[0-9a-f]{12}/g, '#')), ['mitalk-bursts--nas#', 'mitalk-bursts--nas#--#', 'mitalk-bursts--nas#--#--co#']);
+-+  const top = banks.get(chain[2].name).phonemes.M;
+-+  assert.ok(top.nasal && top.A1 === 0.5 && top.locus, 'all three kept');
+-+  assert.match(speak({ ...spec, nasals: { strength: 0.5, vc: 0.4, cv: 0.2 } }), /\[NAS=0\.5\] \[NASVC=0\.4\] \[NASCV=0\.2\]/);
+-+  // validation
+-+  assert.throws(() => nasalOptions({ nasals: 1 }), /nasals: true or an object/);
+-+  assert.throws(() => nasalOptions({ nasals: { strenght: 1 } }), /nasals.strenght: unknown/);
+-+  assert.throws(() => nasalOptions({ nasals: { strength: -1 } }), /nasals.strength: a number >= 0/);
+-+  assert.throws(() => nasalOptions({ nasals: { murmur: { B: { FNZ: 1 } } } }), /nasals.murmur.B/);
+-+  assert.throws(() => nasalOptions({ nasals: { murmur: { M: { FNZ: 'x' } } } }), /nasals.murmur.M.FNZ/);
+-+  assert.throws(() => nasalOptions({ nasals: { nasalized: { F1: 300 } } }), /nasals.nasalized.F1/);
+-+  // timing untouched, sing mode too
+-+  assert.deepEqual(durationsOf({ ...spec, nasals: true }), durationsOf(spec));
+-+  assert.deepEqual(timelineOf({ ...spec, nasals: true }).phones, timelineOf(spec).phones);
+-+  const sg = { mode: 'sing', text: 'Nine men', bpm: 120, notes: 'auto' };
+-+  assert.match(sing({ ...sg, nasals: true }), /\[NAS=/);
+-+  assert.equal(NASALS.strength, nasalOptions({ nasals: true }).strength);
+-+});
+-+
+-+test('renders: nasals change the nasal consonants and their vowels, not a sentence without them', () => {
+-+  const nas = { mode: 'speak', text: 'Nine men ran home.', bank: 'mitalk-bursts' };
+-+  const audio = (spec) => { for (const b of banksFor(spec)) registerBank(b); return render(speak(spec)); };
+-+  const a = audio(nas), b = audio({ ...nas, nasals: true });
+-+  assert.equal(a.length, b.length);
+-+  assert.ok(!same(a, b));
+-+  assert.ok(b.every(Number.isFinite) && Math.abs(20 * Math.log10(rms(b) / rms(a))) < 3, `${rms(a)} ${rms(b)}`);
+-+  // no nasal consonant: the nasal path runs, but only with neutral pairs (equal up to rounding)
+-+  const oral = { mode: 'speak', text: "It's easy to tell the depth of a well.", bank: 'mitalk-bursts' };
+-+  const c = audio(oral), d = audio({ ...oral, nasals: true });
+-+  let diff = 0; for (let i = 0; i < c.length; i++) diff = Math.max(diff, Math.abs(c[i] - d[i]));
+-+  assert.ok(diff < 1e-4, `max difference ${diff}`);
+-+});
+-diff --git a/vendor/klattsch/src/engine/sequencer.js b/vendor/klattsch/src/engine/sequencer.js
+-index 2867ad2..139e121 100644
+---- a/vendor/klattsch/src/engine/sequencer.js
+-+++ b/vendor/klattsch/src/engine/sequencer.js
+-@@ -402,7 +402,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+-     }
+-     nasalUsed = true;
+-     pendingNasal = nasalScaled(NASAL_DEFAULT);
+--    if (p.nasal || p.isStop || !((p.voicing ?? 0) >= 1)) return null;
+-+    if (!(extras.NAS > 0) || p.nasal || p.isStop || !((p.voicing ?? 0) >= 1)) return null;
+-     const prevN = nasalOf(prevPh.get(t)), nextN = nasalOf(nextPh.get(t));
+-     if (!prevN && !nextN) return null;
+-     const cv = extras.NASCV ?? DEFAULTS.nasalCV, vc = extras.NASVC ?? DEFAULTS.nasalVC;
+--- 
+-2.43.0
+-
+-
+-From b967cd07d086a22da041ddc4c7747b92073409d1 Mon Sep 17 00:00:00 2001
+-From: Claude <noreply@anthropic.com>
+-Date: Wed, 21 Oct 2026 12:25:00 +0000
+-Subject: [PATCH 5/6] wip nasals: [NAST=ms] nasal boundary transitions
+- (nasals.transition), VENDORED
+-
+----
+- klattsing/src/nasals.js                 | 14 ++++++++------
+- klattsing/test/nasals.test.js           | 13 ++++++++++++-
+- vendor/klattsch/VENDORED                | 10 ++++++++++
+- vendor/klattsch/src/engine/sequencer.js | 13 +++++++++----
+- 4 files changed, 39 insertions(+), 11 deletions(-)
+-
+-diff --git a/klattsing/src/nasals.js b/klattsing/src/nasals.js
+-index e758da2..84eabf1 100644
+---- a/klattsing/src/nasals.js
+-+++ b/klattsing/src/nasals.js
+-@@ -1,9 +1,10 @@
+- // "nasals": nasal murmurs with a nasal pole-zero pair and a place-dependent zero, and nasalized vowels next to
+- // nasal consonants (klattsch [NAS=x], a patch to the vendored engine: vendor/klattsch/VENDORED).
+- //   "nasals": true                                   the defaults below (NASALS, NASAL_MURMUR)
+--//   "nasals": { strength, vc, cv, murmur: { M: {field: value}, ... }, nasalized: {FNP, BNP, FNZ, BNZ, AN, ...} }
+-+//   "nasals": { strength, vc, cv, transition, murmur: { M: {field: value}, ... }, nasalized: {FNP, BNP, FNZ, BNZ, AN, ...} }
+- // strength: [NAS=x], how strongly a vowel next to M/N/NG is nasalized (0: murmurs only); vc / cv: [NASVC] /
+--// [NASCV], the share of a vowel before / after a nasal consonant that is nasalized; murmur: fields laid over
+-+// [NASCV], the share of a vowel before / after a nasal consonant that is nasalized; transition: [NAST=ms], the
+-+// transition into a nasal consonant and into the phoneme after it (default: klattsch's usual); murmur: fields laid over
+- // NASAL_MURMUR per nasal (any bank field: F1, BW1, A2, ... and the nasal ones; null removes one); nasalized: the
+- // nasal parameters of a fully nasalized vowel (bank field nasalizes on each nasal; klattsch's default FNP 250,
+- // BNP 100, FNZ 450, BNZ 100, AN 0). The murmur entries go into a generated bank "<base>--nas<hash>" that extends
+-@@ -21,9 +22,9 @@ export const NASAL_MURMUR = {
+-   NG: { FNP: 270, BNP: 100, FNZ: 450, BNZ: 100, AN: 0, FNP2: 3000, BNP2: 1000, FNZ2: 3000, BNZ2: 300 },
+- };
+- // the option's defaults ("nasals": true); vc / cv null: klattsch's own (0.5 / 0.3)
+--export const NASALS = { strength: 1, vc: null, cv: null, nasalized: null };
+-+export const NASALS = { strength: 1, vc: null, cv: null, transition: null, nasalized: null };
+- const NASAL_FIELDS = ['FNP', 'BNP', 'FNZ', 'BNZ', 'AN', 'FNP2', 'BNP2', 'FNZ2', 'BNZ2'];
+--const KEYS = ['strength', 'vc', 'cv', 'murmur', 'nasalized'];
+-+const KEYS = ['strength', 'vc', 'cv', 'transition', 'murmur', 'nasalized'];
+- const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
+- 
+- // "nasals": true | {...} -> the full option, or null (off)
+-@@ -32,7 +33,7 @@ export function nasalOptions(o) {
+-   const x = o.nasals === true ? {} : o.nasals;
+-   if (!isObj(x)) throw new Error(`nasals: true or an object, got ${JSON.stringify(o.nasals)}`);
+-   for (const k of Object.keys(x)) if (!KEYS.includes(k)) throw new Error(`nasals.${k}: unknown (${KEYS.join(', ')})`);
+--  for (const k of ['strength', 'vc', 'cv']) {
+-+  for (const k of ['strength', 'vc', 'cv', 'transition']) {
+-     if (x[k] != null && !(typeof x[k] === 'number' && Number.isFinite(x[k]) && x[k] >= 0)) throw new Error(`nasals.${k}: a number >= 0`);
+-   }
+-   if (x.murmur != null) {
+-@@ -60,7 +61,8 @@ export function nasalOptions(o) {
+- // the klattsch directives that switch the nasal rendering on
+- export function nasalDirectives(n) {
+-   if (!n) return '';
+--  return [`[NAS=${n.strength}]`, n.vc != null ? `[NASVC=${n.vc}]` : '', n.cv != null ? `[NASCV=${n.cv}]` : ''].filter(Boolean).join(' ');
+-+  return [`[NAS=${n.strength}]`, n.vc != null ? `[NASVC=${n.vc}]` : '', n.cv != null ? `[NASCV=${n.cv}]` : '',
+-+    n.transition != null ? `[NAST=${n.transition}]` : ''].filter(Boolean).join(' ');
+- }
+- 
+- // the bank entries: each nasal's resolved base entry with the murmur fields (and nasal: true, nasalizes) laid over it
+-diff --git a/klattsing/test/nasals.test.js b/klattsing/test/nasals.test.js
+-index f077749..0328412 100644
+---- a/klattsing/test/nasals.test.js
+-+++ b/klattsing/test/nasals.test.js
+-@@ -126,6 +126,17 @@ test('sequencer: vowels next to a nasal are nasalized over [NASVC] / [NASCV] of
+-   assert.deepEqual(c.schedule.map((e) => e.atMs), [...c.schedule.map((e) => e.atMs)].sort((a, b) => a - b), 'in time order');
+- });
+- 
+-+test('sequencer: [NAST=ms] times the events into a nasal and into the phoneme after it', () => {
+-+  const ev = (s) => compileString(s).schedule.filter((e) => !e.nasalOnly && e.target.A1 > 0).map((e) => e.transitionMs);
+-+  const bank = { schemaVersion: 1, name: 'nastest3', extends: 'klatt1980-en', phonemes: { M: { ...banks.get('klatt1980-en').phonemes.M, nasal: true } } };
+-+  registerBank(bank);
+-+  assert.deepEqual(ev('[bank=nastest3] [NAS=0] r200 AA M AA AH'), [35, 35, 35, 35]);
+-+  assert.deepEqual(ev('[bank=nastest3] [NAS=0] [NAST=4] r200 AA M AA AH'), [35, 4, 4, 35]);
+-+  assert.deepEqual(ev('[bank=nastest3] [NAST=4] r200 AA M AA AH'), [35, 35, 35, 35], 'only under [NAS]');
+-+  const stop = compileString('[bank=nastest3] [NAS=0] [NAST=4] r200 AA M P AA').schedule.filter((e) => !e.nasalOnly);
+-+  assert.equal(stop.find((e) => e.atMs === 400).transitionMs, 4, 'the closure after a nasal');
+-+});
+-+
+- test('option: directives, generated bank, validation; durations and timing unchanged', () => {
+-   const spec = { mode: 'speak', text: 'Nine men ran home.', bank: 'mitalk-bursts' };
+-   const plain = speak(spec), s = speak({ ...spec, nasals: true });
+-@@ -149,7 +160,7 @@ test('option: directives, generated bank, validation; durations and timing uncha
+-   assert.deepEqual(chain.map((x) => x.name.replace(/[0-9a-f]{12}/g, '#')), ['mitalk-bursts--nas#', 'mitalk-bursts--nas#--#', 'mitalk-bursts--nas#--#--co#']);
+-   const top = banks.get(chain[2].name).phonemes.M;
+-   assert.ok(top.nasal && top.A1 === 0.5 && top.locus, 'all three kept');
+--  assert.match(speak({ ...spec, nasals: { strength: 0.5, vc: 0.4, cv: 0.2 } }), /\[NAS=0\.5\] \[NASVC=0\.4\] \[NASCV=0\.2\]/);
+-+  assert.match(speak({ ...spec, nasals: { strength: 0.5, vc: 0.4, cv: 0.2, transition: 5 } }), /\[NAS=0\.5\] \[NASVC=0\.4\] \[NASCV=0\.2\] \[NAST=5\]/);
+-   // validation
+-   assert.throws(() => nasalOptions({ nasals: 1 }), /nasals: true or an object/);
+-   assert.throws(() => nasalOptions({ nasals: { strenght: 1 } }), /nasals.strenght: unknown/);
+-diff --git a/vendor/klattsch/VENDORED b/vendor/klattsch/VENDORED
+-index 91af1ec..fed2bf7 100644
+---- a/vendor/klattsch/VENDORED
+-+++ b/vendor/klattsch/VENDORED
+-@@ -10,3 +10,13 @@ tgies/klattsch @ 63dc2c6 (MIT), vendored with patches:
+-     formants), transparent (HH: the next vowel's formants), smooth (liquids: no step); under [CO] formant events never go back in
+-     time and the schedule is sorted by time (stably); without [CO]/[TC] the schedule is unchanged
+-   src/engine/dsp.js, src/engine/synth-core.js: [GS=1] an LF (Liljencrants-Fant) voice source instead of the Rosenberg pulse: lfShape(Rd) (Fant 1995), [RD=x] [RDE=oct/effort] shape and its effort coupling, [TL=dB at 3 kHz] one-pole tilt, [JIT=%] [SHIM=%] local jitter (closure-to-closure periods) and shimmer, [AM=0..1] noise scaled by the glottal flow while voiced, [FL=x] flutter (Klatt & Klatt 1990), [NT=dB] [AT=dB] one-pole low-pass of the frication / aspiration noise (Klatt's soft low-pass noise); without GS (or GS=0) every sample is as before
+-+  src/engine/dsp.js, src/engine/synth-core.js, src/engine/sequencer.js: [NAS=x] nasals. The synth gains Klatt's (1980) nasal path:
+-+    a resonator FNP/BNP and an antiresonator FNZ/BNZ (each unity gain at 0 Hz, cancelling at FNP = FNZ, BNP = BNZ), a second pair
+-+    FNP2/BNP2, FNZ2/BNZ2, in cascade before the parallel formants, and AN, a parallel nasal formant at FNP; it runs only once a target
+-+    carries one of these keys (until then every sample is as before), the nasal parameters glide on their own clock, and an event
+-+    { nasalOnly: true } moves them alone (it is neither a voice-source event nor a move of the other parameters, in both the linear
+-+    and the shaped mode). Under [NAS=x] a bank entry's nasal fields (nasal: true, FNP ... BNZ2, AN; nasalizes {...}) are its murmur,
+-+    every other phoneme's first event and every silence carry neutral pairs, and a vowel-like neighbour of a nasal (no pause between)
+-+    is nasalized over [NASVC] (before it, default 0.5) / [NASCV] (after it, 0.3) of its slot at strength x (nasalOnly events); the
+-+    pole/zero frequencies follow the formant scale; a bare [NAS] puts neutral pairs back. Without [NAS] bank nasal fields are dropped
+-+    and the schedule is unchanged
+-diff --git a/vendor/klattsch/src/engine/sequencer.js b/vendor/klattsch/src/engine/sequencer.js
+-index 139e121..8d3dd6e 100644
+---- a/vendor/klattsch/src/engine/sequencer.js
+-+++ b/vendor/klattsch/src/engine/sequencer.js
+-@@ -433,6 +433,11 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+-     nasalAfter(nasalPlan, slotMs);
+-     return r;
+-   };
+-+  // (sonicpi-toolchain patch) [NAST=ms] under [NAS]: the transition of the first event into a nasal consonant and
+-+  // into the phoneme after one (amplitudes, bandwidths, nasal parameters; [CO]'s formant moves keep their own):
+-+  // the oral closure and release that bound a murmur are abrupt. Absent: the usual transition.
+-+  const nasalTrans = (t, p, usual, slotMs) => (nasalMode() && extras.NAST !== undefined && (p.nasal || nasalOf(prevPh.get(t)))
+-+    ? Math.max(0.1, Math.min(extras.NAST, slotMs * 0.9)) : usual);
+-   const renderPhonemeEvents = (t, p, slotMs) => {
+-     const startF0 = t.stressed ? f0 + DEFAULTS.stressF0Lift : f0;
+-     const endF0 = startF0 + t.pitchDelta;
+-@@ -441,7 +446,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+-       // (sonicpi-toolchain patch) a bank entry's burstMs sets its release burst (MITalk: P 5, T 15, K 25 ms)
+-       const burstMs = Math.min(p.burstMs ?? DEFAULTS.stopBurstMs, slotMs * 0.3);
+-       const silenceMs = slotMs - burstMs;
+--      silence(Math.min(20, silenceMs * 0.4));
+-+      silence(nasalTrans(t, p, Math.min(20, silenceMs * 0.4), silenceMs));
+-       timeMs += silenceMs;
+-       emit(scaled(p, startF0), Math.min(5, burstMs * 0.2));
+-       if (extras.CO !== undefined) {
+-@@ -453,7 +458,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+-       return slotMs;
+-     } else if (p.glideTo) {
+-       const onset = slotMs * 0.25, glide = slotMs * 0.50, offset = slotMs * 0.25;
+--      emit(scaled(p, startF0), Math.min(20, onset));
+-+      emit(scaled(p, startF0), nasalTrans(t, p, Math.min(20, onset), onset));
+-       formantsIn(t, p, Math.min(20, onset), slotMs);
+-       timeMs += onset;
+-       emit(scaled(p, endF0, p.glideTo), glide);
+-@@ -462,7 +467,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+-       formantsOut(t, p, slotStart, slotMs);
+-       return slotMs;
+-     } else if (t.pitchDelta !== 0) {
+--      emit(scaled(p, startF0), Math.min(25, slotMs * 0.25));
+-+      emit(scaled(p, startF0), nasalTrans(t, p, Math.min(25, slotMs * 0.25), slotMs * 0.25));
+-       formantsIn(t, p, Math.min(25, slotMs * 0.25), slotMs);
+-       timeMs += slotMs * 0.25;
+-       emit(scaled(p, endF0), slotMs * 0.6);
+-@@ -472,7 +477,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+-     } else {
+-       // [TR=ms] (sonicpi-toolchain patch): how long formants take to move into a phoneme
+-       const trans = Math.min(extras.TR ?? DEFAULTS.defaultTransitionMs, slotMs * (extras.TR ? 0.9 : 0.4));
+--      emit(scaled(p, startF0), trans);
+-+      emit(scaled(p, startF0), nasalTrans(t, p, trans, slotMs));
+-       formantsIn(t, p, trans, slotMs);
+-       timeMs += slotMs;
+-       formantsOut(t, p, slotStart, slotMs);
+--- 
+-2.43.0
+-
+-
+-From a8a99f0822555d0508d9705aad04c281b19a85e7 Mon Sep 17 00:00:00 2001
+-From: Claude <noreply@anthropic.com>
+-Date: Wed, 21 Oct 2026 12:51:41 +0000
+-Subject: [PATCH 6/6] wip nasals: fitted murmurs (iteration 2), AN-based vowel
+- nasalization with GN level, NAST 5, engine defaults
+-
+----
+- klattsing/README.md                      |  3 +--
+- klattsing/src/nasals.js                  | 15 ++++++++-------
+- klattsing/test/nasals.test.js            |  5 ++++-
+- vendor/klattsch/VENDORED                 |  4 ++--
+- vendor/klattsch/src/engine/sequencer.js  | 18 +++++++++++-------
+- vendor/klattsch/src/engine/synth-core.js |  9 +++++----
+- 6 files changed, 31 insertions(+), 23 deletions(-)
+-
+-diff --git a/klattsing/README.md b/klattsing/README.md
+-index 3f0a366..b8ff8d4 100644
+---- a/klattsing/README.md
+-+++ b/klattsing/README.md
+-@@ -26,8 +26,7 @@ per syllable, or `"auto"`), `bpm`, `melody` (auto: `scale`, `long`, `short`, `la
+- (formant glide ms, a klattsch patch), `aspiration` (breath after P/T/K, default on), `accent`,
+- `dynamics` (loudness by stress, a klattsch patch; off by default), `durations` (`"v0"` for the first
+- reconstruction), `rules`; and the opt-in options below (`bankPatch`, `functionWords`, `intonation`,
+--`breathLevel`, `breathVoicing`, `pauseMs`, `accentDelta`, `phoneDur`, `coarticulation`).
+--`breathLevel`, `breathVoicing`, `pauseMs`, `accentDelta`, `phoneDur`, `glottal`).
+-+`breathLevel`, `breathVoicing`, `pauseMs`, `accentDelta`, `phoneDur`, `coarticulation`, `glottal`, `nasals`).
+- 
+- ## Options for optimizers (all opt-in; leaving them out gives exactly the strings from before)
+- 
+-diff --git a/klattsing/src/nasals.js b/klattsing/src/nasals.js
+-index 84eabf1..135bf59 100644
+---- a/klattsing/src/nasals.js
+-+++ b/klattsing/src/nasals.js
+-@@ -7,7 +7,7 @@
+- // transition into a nasal consonant and into the phoneme after it (default: klattsch's usual); murmur: fields laid over
+- // NASAL_MURMUR per nasal (any bank field: F1, BW1, A2, ... and the nasal ones; null removes one); nasalized: the
+- // nasal parameters of a fully nasalized vowel (bank field nasalizes on each nasal; klattsch's default FNP 250,
+--// BNP 100, FNZ 450, BNZ 100, AN 0). The murmur entries go into a generated bank "<base>--nas<hash>" that extends
+-+// BNP 100, FNZ 250, BNZ 100, AN 0.8, GN 0.3). The murmur entries go into a generated bank "<base>--nas<hash>" that extends
+- // the spec's bank (before bankPatch, so a bankPatch can still change them, and before coarticulation).
+- //
+- // Engine parameters (Klatt 1980, "Software for a cascade/parallel formant synthesizer", JASA 67: FNP/BNP, FNZ/BNZ,
+-@@ -17,13 +17,14 @@
+- // oral cavity, whose frequency marks the place of articulation (Fujimura 1962, JASA 34; Stevens 1998, Acoustic
+- // Phonetics, ch. 9). AN: a parallel nasal formant at FNP, fed by the excitation as A1-A3 are.
+- export const NASAL_MURMUR = {
+--  M: { FNP: 270, BNP: 100, FNZ: 450, BNZ: 100, AN: 0, FNP2: 1000, BNP2: 600, FNZ2: 1000, BNZ2: 150 },
+--  N: { FNP: 270, BNP: 100, FNZ: 450, BNZ: 100, AN: 0, FNP2: 1800, BNP2: 800, FNZ2: 1800, BNZ2: 200 },
+--  NG: { FNP: 270, BNP: 100, FNZ: 450, BNZ: 100, AN: 0, FNP2: 3000, BNP2: 1000, FNZ2: 3000, BNZ2: 300 },
+-+  M: { F1: 230, BW1: 56.0, A2: 0.252, A3: 0.274, F2: 1070, BW2: 280, F3: 1980, BW3: 200, FNP: 250, BNP: 100, FNZ: 250, BNZ: 100, AN: 0.2, FNP2: 1000, FNZ2: 1000, BNZ2: 150, BNP2: 100, GN: 0.65 },
+-+  N: { F1: 290, BW1: 56.0, A2: 0.102, A3: 0.12, F2: 1040, BW2: 823, F3: 2170, BW3: 420, FNP: 250, BNP: 100, FNZ: 250, BNZ: 100, AN: 0.1, FNP2: 2100, FNZ2: 2100, BNZ2: 150, BNP2: 60.0, GN: 0.65 },
+-+  NG: { F1: 330, BW1: 110, A2: 0.2, A3: 0.044, F2: 2100, BW2: 153, F3: 2250, BW3: 109, FNP: 250, BNP: 100, FNZ: 330, BNZ: 100, AN: 0.0, FNP2: 3000, FNZ2: 3000, BNZ2: 66.7, BNP2: 150, GN: 0.65 },
+- };
+--// the option's defaults ("nasals": true); vc / cv null: klattsch's own (0.5 / 0.3)
+--export const NASALS = { strength: 1, vc: null, cv: null, transition: null, nasalized: null };
+--const NASAL_FIELDS = ['FNP', 'BNP', 'FNZ', 'BNZ', 'AN', 'FNP2', 'BNP2', 'FNZ2', 'BNZ2'];
+-+// the option's defaults ("nasals": true); vc / cv null: klattsch's own (0.8 / 0.5), nasalized null: klattsch's own
+-+// (AN 0.8 at FNP 250, pairs neutral, GN 0.3)
+-+export const NASALS = { strength: 1, vc: null, cv: null, transition: 5, nasalized: null };
+-+const NASAL_FIELDS = ['FNP', 'BNP', 'FNZ', 'BNZ', 'AN', 'FNP2', 'BNP2', 'FNZ2', 'BNZ2', 'GN'];
+- const KEYS = ['strength', 'vc', 'cv', 'transition', 'murmur', 'nasalized'];
+- const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
+- 
+-diff --git a/klattsing/test/nasals.test.js b/klattsing/test/nasals.test.js
+-index 0328412..ef384fa 100644
+---- a/klattsing/test/nasals.test.js
+-+++ b/klattsing/test/nasals.test.js
+-@@ -63,6 +63,9 @@ test('engine: neutral nasal parameters (the pairs cancel, AN 0) render the non-n
+-   let d = 0; for (let i = 0; i < n.length; i++) d = Math.max(d, Math.abs(n[i] - plain[i]));
+-   assert.ok(d < 1e-4, `max difference ${d}`);
+-   assert.ok(!same(render(`[FNZ=600] ${s}`), plain), 'a nasal directive switches the path on');
+-+  // GN: a gain on the nasal path (level only)
+-+  const g = render(`${neutral} [GN=0.5] ${s}`);
+-+  assert.ok(Math.abs(20 * Math.log10(rms(g) / rms(plain)) + 6.02) < 0.3, `GN 0.5: ${20 * Math.log10(rms(g) / rms(plain))} dB`);
+- });
+- 
+- test('engine: a nasalOnly event moves the nasal parameters alone, on their own clock', () => {
+-@@ -134,7 +137,7 @@ test('sequencer: [NAST=ms] times the events into a nasal and into the phoneme af
+-   assert.deepEqual(ev('[bank=nastest3] [NAS=0] [NAST=4] r200 AA M AA AH'), [35, 4, 4, 35]);
+-   assert.deepEqual(ev('[bank=nastest3] [NAST=4] r200 AA M AA AH'), [35, 35, 35, 35], 'only under [NAS]');
+-   const stop = compileString('[bank=nastest3] [NAS=0] [NAST=4] r200 AA M P AA').schedule.filter((e) => !e.nasalOnly);
+--  assert.equal(stop.find((e) => e.atMs === 400).transitionMs, 4, 'the closure after a nasal');
+-+  assert.equal(stop.find((e) => e.atMs === 400).transitionMs, 20, 'a stop closure after a nasal keeps its own');
+- });
+- 
+- test('option: directives, generated bank, validation; durations and timing unchanged', () => {
+-diff --git a/vendor/klattsch/VENDORED b/vendor/klattsch/VENDORED
+-index fed2bf7..2565f9c 100644
+---- a/vendor/klattsch/VENDORED
+-+++ b/vendor/klattsch/VENDORED
+-@@ -18,5 +18,5 @@ tgies/klattsch @ 63dc2c6 (MIT), vendored with patches:
+-     and the shaped mode). Under [NAS=x] a bank entry's nasal fields (nasal: true, FNP ... BNZ2, AN; nasalizes {...}) are its murmur,
+-     every other phoneme's first event and every silence carry neutral pairs, and a vowel-like neighbour of a nasal (no pause between)
+-     is nasalized over [NASVC] (before it, default 0.5) / [NASCV] (after it, 0.3) of its slot at strength x (nasalOnly events); the
+--    pole/zero frequencies follow the formant scale; a bare [NAS] puts neutral pairs back. Without [NAS] bank nasal fields are dropped
+--    and the schedule is unchanged
+-+    pole/zero frequencies follow the formant scale; [NAST=ms] times the first event into a nasal and into the (non-stop) phoneme after
+-+    it; a bare [NAS] puts neutral pairs back. Without [NAS] bank nasal fields are dropped and the schedule is unchanged
+-diff --git a/vendor/klattsch/src/engine/sequencer.js b/vendor/klattsch/src/engine/sequencer.js
+-index 8d3dd6e..69bf887 100644
+---- a/vendor/klattsch/src/engine/sequencer.js
+-+++ b/vendor/klattsch/src/engine/sequencer.js
+-@@ -40,10 +40,14 @@ const DEFAULTS = Object.freeze({
+-   coJumpMs: 3,
+-   coVcShare: 0.6,
+-   // (sonicpi-toolchain patch) [NAS=x]: share of a vowel nasalized before a nasal consonant ([NASVC]) and after
+--  // one ([NASCV]), and the nasal parameters of a fully nasalized vowel (a nasal pole-zero pair, Klatt 1980)
+--  nasalVC: 0.5,
+--  nasalCV: 0.3,
+--  nasalized: Object.freeze({ FNP: 250, BNP: 100, FNZ: 450, BNZ: 100, AN: 0 }),
+-+  // one ([NASCV]), and the nasal parameters of a fully nasalized vowel: a parallel nasal formant AN at FNP 250 Hz,
+-+  // the low nasal pole of nasalized vowels (P0: Hawkins & Stevens 1985, Chen 1997), the pairs neutral, and the
+-+  // whole at GN (the oral formants weaken: Kokoro's vowels next to nasals are quieter than its other vowels, not
+-+  // louder). Klatt's (1980) recipe, a zero raised above the pole (FNZ ~450), took 10 dB off everything above it and
+-+  // made the vowels less Kokoro-like at every strength tried (voicelab fidelity); these values were fitted there.
+-+  nasalVC: 0.8,
+-+  nasalCV: 0.5,
+-+  nasalized: Object.freeze({ FNP: 250, BNP: 100, FNZ: 250, BNZ: 100, AN: 0.8, GN: 0.3 }),
+- });
+- const NASAL_FREQ = /^(F|B)N[PZ]2?$/;   // nasal pole/zero frequencies and bandwidths: they follow the formant scale
+- 
+-@@ -434,8 +438,8 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+-     return r;
+-   };
+-   // (sonicpi-toolchain patch) [NAST=ms] under [NAS]: the transition of the first event into a nasal consonant and
+--  // into the phoneme after one (amplitudes, bandwidths, nasal parameters; [CO]'s formant moves keep their own):
+--  // the oral closure and release that bound a murmur are abrupt. Absent: the usual transition.
+-+  // into a (non-stop) phoneme after one (amplitudes, bandwidths, nasal parameters; [CO]'s formant moves keep their
+-+  // own): the oral closure and release that bound a murmur are abrupt. Absent: the usual transition.
+-   const nasalTrans = (t, p, usual, slotMs) => (nasalMode() && extras.NAST !== undefined && (p.nasal || nasalOf(prevPh.get(t)))
+-     ? Math.max(0.1, Math.min(extras.NAST, slotMs * 0.9)) : usual);
+-   const renderPhonemeEvents = (t, p, slotMs) => {
+-@@ -446,7 +450,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+-       // (sonicpi-toolchain patch) a bank entry's burstMs sets its release burst (MITalk: P 5, T 15, K 25 ms)
+-       const burstMs = Math.min(p.burstMs ?? DEFAULTS.stopBurstMs, slotMs * 0.3);
+-       const silenceMs = slotMs - burstMs;
+--      silence(nasalTrans(t, p, Math.min(20, silenceMs * 0.4), silenceMs));
+-+      silence(Math.min(20, silenceMs * 0.4));
+-       timeMs += silenceMs;
+-       emit(scaled(p, startF0), Math.min(5, burstMs * 0.2));
+-       if (extras.CO !== undefined) {
+-diff --git a/vendor/klattsch/src/engine/synth-core.js b/vendor/klattsch/src/engine/synth-core.js
+-index 8ef8cca..9dc03e8 100644
+---- a/vendor/klattsch/src/engine/synth-core.js
+-+++ b/vendor/klattsch/src/engine/synth-core.js
+-@@ -30,14 +30,15 @@ export const PARAMS = [
+- // (sonicpi-toolchain patch) Nasal parameters (Klatt 1980 names): a nasal pole-zero pair FNP/BNP, FNZ/BNZ in
+- // cascade with the excitation (resonator then antiresonator, each unity gain at 0 Hz; they cancel when FNP = FNZ
+- // and BNP = BNZ), a second pair FNP2/BNP2, FNZ2/BNZ2 (the murmur's place-dependent oral side-branch zero), and
+--// AN, a parallel nasal formant at FNP (fed by the excitation, like A1-A3). The nasal path runs only once a target
+-+// AN, a parallel nasal formant at FNP (fed by the excitation, like A1-A3), and GN, a gain on all of it (the level
+-+// of a murmur or a nasalized vowel, which spectral distances do not see). The nasal path runs only once a target
+- // (schedule event, setTarget, initialTarget) has carried one of these keys; until then every sample is computed
+- // exactly as before. Nasal parameters glide linearly on their own clock (in both the linear and the shaped mode),
+- // so an event may move only them ({ nasalOnly: true }) without retiming the other parameters' transitions.
+--export const NASAL_PARAMS = ['FNP', 'BNP', 'FNZ', 'BNZ', 'AN', 'FNP2', 'BNP2', 'FNZ2', 'BNZ2'];
+-+export const NASAL_PARAMS = ['FNP', 'BNP', 'FNZ', 'BNZ', 'AN', 'FNP2', 'BNP2', 'FNZ2', 'BNZ2', 'GN'];
+- export const NASAL_DEFAULT = Object.freeze({
+-   FNP: 250, BNP: 100, FNZ: 250, BNZ: 100, AN: 0,
+--  FNP2: 1500, BNP2: 100, FNZ2: 1500, BNZ2: 100,
+-+  FNP2: 1500, BNP2: 100, FNZ2: 1500, BNZ2: 100, GN: 1,
+- });
+- const hasNasal = (t) => { for (const k of NASAL_PARAMS) if (k in t) return true; return false; };
+- 
+-@@ -438,7 +439,7 @@ export class FormantSynth {
+-         y = (this.bp1.process(en) * cur.A1
+-           +  this.bp2.process(en) * cur.A2
+-           +  this.bp3.process(en) * cur.A3
+--          +  this.bpn.process(exc) * cur.AN) * cur.gain * tremoloMod;
+-+          +  this.bpn.process(exc) * cur.AN) * cur.GN * cur.gain * tremoloMod;
+-       }
+- 
+-       const tilted = y - cur.tilt * this.tiltPrev;
+--- 
+-2.43.0
+-
 -- 
 2.43.0
 
 
-From 3f574d8eb8132f9486f2658949ff009f5a902d17 Mon Sep 17 00:00:00 2001
+From 3ca58bc7e3f7f7983bfe515d39c1ced711bc6f9f Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 21 Oct 2026 12:18:35 +0000
-Subject: [PATCH 3/6] wip nasals: audio golden test (incl. BASE), no nasal leak
+Subject: [PATCH 3/8] wip nasals: audio golden test (incl. BASE), no nasal leak
  after a bare [NAS]
 
 ---
@@ -1237,10 +2604,10 @@ index acd8b44..2867ad2 100644
 2.43.0
 
 
-From 17f70d374db7da0b4b81de5d222163350ceb8c35 Mon Sep 17 00:00:00 2001
+From 0fdfa6ac2a53d96647c31888532e693e1210671c Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 21 Oct 2026 12:22:09 +0000
-Subject: [PATCH 4/6] wip nasals: option validation, NASALS defaults, nasals +
+Subject: [PATCH 4/8] wip nasals: option validation, NASALS defaults, nasals +
  compose tests, no nasalization at strength 0
 
 ---
@@ -1578,10 +2945,10 @@ index 2867ad2..139e121 100644
 2.43.0
 
 
-From b967cd07d086a22da041ddc4c7747b92073409d1 Mon Sep 17 00:00:00 2001
+From 722deb6b66a991e31712d53d4eca8c0c73e99b2a Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 21 Oct 2026 12:25:00 +0000
-Subject: [PATCH 5/6] wip nasals: [NAST=ms] nasal boundary transitions
+Subject: [PATCH 5/8] wip nasals: [NAST=ms] nasal boundary transitions
  (nasals.transition), VENDORED
 
 ---
@@ -1744,10 +3111,10 @@ index 139e121..8d3dd6e 100644
 2.43.0
 
 
-From a8a99f0822555d0508d9705aad04c281b19a85e7 Mon Sep 17 00:00:00 2001
+From e3311d6736a79a7835d8f559bf5c5fcb7427215c Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Wed, 21 Oct 2026 12:51:41 +0000
-Subject: [PATCH 6/6] wip nasals: fitted murmurs (iteration 2), AN-based vowel
+Subject: [PATCH 6/8] wip nasals: fitted murmurs (iteration 2), AN-based vowel
  nasalization with GN level, NAST 5, engine defaults
 
 ---
@@ -1917,6 +3284,258 @@ index 8ef8cca..9dc03e8 100644
        }
  
        const tilted = y - cur.tilt * this.tiltPrev;
+-- 
+2.43.0
+
+
+From d4d8eaa452b12699b663fa1ae1c2e9dafdac39ac Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 21 Oct 2026 22:59:27 +0000
+Subject: [PATCH 7/8] wip nasals: vowel nasalization at GN 1 with AN 0.4
+ (calibrated to Kokoro's P0 boost), [NASMS=ms] cap (nasals.maxMs, sing
+ default)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013D7H5RPb4wjuAo6EWsSqmi
+---
+ klattsing/src/nasals.js                 | 28 +++++++++++++------------
+ vendor/klattsch/src/engine/sequencer.js | 27 ++++++++++++++----------
+ 2 files changed, 31 insertions(+), 24 deletions(-)
+
+diff --git a/klattsing/src/nasals.js b/klattsing/src/nasals.js
+index 135bf59..c2830bb 100644
+--- a/klattsing/src/nasals.js
++++ b/klattsing/src/nasals.js
+@@ -1,14 +1,15 @@
+ // "nasals": nasal murmurs with a nasal pole-zero pair and a place-dependent zero, and nasalized vowels next to
+ // nasal consonants (klattsch [NAS=x], a patch to the vendored engine: vendor/klattsch/VENDORED).
+ //   "nasals": true                                   the defaults below (NASALS, NASAL_MURMUR)
+-//   "nasals": { strength, vc, cv, transition, murmur: { M: {field: value}, ... }, nasalized: {FNP, BNP, FNZ, BNZ, AN, ...} }
++//   "nasals": { strength, vc, cv, maxMs, transition, murmur: { M: {field: value}, ... }, nasalized: {FNP, BNP, FNZ, BNZ, AN, ...} }
+ // strength: [NAS=x], how strongly a vowel next to M/N/NG is nasalized (0: murmurs only); vc / cv: [NASVC] /
+-// [NASCV], the share of a vowel before / after a nasal consonant that is nasalized; transition: [NAST=ms], the
+-// transition into a nasal consonant and into the phoneme after it (default: klattsch's usual); murmur: fields laid over
+-// NASAL_MURMUR per nasal (any bank field: F1, BW1, A2, ... and the nasal ones; null removes one); nasalized: the
+-// nasal parameters of a fully nasalized vowel (bank field nasalizes on each nasal; klattsch's default FNP 250,
+-// BNP 100, FNZ 250, BNZ 100, AN 0.8, GN 0.3). The murmur entries go into a generated bank "<base>--nas<hash>" that extends
+-// the spec's bank (before bankPatch, so a bankPatch can still change them, and before coarticulation).
++// [NASCV], the share of a vowel before / after a nasal consonant that is nasalized; maxMs: [NASMS=ms], the most ms
++// of either nasalized span (default: none in speech; NASALS_SING.maxMs in sing mode, where a held note stays oral until
++// its end); transition: [NAST=ms], the transition into a nasal consonant and into the phoneme after it; murmur:
++// fields laid over NASAL_MURMUR per nasal (any bank field: F1, BW1, A2, ... and the nasal ones; null removes one);
++// nasalized: the nasal parameters of a fully nasalized vowel (bank field nasalizes on each nasal; klattsch's default
++// FNP 250, BNP 100, FNZ 250, BNZ 100, AN 0.4, GN 1). The murmur entries go into a generated bank "<base>--nas<hash>"
++// that extends the spec's bank (before bankPatch, so a bankPatch can still change them, and before coarticulation).
+ //
+ // Engine parameters (Klatt 1980, "Software for a cascade/parallel formant synthesizer", JASA 67: FNP/BNP, FNZ/BNZ,
+ // AN): FNP/FNZ, a pole-zero pair in cascade with the excitation, both unity gain at 0 Hz: with the zero above the
+@@ -22,10 +23,11 @@ export const NASAL_MURMUR = {
+   NG: { F1: 330, BW1: 110, A2: 0.2, A3: 0.044, F2: 2100, BW2: 153, F3: 2250, BW3: 109, FNP: 250, BNP: 100, FNZ: 330, BNZ: 100, AN: 0.0, FNP2: 3000, FNZ2: 3000, BNZ2: 66.7, BNP2: 150, GN: 0.65 },
+ };
+ // the option's defaults ("nasals": true); vc / cv null: klattsch's own (0.8 / 0.5), nasalized null: klattsch's own
+-// (AN 0.8 at FNP 250, pairs neutral, GN 0.3)
+-export const NASALS = { strength: 1, vc: null, cv: null, transition: 5, nasalized: null };
++// (AN 0.4 at FNP 250, pairs neutral, GN 1); maxMs null: none (speak), NASALS_SING.maxMs (sing)
++export const NASALS = { strength: 1, vc: null, cv: null, maxMs: null, transition: 5, nasalized: null };
++export const NASALS_SING = { maxMs: 150 };
+ const NASAL_FIELDS = ['FNP', 'BNP', 'FNZ', 'BNZ', 'AN', 'FNP2', 'BNP2', 'FNZ2', 'BNZ2', 'GN'];
+-const KEYS = ['strength', 'vc', 'cv', 'transition', 'murmur', 'nasalized'];
++const KEYS = ['strength', 'vc', 'cv', 'maxMs', 'transition', 'murmur', 'nasalized'];
+ const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
+ 
+ // "nasals": true | {...} -> the full option, or null (off)
+@@ -34,7 +36,7 @@ export function nasalOptions(o) {
+   const x = o.nasals === true ? {} : o.nasals;
+   if (!isObj(x)) throw new Error(`nasals: true or an object, got ${JSON.stringify(o.nasals)}`);
+   for (const k of Object.keys(x)) if (!KEYS.includes(k)) throw new Error(`nasals.${k}: unknown (${KEYS.join(', ')})`);
+-  for (const k of ['strength', 'vc', 'cv', 'transition']) {
++  for (const k of ['strength', 'vc', 'cv', 'maxMs', 'transition']) {
+     if (x[k] != null && !(typeof x[k] === 'number' && Number.isFinite(x[k]) && x[k] >= 0)) throw new Error(`nasals.${k}: a number >= 0`);
+   }
+   if (x.murmur != null) {
+@@ -54,7 +56,7 @@ export function nasalOptions(o) {
+       if (!(typeof v === 'number' && Number.isFinite(v))) throw new Error(`nasals.nasalized.${k}: a number`);
+     }
+   }
+-  const out = { ...NASALS, murmur: {} };
++  const out = { ...NASALS, ...(o.mode === 'sing' ? NASALS_SING : {}), murmur: {} };
+   for (const k of KEYS) if (x[k] != null) out[k] = x[k];
+   return out;
+ }
+@@ -63,7 +65,7 @@ export function nasalOptions(o) {
+ export function nasalDirectives(n) {
+   if (!n) return '';
+   return [`[NAS=${n.strength}]`, n.vc != null ? `[NASVC=${n.vc}]` : '', n.cv != null ? `[NASCV=${n.cv}]` : '',
+-    n.transition != null ? `[NAST=${n.transition}]` : ''].filter(Boolean).join(' ');
++    n.maxMs != null ? `[NASMS=${n.maxMs}]` : '', n.transition != null ? `[NAST=${n.transition}]` : ''].filter(Boolean).join(' ');
+ }
+ 
+ // the bank entries: each nasal's resolved base entry with the murmur fields (and nasal: true, nasalizes) laid over it
+diff --git a/vendor/klattsch/src/engine/sequencer.js b/vendor/klattsch/src/engine/sequencer.js
+index 69bf887..d5a4da5 100644
+--- a/vendor/klattsch/src/engine/sequencer.js
++++ b/vendor/klattsch/src/engine/sequencer.js
+@@ -40,14 +40,16 @@ const DEFAULTS = Object.freeze({
+   coJumpMs: 3,
+   coVcShare: 0.6,
+   // (sonicpi-toolchain patch) [NAS=x]: share of a vowel nasalized before a nasal consonant ([NASVC]) and after
+-  // one ([NASCV]), and the nasal parameters of a fully nasalized vowel: a parallel nasal formant AN at FNP 250 Hz,
+-  // the low nasal pole of nasalized vowels (P0: Hawkins & Stevens 1985, Chen 1997), the pairs neutral, and the
+-  // whole at GN (the oral formants weaken: Kokoro's vowels next to nasals are quieter than its other vowels, not
+-  // louder). Klatt's (1980) recipe, a zero raised above the pole (FNZ ~450), took 10 dB off everything above it and
+-  // made the vowels less Kokoro-like at every strength tried (voicelab fidelity); these values were fitted there.
++  // one ([NASCV]; carryover nasalization is shorter than anticipatory in English, Cohn 1990), and the nasal
++  // parameters of a fully nasalized vowel: a parallel nasal formant AN at FNP 250 Hz, the low nasal pole of
++  // nasalized vowels (P0: Hawkins & Stevens 1985, Chen 1997), the pairs neutral, the level unchanged (GN 1).
++  // AN is set so that the last third of a vowel before a nasal gains what Kokoro's do over its other vowel ends
++  // below 300 Hz (+4 dB; above 300 Hz they lose nothing). Klatt's (1980) recipe, a zero raised above the pole
++  // (FNZ ~450), took 10 dB off everything above it and made the vowels less Kokoro-like at every strength tried
++  // (voicelab fidelity). (Kokoro's vowels are quieter at their ends before nasals, but as much before any consonant.)
+   nasalVC: 0.8,
+   nasalCV: 0.5,
+-  nasalized: Object.freeze({ FNP: 250, BNP: 100, FNZ: 250, BNZ: 100, AN: 0.8, GN: 0.3 }),
++  nasalized: Object.freeze({ FNP: 250, BNP: 100, FNZ: 250, BNZ: 100, AN: 0.4 }),
+ });
+ const NASAL_FREQ = /^(F|B)N[PZ]2?$/;   // nasal pole/zero frequencies and bandwidths: they follow the formant scale
+ 
+@@ -376,8 +378,9 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+   // [CO]: no pause between) is nasalized: from the first [NASVC] of it before a nasal consonant it glides to the
+   // nasalized values (DEFAULTS.nasalized, over which the consonant's bank field nasalizes {...} is laid), and after
+   // one it starts nasalized and is back to neutral after [NASCV] of it; x scales the nasalization (0: murmurs
+-  // only). The vowel's nasal glides are nasalOnly events, which move only the nasal parameters. Without [NAS]
+-  // nothing here runs.
++  // only). [NASMS=ms] caps each nasalized span at ms (a long sung vowel stays oral until its last ms before a
++  // nasal, as singers keep it; absent: the shares alone). The vowel's nasal glides are nasalOnly events, which
++  // move only the nasal parameters. Without [NAS] nothing here runs.
+   const nasalMode = () => extras.NAS !== undefined;
+   let pendingNasal = null;     // nasal parameters for the next emit (the first event of a phoneme)
+   let nasalUsed = false;       // [NAS] was on: after a bare [NAS] the next event puts the nasal parameters back
+@@ -399,7 +402,9 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+     nasalOnlyEvents++;
+   };
+   // before a phoneme renders: its first event's nasal parameters; after: the vowel's nasal glides
+-  const nasalBefore = (t, p) => {
++  // [NASMS=ms]: a share of slotMs, capped at ms (unchanged when absent or not binding)
++  const nasalCap = (share, slotMs) => (extras.NASMS !== undefined && slotMs * share > extras.NASMS ? Math.max(0, extras.NASMS) / slotMs : share);
++  const nasalBefore = (t, p, slotMs) => {
+     if (!nasalMode()) {
+       if (nasalUsed) { pendingNasal = nasalScaled(NASAL_DEFAULT); nasalUsed = false; }
+       return null;
+@@ -409,7 +414,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+     if (!(extras.NAS > 0) || p.nasal || p.isStop || !((p.voicing ?? 0) >= 1)) return null;
+     const prevN = nasalOf(prevPh.get(t)), nextN = nasalOf(nextPh.get(t));
+     if (!prevN && !nextN) return null;
+-    const cv = extras.NASCV ?? DEFAULTS.nasalCV, vc = extras.NASVC ?? DEFAULTS.nasalVC;
++    const cv = nasalCap(extras.NASCV ?? DEFAULTS.nasalCV, slotMs), vc = nasalCap(extras.NASVC ?? DEFAULTS.nasalVC, slotMs);
+     if (prevN) pendingNasal = nasalizedBy(prevN);
+     else if (vc >= 1) pendingNasal = nasalizedBy(nextN);
+     return { start: timeMs, prevN, nextN, cv, vc };
+@@ -431,7 +436,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
+       warnings.push(`unknown phoneme: ${t.code}`);
+       return 0;
+     }
+-    const nasalPlan = nasalBefore(t, p);
++    const nasalPlan = nasalBefore(t, p, slotMs);
+     const r = renderPhonemeEvents(t, p, slotMs);
+     pendingNasal = null;
+     nasalAfter(nasalPlan, slotMs);
+-- 
+2.43.0
+
+
+From f642aaebb4245b65494ea63a1799baa4fc0ef0cf Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 21 Oct 2026 23:39:57 +0000
+Subject: [PATCH 8/8] wip nasals: last edits before a container restart
+
+---
+ klattsing/test/nasals.test.js | 31 ++++++++++++++++++++++++++++++-
+ vendor/klattsch/VENDORED      | 19 +++++++++++--------
+ 2 files changed, 41 insertions(+), 9 deletions(-)
+
+diff --git a/klattsing/test/nasals.test.js b/klattsing/test/nasals.test.js
+index ef384fa..a6223e2 100644
+--- a/klattsing/test/nasals.test.js
++++ b/klattsing/test/nasals.test.js
+@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
+ import { readFileSync } from 'node:fs';
+ import { speak, sing, toKlattsch, durationsOf } from '../src/compile.js';
+ import { bankName, banksFor } from '../src/banks.js';
+-import { NASAL_MURMUR, NASALS, nasalOptions, nasalDirectives } from '../src/nasals.js';
++import { NASAL_MURMUR, NASALS, NASALS_SING, nasalOptions, nasalDirectives } from '../src/nasals.js';
+ import { timelineOf } from '../src/timeline.js';
+ import { compileString, renderToBuffer, FormantSynth, banks } from '../../vendor/klattsch/src/engine/index.js';
+ import { NASAL_PARAMS, NASAL_DEFAULT } from '../../vendor/klattsch/src/engine/synth-core.js';
+@@ -129,6 +129,28 @@ test('sequencer: vowels next to a nasal are nasalized over [NASVC] / [NASCV] of
+   assert.deepEqual(c.schedule.map((e) => e.atMs), [...c.schedule.map((e) => e.atMs)].sort((a, b) => a - b), 'in time order');
+ });
+ 
++test('sequencer: the default nasalized vowel (AN 0.4 at FNP 250, pairs neutral, level unchanged)', () => {
++  const bank = { schemaVersion: 1, name: 'nastestd', extends: 'klatt1980-en', phonemes: { N: { ...banks.get('klatt1980-en').phonemes.N, nasal: true } } };
++  registerBank(bank);
++  const ev = compileString('[bank=nastestd] [NAS=0.5] r200 b100 AA N').schedule.filter((e) => e.nasalOnly);
++  assert.equal(ev.length, 1);
++  assert.deepEqual(ev[0].target, { ...NASAL_DEFAULT, AN: 0.2 });
++  assert.ok(Math.abs(ev[0].atMs - 40) < 1e-9 && Math.abs(ev[0].transitionMs - 160) < 1e-9, 'the last 80% of the vowel');
++});
++
++test('sequencer: [NASMS=ms] caps each nasalized span; absent or not binding, the spans are the shares', () => {
++  const bank = { schemaVersion: 1, name: 'nastestms', extends: 'klatt1980-en', phonemes: { N: { ...banks.get('klatt1980-en').phonemes.N, nasal: true } } };
++  registerBank(bank);
++  const ev = (s) => compileString(`[bank=nastestms] [NAS=1] ${s} r400 b100 AA N AA`).schedule.filter((e) => e.nasalOnly).map((e) => [e.atMs, e.transitionMs].map((x) => Math.round(x * 1e6) / 1e6));
++  // vowel 1: 0-400 ms, the last 80% toward nasalized; N 400-800; vowel 2: 800-1200, neutral again by 50% of it
++  assert.deepEqual(ev(''), [[80, 320], [840, 160]]);
++  assert.deepEqual(ev('[NASMS=1000]'), ev(''), 'not binding');
++  assert.deepEqual(ev('[NASMS=100]'), [[300, 100], [840, 60]], 'the last 100 ms before N, the first 100 ms after it');
++  const both = compileString('[bank=nastestms] [NAS=1] [NASMS=100] r400 b100 N AA N').schedule.filter((e) => e.nasalOnly);
++  assert.deepEqual(both.map((e) => Math.round(e.atMs * 1e6) / 1e6), [440, 700], 'between two nasals: oral in the middle');
++  assert.equal(both[0].target.AN, NASAL_DEFAULT.AN);
++});
++
+ test('sequencer: [NAST=ms] times the events into a nasal and into the phoneme after it', () => {
+   const ev = (s) => compileString(s).schedule.filter((e) => !e.nasalOnly && e.target.A1 > 0).map((e) => e.transitionMs);
+   const bank = { schemaVersion: 1, name: 'nastest3', extends: 'klatt1980-en', phonemes: { M: { ...banks.get('klatt1980-en').phonemes.M, nasal: true } } };
+@@ -177,6 +199,13 @@ test('option: directives, generated bank, validation; durations and timing uncha
+   const sg = { mode: 'sing', text: 'Nine men', bpm: 120, notes: 'auto' };
+   assert.match(sing({ ...sg, nasals: true }), /\[NAS=/);
+   assert.equal(NASALS.strength, nasalOptions({ nasals: true }).strength);
++  // maxMs: [NASMS]; none in speech by default, NASALS_SING.maxMs in sing mode
++  assert.doesNotMatch(s, /NASMS/);
++  assert.match(speak({ ...spec, nasals: { maxMs: 120 } }), /\[NAS=1\] \[NASMS=120\] \[NAST=5\]/);
++  assert.match(sing({ ...sg, nasals: true }), new RegExp(`\\[NASMS=${NASALS_SING.maxMs}\\]`));
++  assert.match(sing({ ...sg, nasals: { maxMs: 50 } }), /\[NASMS=50\]/);
++  assert.throws(() => nasalOptions({ nasals: { maxMs: -1 } }), /nasals.maxMs: a number >= 0/);
++  assert.deepEqual(durationsOf({ ...sg, nasals: true }), durationsOf(sg));
+ });
+ 
+ test('renders: nasals change the nasal consonants and their vowels, not a sentence without them', () => {
+diff --git a/vendor/klattsch/VENDORED b/vendor/klattsch/VENDORED
+index 2565f9c..588c90c 100644
+--- a/vendor/klattsch/VENDORED
++++ b/vendor/klattsch/VENDORED
+@@ -12,11 +12,14 @@ tgies/klattsch @ 63dc2c6 (MIT), vendored with patches:
+   src/engine/dsp.js, src/engine/synth-core.js: [GS=1] an LF (Liljencrants-Fant) voice source instead of the Rosenberg pulse: lfShape(Rd) (Fant 1995), [RD=x] [RDE=oct/effort] shape and its effort coupling, [TL=dB at 3 kHz] one-pole tilt, [JIT=%] [SHIM=%] local jitter (closure-to-closure periods) and shimmer, [AM=0..1] noise scaled by the glottal flow while voiced, [FL=x] flutter (Klatt & Klatt 1990), [NT=dB] [AT=dB] one-pole low-pass of the frication / aspiration noise (Klatt's soft low-pass noise); without GS (or GS=0) every sample is as before
+   src/engine/dsp.js, src/engine/synth-core.js, src/engine/sequencer.js: [NAS=x] nasals. The synth gains Klatt's (1980) nasal path:
+     a resonator FNP/BNP and an antiresonator FNZ/BNZ (each unity gain at 0 Hz, cancelling at FNP = FNZ, BNP = BNZ), a second pair
+-    FNP2/BNP2, FNZ2/BNZ2, in cascade before the parallel formants, and AN, a parallel nasal formant at FNP; it runs only once a target
+-    carries one of these keys (until then every sample is as before), the nasal parameters glide on their own clock, and an event
+-    { nasalOnly: true } moves them alone (it is neither a voice-source event nor a move of the other parameters, in both the linear
+-    and the shaped mode). Under [NAS=x] a bank entry's nasal fields (nasal: true, FNP ... BNZ2, AN; nasalizes {...}) are its murmur,
+-    every other phoneme's first event and every silence carry neutral pairs, and a vowel-like neighbour of a nasal (no pause between)
+-    is nasalized over [NASVC] (before it, default 0.5) / [NASCV] (after it, 0.3) of its slot at strength x (nasalOnly events); the
+-    pole/zero frequencies follow the formant scale; [NAST=ms] times the first event into a nasal and into the (non-stop) phoneme after
+-    it; a bare [NAS] puts neutral pairs back. Without [NAS] bank nasal fields are dropped and the schedule is unchanged
++    FNP2/BNP2, FNZ2/BNZ2, in cascade before the parallel formants, AN, a parallel nasal formant at FNP, and GN, a gain on the whole
++    output while the path runs; it runs only once a target carries one of these keys (until then every sample is as before), the
++    nasal parameters glide on their own clock, and an event { nasalOnly: true } moves them alone (it is neither a voice-source event
++    nor a move of the other parameters, in both the linear and the shaped mode). Under [NAS=x] a bank entry's nasal fields
++    (nasal: true, FNP ... BNZ2, AN, GN; nasalizes {...}) are its murmur, every other phoneme's first event and every silence carry
++    neutral ones, and a vowel-like neighbour of a nasal (voicing >= 1, not a stop; no pause between) is nasalized over [NASVC]
++    (before it, default 0.8) / [NASCV] (after it, 0.5) of its slot, each span at most [NASMS=ms] (absent: no cap), at strength x
++    (nasalOnly events toward AN 0.4 at FNP 250, the pairs neutral, GN 1, or the nasal's nasalizes {...}); the pole/zero frequencies
++    follow the formant scale; [NAST=ms] times the first event into a nasal and into the (non-stop) phoneme after it; a bare [NAS]
++    puts neutral values back. Without [NAS] bank nasal fields are dropped and the schedule is unchanged (audio fixture:
++    klattsing/test/audio.test.js)
 -- 
 2.43.0
 
