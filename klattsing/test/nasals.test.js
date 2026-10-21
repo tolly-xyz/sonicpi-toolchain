@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { speak, sing, toKlattsch, durationsOf } from '../src/compile.js';
 import { bankName, banksFor } from '../src/banks.js';
-import { NASAL_MURMUR, NASALS, nasalOptions, nasalDirectives } from '../src/nasals.js';
+import { NASAL_MURMUR, NASALS, NASALS_SING, nasalOptions, nasalDirectives } from '../src/nasals.js';
 import { timelineOf } from '../src/timeline.js';
 import { compileString, renderToBuffer, FormantSynth, banks } from '../../vendor/klattsch/src/engine/index.js';
 import { NASAL_PARAMS, NASAL_DEFAULT } from '../../vendor/klattsch/src/engine/synth-core.js';
@@ -129,6 +129,28 @@ test('sequencer: vowels next to a nasal are nasalized over [NASVC] / [NASCV] of 
   assert.deepEqual(c.schedule.map((e) => e.atMs), [...c.schedule.map((e) => e.atMs)].sort((a, b) => a - b), 'in time order');
 });
 
+test('sequencer: the default nasalized vowel (AN 0.4 at FNP 250, pairs neutral, level unchanged)', () => {
+  const bank = { schemaVersion: 1, name: 'nastestd', extends: 'klatt1980-en', phonemes: { N: { ...banks.get('klatt1980-en').phonemes.N, nasal: true } } };
+  registerBank(bank);
+  const ev = compileString('[bank=nastestd] [NAS=0.5] r200 b100 AA N').schedule.filter((e) => e.nasalOnly);
+  assert.equal(ev.length, 1);
+  assert.deepEqual(ev[0].target, { ...NASAL_DEFAULT, AN: 0.2 });
+  assert.ok(Math.abs(ev[0].atMs - 40) < 1e-9 && Math.abs(ev[0].transitionMs - 160) < 1e-9, 'the last 80% of the vowel');
+});
+
+test('sequencer: [NASMS=ms] caps each nasalized span; absent or not binding, the spans are the shares', () => {
+  const bank = { schemaVersion: 1, name: 'nastestms', extends: 'klatt1980-en', phonemes: { N: { ...banks.get('klatt1980-en').phonemes.N, nasal: true } } };
+  registerBank(bank);
+  const ev = (s) => compileString(`[bank=nastestms] [NAS=1] ${s} r400 b100 AA N AA`).schedule.filter((e) => e.nasalOnly).map((e) => [e.atMs, e.transitionMs].map((x) => Math.round(x * 1e6) / 1e6));
+  // vowel 1: 0-400 ms, the last 80% toward nasalized; N 400-800; vowel 2: 800-1200, neutral again by 50% of it
+  assert.deepEqual(ev(''), [[80, 320], [840, 160]]);
+  assert.deepEqual(ev('[NASMS=1000]'), ev(''), 'not binding');
+  assert.deepEqual(ev('[NASMS=100]'), [[300, 100], [840, 60]], 'the last 100 ms before N, the first 100 ms after it');
+  const both = compileString('[bank=nastestms] [NAS=1] [NASMS=100] r400 b100 N AA N').schedule.filter((e) => e.nasalOnly);
+  assert.deepEqual(both.map((e) => Math.round(e.atMs * 1e6) / 1e6), [440, 700], 'between two nasals: oral in the middle');
+  assert.equal(both[0].target.AN, NASAL_DEFAULT.AN);
+});
+
 test('sequencer: [NAST=ms] times the events into a nasal and into the phoneme after it', () => {
   const ev = (s) => compileString(s).schedule.filter((e) => !e.nasalOnly && e.target.A1 > 0).map((e) => e.transitionMs);
   const bank = { schemaVersion: 1, name: 'nastest3', extends: 'klatt1980-en', phonemes: { M: { ...banks.get('klatt1980-en').phonemes.M, nasal: true } } };
@@ -177,6 +199,13 @@ test('option: directives, generated bank, validation; durations and timing uncha
   const sg = { mode: 'sing', text: 'Nine men', bpm: 120, notes: 'auto' };
   assert.match(sing({ ...sg, nasals: true }), /\[NAS=/);
   assert.equal(NASALS.strength, nasalOptions({ nasals: true }).strength);
+  // maxMs: [NASMS]; none in speech by default, NASALS_SING.maxMs in sing mode
+  assert.doesNotMatch(s, /NASMS/);
+  assert.match(speak({ ...spec, nasals: { maxMs: 120 } }), /\[NAS=1\] \[NASMS=120\] \[NAST=5\]/);
+  assert.match(sing({ ...sg, nasals: true }), new RegExp(`\\[NASMS=${NASALS_SING.maxMs}\\]`));
+  assert.match(sing({ ...sg, nasals: { maxMs: 50 } }), /\[NASMS=50\]/);
+  assert.throws(() => nasalOptions({ nasals: { maxMs: -1 } }), /nasals.maxMs: a number >= 0/);
+  assert.deepEqual(durationsOf({ ...sg, nasals: true }), durationsOf(sg));
 });
 
 test('renders: nasals change the nasal consonants and their vowels, not a sentence without them', () => {
