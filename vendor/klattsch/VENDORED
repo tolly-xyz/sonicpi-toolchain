@@ -10,3 +10,7 @@ tgies/klattsch @ 63dc2c6 (MIT), vendored with patches:
     formants), transparent (HH: the next vowel's formants), smooth (liquids: no step); under [CO] formant events never go back in
     time and the schedule is sorted by time (stably); without [CO]/[TC] the schedule is unchanged
   src/engine/dsp.js, src/engine/synth-core.js: [GS=1] an LF (Liljencrants-Fant) voice source instead of the Rosenberg pulse: lfShape(Rd) (Fant 1995), [RD=x] [RDE=oct/effort] shape and its effort coupling, [TL=dB at 3 kHz] one-pole tilt, [JIT=%] [SHIM=%] local jitter (closure-to-closure periods) and shimmer, [AM=0..1] noise scaled by the glottal flow while voiced, [FL=x] flutter (Klatt & Klatt 1990), [NT=dB] [AT=dB] one-pole low-pass of the frication / aspiration noise (Klatt's soft low-pass noise); without GS (or GS=0) every sample is as before
+  src/engine/sequencer.js: a stop's bank entry may set closure ({fields, inMs, fade}: what sounds while the tract is closed instead of
+    silence, e.g. a voice bar: the parameters it sets reached in inMs (default 20, at most 40% of the closure), its A1-A3 times fade by the
+    release; under [CO] the formants it sets in a formant event, the others at the vowel's VC boundary) and release: false (no burst, the
+    closure fills the slot: an unreleased stop); klattsing's "stops" option generates such entries. An entry without them renders as before

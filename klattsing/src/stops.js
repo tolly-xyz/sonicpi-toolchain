@@ -1,34 +1,57 @@
-// Realistic stop consonants (the opt-in "stops" option). klattsch renders a stop as silence plus one fixed burst
-// (the bank entry), and klattsing adds the aspiration after P/T/K as an HH segment with fixed formants. With
-// "stops", each stop gets a bank entry chosen by its context, from a generated bank "<base>--st<hash>" that extends
-// the spec's bank (content-addressed like bankPatch's):
-//   voiceBar   B D G after a voiced sound (no pause between): low-frequency voicing through the closure
-//              (klattsch patch: a stop entry's `closure`), fading as the oral pressure builds up
-//              (Lisker & Abramson 1964: English voiced stops are voiced through the closure intervocalically
-//              but not after a pause; Westbury & Keating 1986: the voicing decays through the closure)
-//   voicingTail P T K after a voiced sound: the voicing of the vowel dies away over the closure's start (A1 of
-//              a fading voice-bar-like closure; 0 = silent closure)
-//   burst      the release burst's spectrum by place and the vowel it is released into (Stevens & Blumstein
-//              1978): labial diffuse-falling (energy below the vowel's F2), alveolar diffuse-rising (a high
-//              F2 locus near 1.8 kHz and a strong 3.5-4 kHz peak, lower before rounded vowels), velar compact (a
-//              single mid-frequency peak tied to the vowel: between F2 and F3 of a front vowel, just above F2 of
-//              a back one); a number blends the bank's burst (0) into these (1); {P, B, T, D, K, G}: per stop
-//   burstGain / aspirationGain  scale the burst / aspiration amplitudes (1)
-//   aspiration the aspiration after P/T/K (VOT) is noise through the following vowel's formants with F1 cut
-//              back and widened (Klatt 1975, 1980: aspiration excites the vocal tract of the vowel; the open
-//              glottis damps F1), as HQ<vowel> entries, instead of HH; a number blends HH (0) into these (1)
-//   vot        place-dependent VOT: true scales the aspiration (rules.aspirationMs) by Klatt's (1975) P 47 /
-//              T 65 / K 70 ms (relative to their mean), {P, T, K}: ms
-//   flap       T/D between a vowel (or R) and an unstressed vowel inside a word ("water", "city", "party") is
-//              a flap DQF: voiced, a brief dip (Zue & Laferriere 1979), at most flapMs ms (0: the rule duration;
-//              real flaps last ~20-30 ms)
+// Realistic stop consonants (the opt-in "stops" option). klattsch renders a stop as silence (the vowel fading out
+// over 20 ms) plus one fixed burst (the bank entry), and klattsing adds the aspiration after P/T/K as an HH segment.
+// With "stops", each stop gets a bank entry chosen by its context, from a generated bank "<base>--st<hash>" that
+// extends the spec's bank (after bankPatch, coarticulation and breath; content-addressed like bankPatch's), so the
+// entries keep coarticulation's loci; klattsch reads two new stop fields (a patch, vendor/klattsch/VENDORED):
+// `closure` (what sounds while the tract is closed) and `release: false` (no burst). Durations are unchanged unless
+// vot / votTotal / flapMs say otherwise, and the timeline names every token by its lexical phoneme.
+//   voiceBar   B D G after a voiced sound (no pause between): low-frequency voicing through the closure, F1 180 Hz,
+//              reached in 20 ms and fading to 0.35 by the release (Lisker & Abramson 1964, 1967: English voiced
+//              stops are voiced through the closure between voiced sounds but mostly not after a pause; Westbury &
+//              Keating 1986: the voicing decays as the oral pressure builds up). Kokoro's voiced closures sit 9-12 dB
+//              under the vowel's 60-400 Hz band, these 10-16 dB (tools/voicelab/stopscope.py); A1 0.05 / 0.07 / 0.1
+//              score 1.672 / 1.681 / 1.680 in fidelity (no voice bar: 1.47 for the whole option)
+//   burst      the release burst's spectrum by place and the vowel it is released into (Stevens & Blumstein 1978):
+//              labial diffuse-falling (energy at and below the vowel's F2), alveolar diffuse-rising (F2 near
+//              1.8 kHz, the high peak lower before rounded vowels), velar compact (one mid-frequency peak tied to
+//              the vowel: between F2 and F3 of a front vowel, just above F2 of a back one); a number blends the
+//              bank's burst (0) into these (1); {P, B, T, D, K, G}: per stop
+//   burstFit   the stops whose bursts take BURST_FIT's bandwidths and amplitudes (fitted to Kokoro's bursts by
+//              tools/voicelab/burstfit.py, over the rules' frequencies): true, false or a list (default T D K: P B G
+//              fit Kokoro's spectra too, but score lower in fidelity: P 3.42 -> 3.47, B 2.81 -> 2.95 dB MCD)
+//   burstLocus under coarticulation, keep its velar locus burst (a K/G burst at the vowel's CV boundary formants)
+//              instead of the template's formants (false; a tie in fidelity)
+//   burstGain / aspirationGain  scale the burst / aspiration amplitudes (1; 2 and 3 score lower)
+//   aspiration the aspiration after P/T/K is noise through the following vowel's formants with F1 damped (BW1 +200,
+//              A1 x 0.4) as HQ<vowel> entries, instead of HH (Klatt 1975, 1980: aspiration is turbulence at the
+//              glottis exciting the vocal tract of the vowel; the open glottis damps F1); a number blends HH (0)
+//              into these (1). Under coarticulation HH already takes the vowel's formants, so this adds the F1 damping
+//   vot        place-dependent aspiration (rules.aspirationMs is one value): true scales it by Klatt's (1975)
+//              VOTs P 47 / T 65 / K 70 ms relative to their mean (the mean stays), {P, T, K}: ms; votTotal: the
+//              closure gives what the aspiration gains, so the stop + aspiration keeps its length (at least
+//              MIN_CLOSURE_MS of closure). Both off: Kokoro's VOTs are short (its periodicity starts ~5-25 ms after
+//              the release in the corpus), and Klatt's values with votTotal score 1.671 against 1.681
+//   flap       T/D between a vowel (or R) and an unstressed vowel inside a word ("water", "city", "party") is a
+//              flap DQF: voiced, F1 down, a brief dip (Zue & Laferriere 1979); "words" (the default) also a word-
+//              final T/D after a vowel or R before a vowel-initial word, no pause between ("get it", "a lot of"),
+//              as American English flaps across word boundaries. flapMs: at most that long (0: the rule duration;
+//              26 ms scores lower, through the durations); flapLocus: under coarticulation, D's locus (a tie)
 //   unreleased a stop before another consonant (no pause between, not released into its own onset: "play" keeps
-//              its burst) has no burst (klattsch patch: release: false): "that time", "napkin", "cats"
-//              (Crystal & House 1988, Byrd 1993: unreleased stops are the norm before consonants in American
-//              English); "closure": only before a consonant with an oral closure (a stop, an affricate, a nasal)
-// Codes: <stop>Q<closure><release>, closure "" (silent), "V" (voice bar) or "T" (voicing tail), release a vowel
-// (released into it), "X" (released, no vowel context) or "U" (unreleased); HQ<vowel>; DQF. The timeline names
-// them by their lexical phoneme (p).
+//              its burst) has no burst, the closure fills its slot: "that time", "napkin", "cats" (Crystal & House
+//              1988; Byrd 1993: stops before a consonant are often unreleased in American English); "closure": only
+//              before a stop, an affricate or a nasal; {P, B, T, D, K, G}: per stop. Kokoro releases its P and K
+//              before consonants and not its T (stopscope), but releasing P/K/B/G scores lower (1.638-1.658)
+//   glottalStop an unreleased T after a sonorant closes abruptly (5 ms, a glottal closure, as American English
+//              glottalizes /t/ before a consonant: "that man"). Off: Kokoro shows no glottalization there (its F0
+//              falls 1.35 st over the vowel's last 40 ms before T + consonant, 1.10 before T + vowel), and it scores
+//              1.672
+//   closureMs  every silent closure fades the sound out over this many ms instead of klattsch's 20 (null: off;
+//              8 ms ties, 12 scores lower)
+//   voicingTail P T K after a voiced sound: the vowel's voicing dies away through the closure (A1; 0 = off)
+// Codes: <stop>Q<closure><release>, closure "" (silent), "V" (voice bar), "T" (voicing tail) or "G" (glottal
+// stop), release a vowel (released into it), "X" (released, no vowel context) or "U" (unreleased); HQ<vowel>;
+// DQF. On the Kokoro corpus (fidelity.py --audio, BASE = kokoro-durations + mitalk-bursts + coarticulation +
+// glottal): 1.399 -> 1.681 (stops' MCD 4.32 -> 3.43 dB); see klattsing/README.md.
 import { createHash } from 'node:crypto';
 import { banks } from '../../vendor/klattsch/src/engine/banks/index.js';
 import { VOWELS, STOPS, VOICED, LIQUIDS, GLIDES, NASALS, AFFRICATES, SONORANT } from './phones.js';
@@ -262,5 +285,5 @@ export function planStops(ws, o) {
 // after a rest, no voice bar or voicing tail; before one, released without a vowel context
 // (a flap DQF next to a rest is its lexical stop, p)
 const CODE = /^([PBTDKG])Q([VTG]?)(.*)$/;
-export const afterSilence = (c, p) => { if (c === 'DQF') return c; const m = c.match(CODE); return m ? `${m[1]}Q${m[3]}` : c; };
+export const afterSilence = (c, p) => { if (c === 'DQF') return p ?? c; const m = c.match(CODE); return m ? `${m[1]}Q${m[3]}` : c; };
 export const beforeSilence = (c, p) => { if (c === 'DQF') return p ?? c; const m = c.match(CODE); return m ? `${m[1]}Q${m[2]}X` : c; };

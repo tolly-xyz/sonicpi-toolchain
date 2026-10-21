@@ -200,7 +200,8 @@ test('stops: sing keeps the context across notes, and a rest breaks it', () => {
   assert.deepEqual(compileString(gated).warnings, []);
   assert.equal(afterSilence('BQVIY'), 'BQIY'); assert.equal(afterSilence('TQTAA'), 'TQAA'); assert.equal(afterSilence('DQF'), 'DQF');
   assert.equal(beforeSilence('GQVAH'), 'GQVX'); assert.equal(beforeSilence('TQU'), 'TQX');
-  assert.equal(beforeSilence('DQF', 'T'), 'T', 'a flap before a rest: its own stop'); assert.equal(afterSilence('TQGU'), 'TQU');
+  assert.equal(beforeSilence('DQF', 'T'), 'T', 'a flap before a rest: its own stop'); assert.equal(afterSilence('DQF', 'D'), 'D');
+  assert.equal(afterSilence('TQGU'), 'TQU');
   const flap = sing({ mode: 'sing', text: 'get it', bpm: 120, stops: true, notes: [['E2', 4], ['r', 2], ['G2', 4]] });
   assert.match(flap, / T p[\d.]+ /); assert.doesNotMatch(flap, /DQF/);
   assert.match(sing({ mode: 'sing', text: 'get it', bpm: 120, stops: true, notes: [['E2', 4], ['G2', 4]] }), /DQF/);

@@ -215,7 +215,7 @@ def table(rows, by=("p", "next")):
     g = collections.defaultdict(list)
     for r in rows:
         g[tuple(r[k] for k in by)].append(r)
-        g[(r["p"], "*")].append(r)
+        if len(by) > 1: g[(r["p"], "*")].append(r)
     out = {}
     for key, rs in sorted(g.items()):
         cell = {"n": len(rs), "burst_mcd": round(float(np.mean([r["burst_mcd"] for r in rs])), 2)}
