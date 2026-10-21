@@ -31,7 +31,7 @@
 // them by their lexical phoneme (p).
 import { createHash } from 'node:crypto';
 import { banks } from '../../vendor/klattsch/src/engine/banks/index.js';
-import { VOWELS, STOPS, VOICED, LIQUIDS, GLIDES, NASALS, AFFRICATES } from './phones.js';
+import { VOWELS, STOPS, VOICED, LIQUIDS, GLIDES, NASALS, AFFRICATES, SONORANT } from './phones.js';
 
 // "stops": true = these (each chosen with tools/voicelab/fidelity.py against Kokoro; see VENDORED / README)
 export const STOP_DEFAULTS = {
@@ -43,15 +43,18 @@ export const STOP_DEFAULTS = {
   aspirationGain: 1,
   vot: false,
   votTotal: false,
-  flap: true,
+  flap: 'words',
   flapMs: 0,
   flapLocus: false,
   unreleased: 'consonant',
-  burstLocus: true,
-  burstFit: false,
+  glottalStop: false,
+  closureMs: null,
+  burstLocus: false,
+  burstFit: ['T', 'D', 'K'],
 };
 export const VOT_KLATT1975 = { P: 47, T: 65, K: 70 };
 export const MIN_CLOSURE_MS = 20;
+export const GLOTTAL_STOP_MS = 5;   // glottalStop: the vowel's offset into the closure (klattsch's own: 20 ms)
 const PLACE = { P: 'lab', B: 'lab', T: 'alv', D: 'alv', K: 'vel', G: 'vel' };
 const VOICELESS = new Set(['P', 'T', 'K']);
 const ROUNDED = new Set('UW UH OW OY AO ER'.split(' '));
@@ -77,7 +80,11 @@ export function stopOptions(x) {
     return [c, v];
   }));
   if (![true, false, 'words'].includes(o.flap)) throw new Error(`stops.flap: true, false or "words", got ${JSON.stringify(o.flap)}`);
-  for (const k of ['burstLocus', 'flapLocus', 'votTotal']) o[k] = !!o[k];
+  for (const k of ['burstLocus', 'flapLocus', 'votTotal', 'glottalStop']) o[k] = !!o[k];
+  if (o.closureMs !== null && !(typeof o.closureMs === 'number' && o.closureMs >= 0)) throw new Error(`stops.closureMs: expected ms >= 0 or null, got ${JSON.stringify(o.closureMs)}`);
+  if (o.vot && o.vot !== true && (typeof o.vot !== 'object' || !Object.entries(o.vot).every(([c, v]) => VOICELESS.has(c) && typeof v === 'number' && v >= 0))) {
+    throw new Error(`stops.vot: true or {P, T, K: aspiration ms}, got ${JSON.stringify(o.vot)}`);
+  }
   // burstFit: true (every stop), false, or a list of stops
   const bf = o.burstFit;
   if (!(typeof bf === 'boolean' || (Array.isArray(bf) && bf.every((c) => PLACE[c])))) throw new Error(`stops.burstFit: true, false or a list of P B T D K G, got ${JSON.stringify(bf)}`);
@@ -162,9 +169,12 @@ export function stopsBank(base, o, canonical) {
     const closures = [''];
     if (o.voiceBar && !VOICELESS.has(s)) closures.push('V');
     if (o.voicingTail > 0 && VOICELESS.has(s)) closures.push('T');
+    if (o.glottalStop && s === 'T') closures.push('G');
     for (const c of closures) {
       const closure = c === 'V' ? { voicing: 1, F1: o.voiceBar.F1, BW1: o.voiceBar.BW1, A1: o.voiceBar.A1, A2: 0, A3: 0, inMs: o.voiceBar.inMs, fade: o.voiceBar.fade }
-        : c === 'T' ? { voicing: 1, F1: 200, BW1: 80, A1: o.voicingTail, A2: 0, A3: 0, inMs: 15, fade: 0 } : null;
+        : c === 'T' ? { voicing: 1, F1: 200, BW1: 80, A1: o.voicingTail, A2: 0, A3: 0, inMs: 15, fade: 0 }
+        : c === 'G' ? { A1: 0, A2: 0, A3: 0, inMs: GLOTTAL_STOP_MS }
+        : o.closureMs != null ? { A1: 0, A2: 0, A3: 0, inMs: o.closureMs } : null;
       const withClosure = (x) => (closure ? { ...x, closure } : x);
       const gain = (x) => (o.burstGain === 1 ? x : { ...x, A1: x.A1 * o.burstGain, A2: x.A2 * o.burstGain, A3: x.A3 * o.burstGain });
       phonemes[`${s}Q${c}X`] = withClosure(gain({ ...e }));
@@ -231,8 +241,10 @@ export function planStops(ws, o) {
       else if (sameOnset && (LIQUIDS.has(next) || GLIDES.has(next)) && s.nucleus) rel = s.nucleus;
     }
     const voicedCtx = prev !== undefined && VOICED.has(prev);
-    const clo = !voicedCtx ? '' : !VOICELESS.has(x.p) ? (o.voiceBar ? 'V' : '') : (o.voicingTail > 0 ? 'T' : '');
-    if (clo || rel !== 'X' || o.burstGain !== 1) set(`${x.p}Q${clo}${rel}`);
+    // glottalStop: an unreleased T after a sonorant ends it with a glottal closure (abrupt), "that man"
+    const glottal = o.glottalStop && x.p === 'T' && rel === 'U' && voicedCtx && SONORANT(prev);
+    const clo = glottal ? 'G' : !voicedCtx ? '' : !VOICELESS.has(x.p) ? (o.voiceBar ? 'V' : '') : (o.voicingTail > 0 ? 'T' : '');
+    if (clo || rel !== 'X' || o.burstGain !== 1 || o.closureMs != null) set(`${x.p}Q${clo}${rel}`);
   });
   for (const w of ws) for (const s of w.syllables) {
     if (!s.aspMs || !s.nucleus) continue;
@@ -249,6 +261,6 @@ export function planStops(ws, o) {
 // sing: a rest next to a stop that planStops saw in context (rests come from the notes, after the durations):
 // after a rest, no voice bar or voicing tail; before one, released without a vowel context
 // (a flap DQF next to a rest is its lexical stop, p)
-const CODE = /^([PBTDKG])Q([VT]?)(.*)$/;
+const CODE = /^([PBTDKG])Q([VTG]?)(.*)$/;
 export const afterSilence = (c, p) => { if (c === 'DQF') return c; const m = c.match(CODE); return m ? `${m[1]}Q${m[3]}` : c; };
 export const beforeSilence = (c, p) => { if (c === 'DQF') return p ?? c; const m = c.match(CODE); return m ? `${m[1]}Q${m[2]}X` : c; };
