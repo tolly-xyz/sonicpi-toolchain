@@ -7,6 +7,7 @@
 //   "aspiration": "breath"                                 adds BR<vowel> entries, a bank "<base>--br<hash>" (below)
 //   "coarticulation": true | {...}                         adds klattsch's coarticulation fields (vowel, locus,
 //                                                          locusBurst, transparent): a bank "<base>--co<hash>"
+//   "stops": true | {...}                                  context-dependent stop entries, "<base>--st<hash>" (stops.js)
 // klattsch layers banks by whole phoneme entries, so a patched entry is the base's resolved entry with the
 // patch's fields merged in (a field set to null is removed; an object value, e.g. glideTo, is merged one level).
 import { createHash } from 'node:crypto';
@@ -16,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { banks, registerBank } from '../../vendor/klattsch/src/engine/banks/index.js';
 import { VOWELS } from './phones.js';
 import { coartOptions, coartFields } from './coarticulation.js';
+import { stopOptions, stopsBank } from './stops.js';
 
 const BANK_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'banks');
 
@@ -132,5 +134,6 @@ function chain(o) {
   if (o.bankPatch && Object.keys(o.bankPatch).length) add(patchedBank(name || banks.defaultName, o.bankPatch));
   if (o.coarticulation) add(coartBank(name || banks.defaultName, o.coarticulation));
   if (o.aspiration === 'breath') add(breathBank(name || banks.defaultName, o.breathVoicing));
+  if (o.stops) { const base = name || banks.defaultName; ensureBank(base); add(stopsBank(base, stopOptions(o.stops), canonical)); }
   return { name, banks: out };
 }
