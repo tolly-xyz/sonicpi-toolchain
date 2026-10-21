@@ -47,7 +47,11 @@
 //              1.672
 //   closureMs  every silent closure fades the sound out over this many ms instead of klattsch's 20 (null: off;
 //              8 ms ties, 12 scores lower)
-//   voicingTail P T K after a voiced sound: the vowel's voicing dies away through the closure (A1; 0 = off)
+//   voicingTail P T K after a voiced sound: the vowel's voicing dies away through the closure (A1 of a low F1
+//              murmur reached in 15 ms, falling to 0 by the release; 0 = off). The folds keep vibrating for a while
+//              after the oral closure of a voiceless stop (Westbury & Keating 1986); Kokoro's P/T/K closures after a
+//              voiced sound sit 21-27 dB under the vowel's 60-400 Hz band, klattsch's were digital silence (-118),
+//              0.02 gives 30-36. 0.01 / 0.015 / 0.02 / 0.03 / 0.05 score 1.709 / 1.710 / 1.709 / 1.704 / 1.685 (0: 1.681)
 // Codes: <stop>Q<closure><release>, closure "" (silent), "V" (voice bar), "T" (voicing tail) or "G" (glottal
 // stop), release a vowel (released into it), "X" (released, no vowel context) or "U" (unreleased); HQ<vowel>;
 // DQF. On the Kokoro corpus (fidelity.py --audio, BASE = kokoro-durations + mitalk-bursts + coarticulation +
