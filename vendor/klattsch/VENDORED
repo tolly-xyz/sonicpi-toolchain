@@ -23,3 +23,7 @@ tgies/klattsch @ 63dc2c6 (MIT), vendored with patches:
     follow the formant scale; [NAST=ms] times the first event into a nasal and into the (non-stop) phoneme after it; a bare [NAS]
     puts neutral values back. Without [NAS] bank nasal fields are dropped and the schedule is unchanged (audio fixture:
     klattsing/test/audio.test.js)
+  src/engine/sequencer.js: a stop's bank entry may set closure ({fields, inMs, fade}: what sounds while the tract is closed instead of
+    silence, e.g. a voice bar: the parameters it sets reached in inMs (default 20, at most 40% of the closure), its A1-A3 times fade by the
+    release; under [CO] the formants it sets in a formant event, the others at the vowel's VC boundary) and release: false (no burst, the
+    closure fills the slot: an unreleased stop); klattsing's "stops" option generates such entries. An entry without them renders as before

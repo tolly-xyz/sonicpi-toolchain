@@ -11,6 +11,7 @@ import { bankName, BREATH_PREFIX } from './banks.js';
 import { DUR } from './phones.js';
 import { coartOptions, coartDirectives } from './coarticulation.js';
 import { nasalOptions, nasalDirectives } from './nasals.js';
+import { stopOptions, planStops, afterSilence, beforeSilence } from './stops.js';
 
 const DIPH = { AY: ['AA', 'IY'], EY: ['EH', 'IY'], OW: ['AO', 'UW'], AW: ['AA', 'UW'], OY: ['AO', 'IY'] };
 const NOTE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -74,7 +75,8 @@ export function words(text, rules, version, o = {}) {
     return { ...w, syllables: w.syllables.map((s) => (reduce ? { ...s, stress: 0 } : { ...s })) };
   });
   const dur = durTable(o.phoneDur);
-  return version === 'v0' ? timeWordsV0(ws, rules ?? undefined, dur) : timeWords(ws, { ...RULES, ...(rules ?? {}) }, dur);
+  const timed = version === 'v0' ? timeWordsV0(ws, rules ?? undefined, dur) : timeWords(ws, { ...RULES, ...(rules ?? {}) }, dur);
+  return o.stops ? planStops(timed, stopOptions(o.stops)) : timed;
 }
 
 // loudness by stress ([AV=x], a patch to the vendored klattsch): unstressed syllables recede, as in speech
@@ -101,6 +103,10 @@ function prefix(o) {
     nasalDirectives(nasalOptions(o)), voiceOf(o)].filter(Boolean).join(' ');
 }
 const asp = (s, o) => (o.aspiration !== false && s.aspMs ? `r${f1(s.aspMs)} HH ` : '');
+// "stops" (stops.js): a consonant's context-dependent entry (onsetCode / codaCode / aspCode), named in the
+// timeline by its lexical phoneme; fix: sing's correction for a rest next to it
+const consonant = (s, part, i, p, at, fix) => { const c = s[part]?.[i]; return c ? [fix ? fix(c, p) : c, { ...at, p }] : [p, at]; };
+const aspToken = (s, at) => (s.aspCode ? [s.aspCode, { ...at, asp: true, p: 'HH' }] : ['HH', { ...at, asp: true }]);
 // the klattsch aspiration (h) a voice string leaves set, so "breath" can restore it
 export function voiceAspiration(voice) {
   let h = 0;
@@ -141,9 +147,9 @@ export function speak(o, meta) {
       const b = I.declination ? base * 2 ** (-I.declination * t / 12000) : base;
       if (I.declination && f1(b) !== lastB) { lastB = f1(b); out += `b${lastB} `; }
       out += av(s, o);
-      s.onset.forEach((p, i) => ph(s.onsetMs[i] * rate, p, at));
+      s.onset.forEach((p, i) => ph(s.onsetMs[i] * rate, ...consonant(s, 'onsetCode', i, p, at)));
       const breathHere = breath && s.nucleus && s.aspMs;
-      if (!breathHere && asp(s, o)) ph(s.aspMs, 'HH', { ...at, asp: true });
+      if (!breathHere && asp(s, o)) ph(s.aspMs, ...aspToken(s, at));
       if (s.nucleus) {
         // pitch: a rise on primary stress, a fall at the end of a phrase (a rise, with questionRise, after '?')
         const st = final ? (I.questionRise && w.punct.includes('?') ? I.questionRise : -I.finalFall) : s.stress === 1 ? I.accent : 0;
@@ -154,7 +160,7 @@ export function speak(o, meta) {
         ph(s.nucleusMs * rate, s.nucleus, at, delta ? `(${delta > 0 ? '+' : ''}${delta})` : '');
         if (acc) out += accDown;
       }
-      s.coda.forEach((p, i) => ph(s.codaMs[i] * rate, p, at));
+      s.coda.forEach((p, i) => ph(s.codaMs[i] * rate, ...consonant(s, 'codaCode', i, p, at)));
       if (final && w.punct) {
         out += `p${Math.round(pauseOf(o, w.punct) * rate)} `;
         t = /[.!?]/.test(w.punct) ? 0 : t + pauseOf(o, w.punct) * rate;
@@ -211,20 +217,23 @@ export function sing(o, meta) {
   const breath = o.aspiration === 'breath', [hUp, hDown] = breathDirs(o, voiceOf(vo));
   let out = `${prefix(vo)} `;
   const ph = (ms, p, info, suffix = '') => { out += `r${f1(ms)} ${p}${suffix} `; m?.push(info); };
-  for (const x of plan) {
+  plan.forEach((x, k) => {
     const { s, at } = x;
+    // stops: a rest breaks the context planStops saw (no voice bar after it, a release before it)
+    const restBefore = x.rests.length > 0 || (k > 0 && plan[k - 1].rest > 0);
+    const restAfter = x.rest > 0 || (k + 1 < plan.length ? plan[k + 1].rests.length > 0 : tail.length > 0);
     for (const r of x.rests) out += `p${f1(r)} `;
     out += `v0 b${f1(hz(x.note))} ${av(s, o)}`;
-    s.onset.forEach((p, j) => ph(x.ons[j], p, at));
-    if (x.a && !breath) ph(x.a, 'HH', { ...at, asp: true });
+    s.onset.forEach((p, j) => ph(x.ons[j], ...consonant(s, 'onsetCode', j, p, at, j === 0 && restBefore && afterSilence)));
+    if (x.a && !breath) ph(x.a, ...aspToken(s, at));
     const acc = o.accent !== false && s.stress === 1;
     if (acc) out += accUp;
     if (x.a && breath) { out += hUp; ph(x.a, BREATH_PREFIX + x.parts[0][0], { ...at, asp: true, p: x.parts[0][0] }); out += hDown; }
     x.parts.forEach(([p, len2], j) => ph(len2, p, at, x.to && j === x.parts.length - 1 ? `${x.to > 0 ? '+' : ''}${x.to}` : ''));
     if (acc) out += accDown;
-    s.coda.forEach((p, j) => ph(x.coda[j], p, at));
+    s.coda.forEach((p, j) => ph(x.coda[j], ...consonant(s, 'codaCode', j, p, at, j === s.coda.length - 1 && restAfter && beforeSilence)));
     if (x.rest > 0) out += `p${f1(x.rest)} `;
-  }
+  });
   for (const r of tail) out += `p${f1(r)} `;
   return out.trim();
 }

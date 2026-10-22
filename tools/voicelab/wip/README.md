@@ -1,7 +1,4 @@
 # Feature tournament work in progress
 
-Commit series from agents' worktrees (apply with `git am -3`), saved so a container restart or usage limit can't lose them.
-- stops.mbox: voice bar, Kokoro-fitted bursts, vowel-formant aspiration, flaps, unreleased stops; on top of coarticulation + glottal; not yet measured.
-
-Singing (pairs.py sing mode, E2): base 41.0%, +coarticulation 51.8%, +glottal 25.2% - the LF source is a speech
-feature for now (it took "Ain't No Floor" from 57% to 43% of words heard).
+Commit series from agents' worktrees (apply with `git am -3`) saved so a container restart or usage limit cannot lose them.
+Merged into main so far: coarticulation, glottal source, nasals, stops. Nothing pending here.

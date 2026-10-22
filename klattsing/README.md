@@ -27,6 +27,7 @@ per syllable, or `"auto"`), `bpm`, `melody` (auto: `scale`, `long`, `short`, `la
 `dynamics` (loudness by stress, a klattsch patch; off by default), `durations` (`"v0"` for the first
 reconstruction), `rules`; and the opt-in options below (`bankPatch`, `functionWords`, `intonation`,
 `breathLevel`, `breathVoicing`, `pauseMs`, `accentDelta`, `phoneDur`, `coarticulation`, `glottal`, `nasals`).
+`breathLevel`, `breathVoicing`, `pauseMs`, `accentDelta`, `phoneDur`, `coarticulation`, `glottal`, `stops`).
 
 ## Options for optimizers (all opt-in; leaving them out gives exactly the strings from before)
 
@@ -44,6 +45,7 @@ reconstruction), `rules`; and the opt-in options below (`bankPatch`, `functionWo
 | `phoneDur` | `{PHONE: [inherent, minimum]}` ms (`src/phones.js` `DUR`) | the duration table per call, merged over `DUR` (either `durations` version, speak and sing); `tools/voicelab/climb.py durations` fits it with `rules` |
 | `coarticulation` | `true` or `{degree: 2, codaDegree: (degree), curve: "out", formantCurve: (curve), cv: 60, vc: 50, burst: true, hh: true, sonorants: true, loci: {PHONE: {F1/F2/F3: [k, c]}}}` (off) | context-dependent formant trajectories (klattsch's `[CO=x]` patch, `src/coarticulation.js`): a vowel starts at each neighbouring consonant's locus-equation value `F + degree (k F + c - F)` (loci per place fitted to Kokoro; Sussman et al. 1991) and moves to its target over `cv` ms, and moves toward the next consonant's value over its last `vc` ms (`codaDegree`); HH takes the next vowel's formants (`hh`), velar bursts front before front vowels (`burst`), liquids and glides glide (`sonorants`); every transition eased out (`curve`: `out`, `cos`, `linear`). A generated bank `<base>--co<hash>` carries the loci. Timings and the string's phonemes are unchanged. The curve without the loci: klattsch's `[TC=2]` in `voice` (e.g. `"[TC=2] g0.5 t0 h0.05"`) |
 | `glottal` | `true`, or `{rd: 1, rdEffort: 6, tilt: 0, jitter: 0.5, shimmer: 5, aspMod: 1, flutter: 0, aspTilt: 0, noiseTilt: 15}` (fields over these; `null` keeps one) (off) | an LF voice source instead of klattsch's Rosenberg pulse, with Klatt's low-passed noise (a klattsch patch, below): `[GS=1] [RD=..] [RDE=..] [TL=..] [JIT=..] [SHIM=..] [AM=..] [FL=..] [AT=..] [NT=..]` after the bank and `TR`, before the voice |
+| `stops` | `true`, or `{voiceBar: {F1: 180, BW1: 60, A1: 0.07, inMs: 20, fade: 0.35}, burst: 1, burstFit: ["T", "D", "K"], burstLocus: false, burstGain: 1, aspiration: 1, aspirationGain: 1, vot: false, votTotal: false, flap: "words", flapMs: 0, flapLocus: false, unreleased: "consonant", glottalStop: false, closureMs: null, voicingTail: 0.02}` (fields over these) (off) | context-dependent stop consonants (`src/stops.js`, below): a voice bar in B/D/G closures after a voiced sound (a fading voicing tail in P/T/K ones), bursts by place and the following vowel, aspiration through the vowel's formants, flaps, unreleased stops before consonants, as entries of a generated bank `<base>--st<hash>` (after the other generated banks) that a klattsch patch reads (a stop's `closure` and `release: false`). Timings and the timeline's phonemes are unchanged (unless `vot`/`votTotal`/`flapMs`) |
 
 ### The LF voice source (`glottal`)
 
@@ -90,6 +92,57 @@ klattsch's bright noise widen the vowel-consonant contrast); the noise tilt brin
 already dark in the banks, get worse (per-phone MCD +0.6 / +1.1 dB); S, T, K, P, HH, DH, V improve. Whisper minimal
 pairs (`tools/voicelab/pairs.py`, 139 words): 46.8% -> 46.0%, McNemar p = 1 (10 vs 9 discordant; fricatives 15% ->
 15% with none discordant); an earlier LF-only version also tied (46.8% both).
+
+### Stop consonants (`stops`)
+
+Without it a stop is klattsch's silence (the sound fading out over 20 ms) and one fixed burst per phoneme, whatever
+comes before or after; voiced stops are as silent as voiceless ones. `stops` picks a bank entry per stop by its
+context (`src/stops.js`; codes `<stop>Q<closure><release>` in a generated bank `<base>--st<hash>` that extends the
+spec's, after `bankPatch`, `coarticulation` and `"breath"`, so coarticulation's loci carry over), read by a klattsch
+patch: a stop entry's `closure` (what sounds while the tract is closed) and `release: false` (no burst).
+
+- **voice bar** (`voiceBar`): B D G after a voiced sound, no pause between, are voiced through the closure (F1 180 Hz,
+  A1 0.07, reached in 20 ms, fading to 0.35 by the release), as English voiced stops are between voiced sounds and
+  mostly not after a pause (Lisker & Abramson 1964, 1967); the voicing decays as the oral pressure rises (Westbury &
+  Keating 1986). Kokoro's voiced closures sit 9-11 dB under the vowel's 60-400 Hz band, these 9.5-11 dB
+  (`tools/voicelab/stopscope.py`); klattsch's were digital silence.
+- **voicing tail** (`voicingTail`): P T K after a voiced sound keep a weak low-F1 murmur (A1 0.02, reached in 15 ms,
+  falling to 0 by the release): the folds go on vibrating for a while after the oral closure of a voiceless stop
+  (Westbury & Keating 1986). Kokoro's P/T/K closures after a voiced sound sit 21-27 dB under the vowel's 60-400 Hz
+  band, these 30-36 dB (klattsch's: digital silence). 0.01-0.02 score alike, 0.05 lower; 0 = off.
+- **bursts by place and vowel** (`burst`, `burstFit`): the burst's formants follow the vowel it is released into, after
+  Stevens & Blumstein's (1978) templates: labial diffuse-falling (F2 0.6 F2v + 350, F3 at most the vowel's), alveolar
+  diffuse-rising (F2 0.25 F2v + 1300, the high peak 400 Hz lower before rounded vowels), velar compact (one peak at
+  (F2v + F3v) / 2 before a front vowel, F2v + 300 before a back one). For T D K the bandwidths and amplitudes
+  (`BURST_FIT`) are fitted to Kokoro's bursts (`tools/voicelab/burstfit.py`: klattsch's bursts were 5-15 dB weak at
+  1.3-3 and 4.5-10 kHz; the fitted velars come out as one compact peak, A3 0, the alveolars as a broad one). The
+  mel-cepstral distance between Kokoro's and klattsch's bursts (stopscope) falls 4.61 -> 3.62 dB (T 5.80 -> 3.60,
+  D 4.46 -> 3.80, K 4.90 -> 3.96; P, B about level; G, on the rules alone, 4.11 -> 4.47).
+- **aspiration** (`aspiration`): after P/T/K, noise through the following vowel's formants with F1 damped (BW1 +200
+  Hz, A1 x 0.4; Klatt 1975, 1980: the aspiration excites the vowel's vocal tract, the open glottis damps F1), as
+  `HQ<vowel>` instead of HH. Under coarticulation HH already takes the vowel's formants; this adds the damping (a tie in
+  fidelity: `aspiration: 0` scores 1.682). `vot`: place-dependent aspiration, `true` = `rules.aspirationMs` scaled
+  by Klatt's (1975) VOTs P 47 / T 65 / K 70 ms over their mean, or `{P, T, K}` ms; `votTotal`: the closure gives up
+  what the aspiration gains (off: Kokoro's VOTs are short, voicing starting a median 6-20 ms after the release of
+  its P/T/K by stopscope's periodicity detector, klattsch's 22-36; Klatt's values with `votTotal` score 1.671).
+- **flaps** (`flap`): T/D after a vowel or R before an unstressed vowel in a word ("water", "city"), and with
+  `"words"` (the default) a word-final T/D after a vowel or R before a vowel-initial word ("get it", "a lot of"), is
+  a voiced tap `DQF` (Zue & Laferriere 1979): word-internal only 1.651, across words 1.668.
+- **unreleased stops** (`unreleased`): a stop before another consonant (not in its own onset: "play" keeps its burst)
+  has no burst, its closure fills the slot ("that time", "napkin", "cats"; Crystal & House 1988, Byrd 1993: often
+  unreleased in American English); `"closure"` only before a stop, affricate or nasal; or per stop. Kokoro does
+  not release its T before a consonant but does its P and K; releasing P/K/B/G scores lower all the same (1.638-1.658:
+  a mismatched burst costs more than silence). `glottalStop` (off): an unreleased T after a sonorant closes in 5 ms
+  (glottal), 1.672: Kokoro shows no glottalization there.
+
+On the Kokoro corpus (`fidelity.py --audio`, BASE = `presets/kokoro-durations.json` + `mitalk-bursts` +
+`coarticulation` + `glottal`): score 1.399 -> 1.681 (dur 1.092 -> 1.092, spec 2.599 -> 3.404, pros 0.505 -> 0.546),
+MCD 3.78 -> 3.59, mcd_cmn 3.47 -> 3.33; stops' MCD 4.32 -> 3.42 (mcd_cmn 4.06 -> 3.40; B 4.74 -> 2.79, D 4.90 -> 3.28,
+G 5.18 -> 3.80, T 3.98 -> 3.37, K 4.28 -> 3.83, P 3.43 -> 3.42), vowels unchanged; F0 r 0.409 -> 0.418, detrended
+0.259 -> 0.280 (voiced closures carry the F0). Each part left out of the option (during the search): the voice bar
+-0.18, unreleased stops -0.10, flaps -0.03, the Kokoro-fitted bursts -0.01; the vowel-context bursts (-0.003) and the
+vowel-formant aspiration (+0.003) are not measurable here (fidelity samples a stop's middle 80%; a burst is 5-25 ms
+of it). On the other Kokoro voice, am_michael (nothing was fitted to it): 0.695 -> 0.916.
 
 Presets fitted against Kokoro by `tools/voicelab/climb.py` are spec fragments in `presets/` (merge one into a spec:
 `{"mode": "speak", "text": ..., ...preset}`): `kokoro-durations.json` (`rules`, `phoneDur`, `functionWords`) and
@@ -142,3 +195,6 @@ KLATT[:line1] = { mode: "sing", text: "Lower the bucket, lower the bell", bpm: 1
 **Measuring** (`tools/voicelab/`): `pairs.py` (139 words in minimal-pair sets after Kent et al. 1989,
 per contrast class) and `sentences.py` (Harvard sentences, word error rate), both scored by Whisper
 large-v3-turbo with Kokoro TTS as the ceiling. Change a rule or the engine, run both, keep what helps.
+`fidelity.py` scores a speak config against the Kokoro corpus without Whisper; `stopscope.py CONFIG [--by p,next]`
+compares its stops with Kokoro's part by part (closure voicing, burst spectra and their mel-cepstral distance, VOT),
+and `burstfit.py` fits burst bandwidths and amplitudes to Kokoro's from stopscope's `--rows`.

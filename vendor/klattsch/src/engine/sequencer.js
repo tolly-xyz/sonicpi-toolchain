@@ -453,15 +453,42 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
     const slotStart = timeMs;
     if (p.isStop) {
       // (sonicpi-toolchain patch) a bank entry's burstMs sets its release burst (MITalk: P 5, T 15, K 25 ms)
-      const burstMs = Math.min(p.burstMs ?? DEFAULTS.stopBurstMs, slotMs * 0.3);
+      // (sonicpi-toolchain patch) release: false -> no burst, the closure fills the slot (an unreleased stop)
+      const burstMs = p.release === false ? 0 : Math.min(p.burstMs ?? DEFAULTS.stopBurstMs, slotMs * 0.3);
       const silenceMs = slotMs - burstMs;
-      silence(Math.min(20, silenceMs * 0.4));
+      if (p.closure) {
+        // (sonicpi-toolchain patch) closure: what sounds while the tract is closed instead of silence (a voice
+        // bar), the parameters it sets (the others carry on, as through silence) reached in inMs (default 20, at
+        // most 40% of the closure), then its A1-A3 times fade (default 1) by the end of the closure
+        const { inMs = 20, fade = 1, ...c } = p.closure;
+        const tIn = Math.min(inMs, silenceMs * 0.4);
+        const target = { F0: startF0 };
+        for (const [k, v] of Object.entries(c)) target[k] = /^(F|BW)[1-9]$/.test(k) ? v * scale : v;
+        emit(target, tIn);
+        // under [CO] formants move only in their own events: the closure's formants, the others where the vowel
+        // before moved them (its VC boundary), or the stop's own
+        if (extras.CO !== undefined && FORMANTS.some((k) => k in c)) {
+          const pe = entryOf(prevPh.get(t));
+          const at = pe?.vowel && p.locus ? boundary(p, rawF(pe, true), true) : scaleF(rawF(p));
+          for (const k of FORMANTS) if (k in c) at[k] = c[k] * scale;
+          moveFormants(at, tIn, timeMs);
+        }
+        if (fade !== 1 && silenceMs - tIn > 0) {
+          timeMs += tIn;
+          const faded = { ...target };
+          for (const k of ['A1', 'A2', 'A3']) if (k in faded) faded[k] *= fade;
+          emit(faded, silenceMs - tIn);
+          timeMs -= tIn;
+        }
+      } else silence(Math.min(20, silenceMs * 0.4));
       timeMs += silenceMs;
-      emit(scaled(p, startF0), Math.min(5, burstMs * 0.2));
-      if (extras.CO !== undefined) {
-        // the burst's formants: its own, or (locusBurst, velars) the following vowel's CV boundary
-        const v = p.locusBurst && p.locus ? vowelAfter(t) : null;
-        moveFormants(v ? boundary(p, rawF(entryOf(v)), false) : scaleF(rawF(p)), Math.min(5, burstMs * 0.2), timeMs);
+      if (p.release !== false) {
+        emit(scaled(p, startF0), Math.min(5, burstMs * 0.2));
+        if (extras.CO !== undefined) {
+          // the burst's formants: its own, or (locusBurst, velars) the following vowel's CV boundary
+          const v = p.locusBurst && p.locus ? vowelAfter(t) : null;
+          moveFormants(v ? boundary(p, rawF(entryOf(v)), false) : scaleF(rawF(p)), Math.min(5, burstMs * 0.2), timeMs);
+        }
       }
       timeMs += burstMs;
       return slotMs;
