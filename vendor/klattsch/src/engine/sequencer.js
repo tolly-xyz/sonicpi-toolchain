@@ -437,9 +437,9 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
   };
 
   // (sonicpi-toolchain patch) frication, active while [FRIC=x] is set: a bank entry's frication {FF1, BF1, AF1, FF2,
-  // BF2, AF2, FF3, BF3, AF3, AB, rise, fall, fallTo, fallToC, in} drives the synth's frication path (noise through its
+  // BF2, AF2, FF3, BF3, AF3, AB, FM, rise, fall, fallTo, fallToC, in} drives the synth's frication path (noise through its
   // own resonators, independent of the voicing and F1-F3: synth-core FRIC_PARAMS) in fricOnly events: at the
-  // phoneme's start its resonators' frequencies and bandwidths (1 ms) and its amplitudes times x (over rise ms,
+  // phoneme's start its resonators' frequencies and bandwidths and FM (1 ms) and its amplitudes times x (over rise ms,
   // default 5, at most half the slot), and over the last fall share of the slot (default 0) the amplitudes falling
   // to fallTo of themselves (default 0) before a vowel-like phoneme (voicing >= 1, not a stop, nasal or frication
   // entry; neighbours as for [CO]), else (a consonant, a pause) to fallToC (default fallTo): the frication dies away
@@ -459,7 +459,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
     const x = extras.FRIC, freq = {}, amp = {};
     for (const k of FRIC_PARAMS) {
       if (!(k in fr)) continue;
-      if (FRIC_FREQ.test(k)) freq[k] = fr[k] * scale; else amp[k] = fr[k] * x;
+      if (FRIC_AMPS.includes(k)) amp[k] = fr[k] * x; else freq[k] = FRIC_FREQ.test(k) ? fr[k] * scale : fr[k];
     }
     for (const k of FRIC_AMPS) if (!(k in amp)) amp[k] = 0;
     if (Object.keys(freq).length) fricOnly(slotStart, freq, 1);

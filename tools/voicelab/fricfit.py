@@ -66,6 +66,17 @@ class Worker:
 
 
 CTX = [("AA", "AH"), ("IY", "IH"), ("AE", "ER"), ("UW", "EH"), ("AE", "T"), (None, "IY")]
+PREV = {"V": ["AA", "IY", "AE", "UW", "AH", "EH"], "C": ["N", "T", "N", "K", "N", "T"], "pause": [None] * 6}
+NEXT = {"V": ["AH", "IH", "ER", "EH", "IY", "AA"], "C": ["T", "D", "T", "N", "T", "D"], "pause": ["T"] * 6}
+def contexts_like(counts, n=6):
+    """n (before, after) contexts in the proportions of the corpus's (prev, next) classes (largest remainder)"""
+    tot = sum(counts.values()); share = {k: n * v / tot for k, v in counts.items()}
+    alloc = {k: int(v) for k, v in share.items()}
+    for k in sorted(share, key=lambda k: share[k] - alloc[k], reverse=True)[:n - sum(alloc.values())]: alloc[k] += 1
+    out, i = [], 0
+    for (pv, nx), m in sorted(alloc.items(), key=lambda kv: -kv[1]):
+        for _ in range(m): out.append((PREV[pv][i % 6], NEXT[nx][i % 6])); i += 1
+    return out
 
 def body(prev, p, nxt, dur, vdur=140, pitch=100):
     s = f"b{pitch} "
@@ -89,6 +100,7 @@ class Lean:
 FB = F.melbank()[0]
 
 def synth_mel(worker, config, p, entry, dur, ctxs=CTX):
+    if not ctxs: ctxs = CTX
     """fricscope's mel spectrum of the fricative re the vowel (the vowel after, else before), dB, the median over
     the contexts"""
     mels = []
@@ -134,7 +146,7 @@ def path_mel(fr):
 
 # fitted vector: log frequencies / bandwidths in bounds (each resonator keeps a role: FF1 low-mid, FF2 mid-high, FF3
 # high), log amplitudes (the bypass and resonators can switch off), log of the voice bar's level (voiced)
-BOUNDS = {"FF1": (300, 4500), "FF2": (1500, 8500), "FF3": (4000, 11500), "BF1": (150, 8000), "BF2": (150, 8000),
+BOUNDS = {"FF1": (700, 4500), "FF2": (1500, 8500), "FF3": (4000, 11500), "BF1": (150, 8000), "BF2": (150, 8000),
           "BF3": (150, 8000), "AF1": (1e-6, 3), "AF2": (1e-6, 3), "AF3": (1e-6, 3), "AB": (1e-7, 1)}
 
 def vec(fr):
@@ -147,14 +159,14 @@ def unvec(x):
     return fr
 
 
-def fit_model(target, band, floor, c, V, fr0, voiced, rng, starts=12):
-    """least squares of the closed-form model to the target (dB) -> (frication dict, voice scale s, rms)"""
+def fit_model(target, band, floor, c, V, L, fr0, voiced, rng, starts=12):
+    """least squares of the closed-form model c N + s V + L to the target (dB) -> (frication dict, voice scale s, rms)"""
     lo = np.log([BOUNDS[k][0] for k in RES]); hi = np.log([BOUNDS[k][1] for k in RES])
     if voiced: lo, hi = np.append(lo, math.log(0.01)), np.append(hi, math.log(100))
     tgt = np.maximum(target, floor)[band]
     def resid(x):
         fr = unvec(x[:10]); s = math.exp(x[10]) if voiced else 1.0
-        pred = 10 * np.log10(c * path_mel(fr) + s * V + 1e-30)
+        pred = 10 * np.log10(c * path_mel(fr) + s * V + L + 1e-30)
         return np.maximum(pred, floor)[band] - tgt
     x0 = vec(fr0)
     if voiced: x0 = np.append(x0, 0.0)
@@ -172,12 +184,14 @@ MAIN = ["voicing", "F1", "BW1", "A1", "A2", "A3"]
 def rnd(e):
     """the fitted fields (FRICATION's), rounded"""
     out = {k: round(float(e[k]), 4) for k in MAIN if k in e}
-    out["frication"] = {k: (round(float(v)) if k[0] in "FB" else round(float(v), 5)) for k, v in e["frication"].items() if k in RES}
+    out["frication"] = {k: (round(float(v)) if k[0] in "FB" else round(float(v), 5)) for k, v in e["frication"].items() if k in RES + ["FM"]}
     return out
 
-def off(e):
-    """the entry with the frication path silent"""
-    return {**e, "frication": {**e["frication"], "AF1": 0, "AF2": 0, "AF3": 0, "AB": 0}}
+def off(e, voice=True):
+    """the entry with the frication path silent (and without its voice, voice=False)"""
+    out = {**e, "frication": {**e["frication"], "AF1": 0, "AF2": 0, "AF3": 0, "AB": 0}}
+    if not voice: out["A1"] = 0
+    return out
 
 
 def main():
@@ -189,6 +203,13 @@ def main():
                     "voicing leaking in dominates, not the frication; 100 Hz voiced, the voice bar)")
     ap.add_argument("--floor", type=float, default=-65); ap.add_argument("--out")
     ap.add_argument("--start", help="JSON {P: entry fields} over the config's entries to start from")
+    ap.add_argument("--murmur", type=float, help="voiceless fricatives get a weak voice (voicing 1, FM 0, F1 200, BW1 100) "
+                    "starting at A1 = this, fitted like the voiced ones' voice bar, over the bands from --fmin (default 100)")
+    ap.add_argument("--lownoise", type=float, help="voiceless fricatives get low-frequency noise through the main path "
+                    "(voicing 0, F1 500, BW1 600: the noise klattsch sends through F1, low-passed by the glottal option's NT) "
+                    "starting at A1 = this, its level fitted like the voice bar's, over the bands from --fmin (default 100)")
+    ap.add_argument("--ctx", default="corpus", choices=["corpus", "fixed"], help="synthetic contexts: in the corpus's "
+                    "proportions of vowel / consonant / pause neighbours per fricative, or CTX")
     a = ap.parse_args()
     cfg = json.load(open(a.config)) if os.path.exists(a.config) else json.loads(a.config)
     if not cfg.get("fricatives"): cfg["fricatives"] = True
@@ -206,29 +227,36 @@ def main():
     sel = [i for i in range(40) if i % 3 == 0]
     for p in a.phones.split(","):
         if p not in T or p not in start: continue
-        e, dur, voiced = start[p], T[p]["dur"], p in VOICED
+        e, dur = start[p], T[p]["dur"]
+        if a.murmur is not None and p not in VOICED and e.get("voicing", 0) < 1:
+            e = {**e, "voicing": 1, "F1": 200, "BW1": 100, "A1": a.murmur, "A2": 0, "A3": 0, "frication": {**e["frication"], "FM": 0}}
+        if a.lownoise is not None and p not in VOICED and e.get("voicing", 0) < 1:
+            e = {**e, "voicing": 0, "F1": 500, "BW1": 600, "A1": a.lownoise, "A2": 0, "A3": 0}
+        voiced = p in VOICED or a.murmur is not None or a.lownoise is not None
+        ctx = contexts_like(T[p]["ctx"]) if a.ctx == "corpus" else CTX
         band = FS.MEL_F >= (a.fmin if a.fmin is not None else 100 if voiced else 1000)
         target = T[p]["mel"].copy()
         if calib is not None:
-            target = target + (synth_mel(worker, calib, p, None, dur) - T[p]["kmel"])
+            target = target + (synth_mel(worker, calib, p, None, dur, ctx) - T[p]["kmel"])
         tgt = np.maximum(target, a.floor)
         err = lambda mel: float(np.sqrt(np.mean((np.maximum(mel, a.floor)[band] - tgt[band]) ** 2)))
-        M = synth_mel(worker, cfg, p, e, dur)
+        M = synth_mel(worker, cfg, p, e, dur, ctx)
         before, first = err(M), M
         for rd in range(a.rounds):
-            V = 10 ** (synth_mel(worker, cfg, p, off(e), dur) / 10)
+            V = 10 ** (synth_mel(worker, cfg, p, off(e), dur, ctx) / 10)
+            L = 10 ** (synth_mel(worker, cfg, p, off(e, False), dur, ctx) / 10) if voiced else 0 * V
             full = 10 ** (M / 10)
             fric = full - V
             good = fric > 0.5 * full
             if good.sum() < 3: good = np.argsort(-(fric / full))[:8]
             c = float(np.median(full[good] / path_mel(e["frication"])[good]))
-            fr, s, mrms = fit_model(target, band, a.floor, c, V, e["frication"], voiced, rng)
+            fr, s, mrms = fit_model(target, band, a.floor, c, np.maximum(V - L, 0), L, e["frication"], voiced, rng)
             e = {**e, "frication": {**e["frication"], **fr}}
             if voiced: e["A1"] = float(e["A1"] * math.sqrt(s))
-            M = synth_mel(worker, cfg, p, e, dur)
+            M = synth_mel(worker, cfg, p, e, dur, ctx)
             print(f"  {p} round {rd + 1}: model {mrms:.2f} dB, rendered {err(M):.2f} dB", flush=True)
         fits[p] = rnd(e)
-        print(f"{p}: rms {before:.2f} -> {err(M):.2f} dB  {json.dumps(fits[p])}", flush=True)
+        print(f"{p}: rms {before:.2f} -> {err(M):.2f} dB  contexts {ctx}  {json.dumps(fits[p])}", flush=True)
         print("   band   " + " ".join(f"{FS.MEL_F[i] / 1000:5.1f}" for i in sel))
         print("   target " + " ".join(f"{tgt[i]:5.0f}" for i in sel))
         print("   before " + " ".join(f"{first[i]:5.0f}" for i in sel))

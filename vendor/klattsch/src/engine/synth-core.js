@@ -43,7 +43,7 @@ export const NASAL_DEFAULT = Object.freeze({
 const hasNasal = (t) => { for (const k of NASAL_PARAMS) if (k in t) return true; return false; };
 
 // (sonicpi-toolchain patch) A frication path, after Klatt's (1980) parallel branch for the frication source: white
-// noise (the synth's own generator; pitch-synchronously modulated like the [GS] source's noise while voiced, AM)
+// noise (the synth's own generator; under [GS] with AM, while voiced, modulated by the glottal flow at depth AM v FM)
 // through three resonators of its own, FF1/BF1/AF1, FF2/BF2/AF2, FF3/BF3/AF3 (frequency, bandwidth, amplitude; the
 // main path's bandpass biquads, 0 dB at the peak; the middle one's sign flipped, as Klatt alternates the parallel
 // formants' signs, so the skirts add between neighbouring peaks instead of cancelling), and AB, a bypass (flat
@@ -51,8 +51,8 @@ const hasNasal = (t) => { for (const k of NASAL_PARAMS) if (k in t) return true;
 // voiced fricative, any fricative spectrum). Each parameter glides linearly on its own clock: an event moves only
 // the frication keys it carries (so frequencies can jump while amplitudes rise), and { fricOnly: true } events move
 // them alone. The path runs only once a target carries one of these keys; until then every sample is as before.
-export const FRIC_PARAMS = ['FF1', 'BF1', 'AF1', 'FF2', 'BF2', 'AF2', 'FF3', 'BF3', 'AF3', 'AB'];
-export const FRIC_DEFAULT = Object.freeze({ FF1: 2500, BF1: 1000, AF1: 0, FF2: 5000, BF2: 2000, AF2: 0, FF3: 8000, BF3: 4000, AF3: 0, AB: 0 });
+export const FRIC_PARAMS = ['FF1', 'BF1', 'AF1', 'FF2', 'BF2', 'AF2', 'FF3', 'BF3', 'AF3', 'AB', 'FM'];
+export const FRIC_DEFAULT = Object.freeze({ FF1: 2500, BF1: 1000, AF1: 0, FF2: 5000, BF2: 2000, AF2: 0, FF3: 8000, BF3: 4000, AF3: 0, AB: 0, FM: 1 });
 const hasFric = (t) => { for (const k of FRIC_PARAMS) if (k in t) return true; return false; };
 
 export const DEFAULT = {
@@ -204,7 +204,7 @@ export class FormantSynth {
     this.bf1 = new BandpassBiquad();
     this.bf2 = new BandpassBiquad();
     this.bf3 = new BandpassBiquad();
-    this.noiseMod = 1;
+    this.flowU = 0; this.flowL = null;
   }
 
   // move the frication parameters a target names to it over N samples, each on its own clock
@@ -391,8 +391,9 @@ export class FormantSynth {
       const norm = Math.sqrt((1 - a) * (1 - a) + 2 * (1 - a) * a * L.uMean + a * a * L.uSq);
       const m = ((1 - a) + a * u) / norm;
       asp *= m; fric *= m;
-      this.noiseMod = m;       // (sonicpi-toolchain patch) the frication path's noise follows the flow too
-    } else this.noiseMod = 1;
+    }
+    // (sonicpi-toolchain patch) the flow now, for the frication path's own modulation (FM)
+    this.flowU = this.flow > 0 ? this.flow / 0.1 : 0; this.flowL = this.lf;
     const dphase = f0 * this.cycleRate / this.sr;
     this.flow += raw * dphase;
     const before = this.glottalPhase;
@@ -506,7 +507,14 @@ export class FormantSynth {
         this.bf1.setFreq(cur.FF1, cur.BF1, this.sr);
         this.bf2.setFreq(cur.FF2, cur.BF2, this.sr);
         this.bf3.setFreq(cur.FF3, cur.BF3, this.sr);
-        const nf = noiseSample * 0.35 * (this.src.GS ? this.noiseMod : 1);
+        // under [GS] with AM, while voiced, its noise follows the glottal flow as the source's own does, at depth
+        // a = AM v FM (FM 1: as the source's noise; 0: steady, e.g. a voiceless fricative over a weak murmur)
+        let nf = noiseSample * 0.35;
+        const fa = this.src.GS && this.src.AM && v > 0 && this.flowL ? Math.min(1, Math.max(0, this.src.AM * v * cur.FM)) : 0;
+        if (fa > 0) {
+          const L = this.flowL;
+          nf *= ((1 - fa) + fa * this.flowU) / Math.sqrt((1 - fa) * (1 - fa) + 2 * (1 - fa) * fa * L.uMean + fa * fa * L.uSq);
+        }
         y += (this.bf1.process(nf) * cur.AF1
           -   this.bf2.process(nf) * cur.AF2
           +   this.bf3.process(nf) * cur.AF3

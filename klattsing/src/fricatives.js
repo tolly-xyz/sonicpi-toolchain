@@ -45,7 +45,7 @@ export const FRICATION = {
   ZH: { voicing: 1, F1: 270, BW1: 80, A1: 0.0699, A2: 0, A3: 0, frication: { FF1: 1459, BF1: 150, AF1: 0.0193, FF2: 3382, BF2: 1470, AF2: 0.06461, FF3: 7014, BF3: 6998, AF3: 0.004549, AB: 0 } },
 };
 const ENVELOPE = ['rise', 'fall', 'fallTo', 'fallToC', 'in'];
-const FRIC_FIELDS = ['FF1', 'BF1', 'AF1', 'FF2', 'BF2', 'AF2', 'FF3', 'BF3', 'AF3', 'AB', ...ENVELOPE];
+const FRIC_FIELDS = ['FF1', 'BF1', 'AF1', 'FF2', 'BF2', 'AF2', 'FF3', 'BF3', 'AF3', 'AB', 'FM', ...ENVELOPE];
 const KEYS = ['gain', ...ENVELOPE, 'phonemes'];
 const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
 const num = (v) => typeof v === 'number' && Number.isFinite(v);
