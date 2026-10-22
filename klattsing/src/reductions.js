@@ -10,7 +10,8 @@
 //             "that" only as a conjunction or relative (before a determiner or a subject pronoun: "said that the",
 //             not "that year"), "there" only existential (before a form of be or a modal), "some" not before
 //             "of", have/has/had only as auxiliaries (before "been" or a participle-like word, not "have to"),
-//             do/does only before a subject pronoun or "not". The weak syllable is unstressed (stress 0).
+//             do/does only before "not" or a subject pronoun (you / it in a question only: not "do it now"). The
+//             weak syllable is unstressed (stress 0).
 //             `weak: {word: "PHONES" | ["before a consonant", "before a vowel"] | null}` changes or removes entries
 //             (the vowel count must stay the citation form's: sing gives every syllable a note).
 //   the       "the" before a vowel: DH IY0 ("IY", the default; Jones, Gimson, Roach), DH IH0 ("IH", Kokoro's ði
@@ -51,7 +52,7 @@ export const WEAK = {
 };
 
 const set = (s) => new Set(s.split(' '));
-const SUBJECT = set("i you he she it we they there who one everyone someone nobody");
+const SUBJECT_STRICT = set("i he she we they");
 const SUBJECT_BASE = set("i you we they who");                     // a base-form verb can follow
 const SUBJECT_3 = set("he she it who that which one everyone someone nobody everybody somebody");   // a verb in -s
 const MODAL_TO = set("to will would can could shall should may might must do does did don't doesn't didn't won't can't cannot couldn't wouldn't shouldn't mustn't let's please not never");
@@ -70,8 +71,10 @@ const STRONG_UNLESS = {
   there: (prev, next) => EXISTENTIAL_NEXT.has(next),
   some: (prev, next) => next !== 'of',
   have: (prev, next) => aux(next), has: (prev, next) => aux(next), had: (prev, next) => aux(next),
-  do: (prev, next) => SUBJECT.has(next) || next === 'not', does: (prev, next) => SUBJECT.has(next) || next === 'not',
+  do: (prev, next, q) => auxDo(next, q), does: (prev, next, q) => auxDo(next, q),
 };
+// do / does as an auxiliary: before "not" or a subject pronoun ("you" and "it" only in a question: "do it now")
+const auxDo = (next, question) => next === 'not' || SUBJECT_STRICT.has(next) || (question && (next === 'you' || next === 'it'));
 const aux = (next) => next !== 'to' && (AUX_NEXT.has(next) || (next.length > 4 && /(ed|en|wn)$/.test(next)));
 const H_DROP = set('him his her have has had');
 
@@ -176,6 +179,7 @@ export function reduceWords(ws, o) {
   const out = ws.slice();
   const phraseEnd = (i) => i === ws.length - 1 || ws[i].punct !== '';
   const phraseStart = (i) => i === 0 || ws[i - 1].punct !== '';
+  const question = (i) => { while (i < ws.length - 1 && !/[.!?]/.test(ws[i].punct)) i++; return ws[i].punct.includes('?'); };
   // right to left: a word's form can depend on the next word's (reduced) first phoneme
   for (let i = ws.length - 1; i >= 0; i--) {
     const w = ws[i], word = w.word;
@@ -183,7 +187,7 @@ export function reduceWords(ws, o) {
     const nextW = phraseEnd(i) ? null : out[i + 1];
     let pron = null, weak = false;
     const f = o.weak[word];
-    if (f && !phraseEnd(i) && (!STRONG_UNLESS[word] || STRONG_UNLESS[word](prev, next))) {
+    if (f && !phraseEnd(i) && (!STRONG_UNLESS[word] || STRONG_UNLESS[word](prev, next, question(i)))) {
       pron = Array.isArray(f) ? f[startsWithVowel(nextW) ? 1 : 0] : f;
       weak = true;
       if (o.hDrop && H_DROP.has(word) && !phraseStart(i)) pron = pron.replace(/^HH /, '');
