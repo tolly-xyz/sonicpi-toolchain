@@ -95,3 +95,36 @@ test('all four together (coarticulation, glottal, nasals, stops): each still cha
     assert.notEqual(all, audio(without), `${k} has no effect with the other three on`);
   }
 });
+
+// prosody (src/prosody.js) only re-pitches the string (a b directive per phoneme, transient deltas on vowels) and
+// moves the effort accent: the four engine features must stay on through its directives.
+test('prosody + coarticulation + glottal + nasals + stops: prosody changes the sound, each of the four still does', async () => {
+  const { FormantSynth } = await import('../../vendor/klattsch/src/engine/synth-core.js');
+  const text = 'Nine good men kept the bottom of the morning, did they?';
+  const on = { coarticulation: true, glottal: true, nasals: true, stops: true };
+  const all = { text, ...on, prosody: true };
+  const h = audio(all);
+  assert.notEqual(h, audio({ text, ...on }), 'prosody has no effect with the other four on');
+  for (const k of Object.keys(on)) {
+    const without = { ...all }; delete without[k];
+    assert.notEqual(h, audio(without), `${k} has no effect with prosody and the other three on`);
+  }
+  // the string carries all of them, and prosody's pitch: a b before (nearly) every phoneme
+  const s = speak(all);
+  assert.match(s, /^\[bank=klatt1980-en(--[0-9a-z]+)*--co[0-9a-f]{12}--st[0-9a-f]{12}\] \[CO=2\].* \[GS=1\].* \[NAS=[\d.]+\]/);
+  assert.ok((s.match(/ b\d/g) ?? []).length > 30, 'per-phoneme pitch');
+  for (const b of banksFor(all)) registerBank(b);
+  const v = compileString(s).voices[0];
+  assert.ok(v.schedule.some((e) => e.params && e.params.join() === 'F1,F2,F3'), 'expected coarticulation formant events');
+  assert.ok(v.schedule.some((e) => e.nasalOnly), 'expected nasalOnly events');
+  assert.ok(v.schedule.some((e) => e.target.voicing === 1 && e.target.A2 === 0 && e.target.BW1 === 60), 'expected a voice bar');
+  // F0 follows the contour: it spans several semitones, and the LF source stays on
+  const f0 = v.schedule.map((e) => e.target.F0).filter((x) => x > 0);
+  assert.ok(12 * Math.log2(Math.max(...f0) / Math.min(...f0)) > 4, 'F0 range');
+  const synth = new FormantSynth({ sampleRate: 16000, schedule: v.schedule });
+  const buf = new Float32Array(Math.ceil(v.totalMs * 16));
+  let gs = 0, n = 0;
+  for (let i = 0; i < buf.length; i += 160) { synth.process(buf.subarray(i, i + 160)); n++; gs += synth.src.GS; }
+  assert.ok(gs / n > 0.95, `LF source on ${(100 * gs / n).toFixed(0)}% of blocks`);
+  assert.ok(synth.nasal, 'nasal path on');
+});
