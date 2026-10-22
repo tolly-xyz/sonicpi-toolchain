@@ -2,9 +2,15 @@
 """Fit klattsing's "prosody" option (pitch accents, downstep, declination, phrase-final lowering) to Kokoro's F0.
 
 usage (/home/user/tts/venv/bin/python):
-  prosodyfit.py measure CONFIG_JSON [--split train|held|all]          proxy F0 metrics of a speak config
-  prosodyfit.py fit BASE_JSON [--evals N] [--start PROSODY_JSON] [--free k1,k2,...] [--out FILE] [--split train|phrasing]
-  prosodyfit.py check CONFIG_JSON                                   fidelity.py --audio prosody on train and held-out
+  prosodyfit.py [--voice V] measure CONFIG_JSON [--split train,held,all,phrasing]   proxy F0 metrics of a speak config
+  prosodyfit.py fit BASE_JSON [--evals N] [--restarts N] [--start PROSODY_JSON] [--free k1,k2,...] [--out FILE]
+                [--split train|phrasing]            fit BASE_JSON's "prosody" fields (default: FREE) on a split
+  prosodyfit.py check CONFIG_JSON                   fidelity.py --audio score, groups and F0 metrics on train and held
+
+How the defaults (klattsing/src/prosody.js PROSODY) were found, BASE = the tournament's speak config:
+  fit BASE+{"prosody": {...}} --evals 1500 --restarts 3      the Harvard train split, every FREE parameter
+  fit ... --split phrasing --free continuation,reset          tools/voicelab/phrasing.py's comma/question set
+  check                                                       then `top` from median_st (the metrics cannot see it)
 
 A proxy of fidelity.py's prosody group, ~50x faster: instead of rendering audio and running Praat, the F0 klattsch
 will render is read off the compiled schedule (tools/voicelab/prosody_f0.mjs: the synth's F0 transitions, voiced

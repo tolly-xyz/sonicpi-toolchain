@@ -8,7 +8,8 @@ klattsch phoneme string out. It replaces hand-written ARPABET with:
 - **durations**: Klatt's segmental duration model as published in MITalk (Allen, Hunnicutt & Klatt
   1987, ch. 9, rules 2-11; checked against Festival's implementation): every factor is in
   `src/durations.js` `RULES` and can be overridden per call (`"rules": {...}`)
-- **speech** (`"mode": "speak"`): rule durations, a pitch rise on stressed syllables, a fall at phrase ends
+- **speech** (`"mode": "speak"`): rule durations, a pitch rise on stressed syllables, a fall at phrase ends (or
+  with `prosody`, a pitch-accent model fitted to Kokoro)
 - **singing** (`"mode": "sing"`): one note per syllable; consonants keep their rule durations and sit on
   the beat, vowels fill the notes; `gate` (ms a vowel is held before silence), `hold` (share of a long
   note held anyway), `to` (glide to a note), accents on stressed syllables; `"notes": "auto"` makes a
@@ -26,8 +27,8 @@ per syllable, or `"auto"`), `bpm`, `melody` (auto: `scale`, `long`, `short`, `la
 (formant glide ms, a klattsch patch), `aspiration` (breath after P/T/K, default on), `accent`,
 `dynamics` (loudness by stress, a klattsch patch; off by default), `durations` (`"v0"` for the first
 reconstruction), `rules`; and the opt-in options below (`bankPatch`, `functionWords`, `intonation`,
-`breathLevel`, `breathVoicing`, `pauseMs`, `accentDelta`, `phoneDur`, `coarticulation`, `glottal`, `nasals`).
-`breathLevel`, `breathVoicing`, `pauseMs`, `accentDelta`, `phoneDur`, `coarticulation`, `glottal`, `stops`).
+`breathLevel`, `breathVoicing`, `pauseMs`, `accentDelta`, `phoneDur`, `coarticulation`, `glottal`, `nasals`, `stops`,
+`prosody`).
 
 ## Options for optimizers (all opt-in; leaving them out gives exactly the strings from before)
 
@@ -46,6 +47,7 @@ reconstruction), `rules`; and the opt-in options below (`bankPatch`, `functionWo
 | `coarticulation` | `true` or `{degree: 2, codaDegree: (degree), curve: "out", formantCurve: (curve), cv: 60, vc: 50, burst: true, hh: true, sonorants: true, loci: {PHONE: {F1/F2/F3: [k, c]}}}` (off) | context-dependent formant trajectories (klattsch's `[CO=x]` patch, `src/coarticulation.js`): a vowel starts at each neighbouring consonant's locus-equation value `F + degree (k F + c - F)` (loci per place fitted to Kokoro; Sussman et al. 1991) and moves to its target over `cv` ms, and moves toward the next consonant's value over its last `vc` ms (`codaDegree`); HH takes the next vowel's formants (`hh`), velar bursts front before front vowels (`burst`), liquids and glides glide (`sonorants`); every transition eased out (`curve`: `out`, `cos`, `linear`). A generated bank `<base>--co<hash>` carries the loci. Timings and the string's phonemes are unchanged. The curve without the loci: klattsch's `[TC=2]` in `voice` (e.g. `"[TC=2] g0.5 t0 h0.05"`) |
 | `glottal` | `true`, or `{rd: 1, rdEffort: 6, tilt: 0, jitter: 0.5, shimmer: 5, aspMod: 1, flutter: 0, aspTilt: 0, noiseTilt: 15}` (fields over these; `null` keeps one) (off) | an LF voice source instead of klattsch's Rosenberg pulse, with Klatt's low-passed noise (a klattsch patch, below): `[GS=1] [RD=..] [RDE=..] [TL=..] [JIT=..] [SHIM=..] [AM=..] [FL=..] [AT=..] [NT=..]` after the bank and `TR`, before the voice |
 | `stops` | `true`, or `{voiceBar: {F1: 180, BW1: 60, A1: 0.07, inMs: 20, fade: 0.35}, burst: 1, burstFit: ["T", "D", "K"], burstLocus: false, burstGain: 1, aspiration: 1, aspirationGain: 1, vot: false, votTotal: false, flap: "words", flapMs: 0, flapLocus: false, unreleased: "consonant", glottalStop: false, closureMs: null, voicingTail: 0.02}` (fields over these) (off) | context-dependent stop consonants (`src/stops.js`, below): a voice bar in B/D/G closures after a voiced sound (a fading voicing tail in P/T/K ones), bursts by place and the following vowel, aspiration through the vowel's formants, flaps, unreleased stops before consonants, as entries of a generated bank `<base>--st<hash>` (after the other generated banks) that a klattsch patch reads (a stop's `closure` and `release: false`). Timings and the timeline's phonemes are unchanged (unless `vot`/`votTotal`/`flapMs`) |
+| `prosody` | `true`, or `{accent: 3.3, downstep: 0.52, nuclear: 0.58, peak: -0.14, rise: 43, fall: 470, top: 2.65, declination: 3.1, initial: 3.6, initialMs: 86, reset: 0, final: 3.4, finalFrom: 0, continuation: -0.6, question: 0, micro: 1.6, microMs: 50, dip: 1.2, effort: false}` (fields over these; `null` keeps one) (off) | speak: a pitch-accent intonation model in place of `intonation` (`src/prosody.js`, below): accents on content words only, smooth rise-falls peaking at `peak` of the stressed vowel, downstep, a nuclear accent, declination with an initial rise and resets, phrase-final lowering, comma and (opt-in) question tunes, F0 raised after voiceless and lowered in voiced obstruents. A `b` directive per phoneme and a pitch delta per vowel; timings, phonemes and timelines unchanged. Sing mode ignores it |
 
 ### The LF voice source (`glottal`)
 
@@ -143,6 +145,64 @@ G 5.18 -> 3.80, T 3.98 -> 3.37, K 4.28 -> 3.83, P 3.43 -> 3.42), vowels unchange
 -0.18, unreleased stops -0.10, flaps -0.03, the Kokoro-fitted bursts -0.01; the vowel-context bursts (-0.003) and the
 vowel-formant aspiration (+0.003) are not measurable here (fidelity samples a stop's middle 80%; a burst is 5-25 ms
 of it). On the other Kokoro voice, am_michael (nothing was fitted to it): 0.695 -> 0.916.
+
+### Pitch accents (`prosody`)
+
+speak's own intonation is a fixed rise on every primary stress and a fall on a phrase's last vowel, so every
+stressed syllable peaks alike and the line never declines (F0 r against Kokoro 0.42, detrended 0.29; sd ratio 0.41:
+much flatter). `prosody` builds the contour of an intonational phrase as Pierrehumbert (1980) and ToBI (Silverman et
+al. 1992) describe it, a string of pitch accents over a declining baseline closed by a phrase accent and boundary
+tone, with Fujisaki's (Fujisaki & Hirose 1984) superposition of a phrase component and smooth accent components:
+
+- **accents** on the primary-stressed syllable of content words only (function words, two-syllable prepositions
+  and conjunctions, demonstratives, wh-words and reflexives are unaccented; a phrase without a content word accents
+  its last word). Each is a raised-cosine rise-fall (`rise` ms up, `fall` ms down) peaking at `peak` of the stressed
+  vowel; the first is `accent` st over the baseline, every later prenuclear one `downstep` times the one before
+  (H* !H*: Liberman & Pierrehumbert 1984), the nuclear (last) one `nuclear` x `accent`. Overlapping accents take the
+  higher (a plateau between close accents: the hat pattern of 't Hart, Collier & Cohen 1990).
+- **baseline**: `top` st over the spec's pitch, falling `declination` st/s (Cohen, Collier & 't Hart 1982); each
+  sentence starts `initial` st under it, rising with time constant `initialMs` (a low initial boundary, the rising
+  onset of a Fujisaki phrase component); it starts again at `top` after `.`/`!`/`?`, and after a comma moves `reset`
+  of the way back up (Ladd 1988).
+- **phrase ends**: a statement is lowered `final` st by its end, from the start of its last vowel (`finalFrom` 0) or
+  of the nuclear vowel (1); a comma phrase is not lowered and ends `continuation` st up (the L-H% continuation rise
+  when positive); with `question` > 0 a yes/no question (`?`, not starting with a wh-word) takes a low nuclear accent
+  and rises `question` st from the nuclear vowel (L* H-H%); a wh-question falls.
+- **microprosody**: a vowel right after a voiceless obstruent (or its aspiration) starts `micro` st higher, decaying
+  with time constant `microMs`; voiced obstruents (and stops' flap) are `dip` st lower (Lehiste & Peterson 1961;
+  Hombert 1978; Silverman 1986; Kingston & Diehl 1994).
+- `effort: true` moves `accentDelta` from every primary stress to the accented syllables only (off: spectral
+  balance marks lexical stress whether accented or not, Sluijter & van Heuven 1996; fidelity ties, 2.887 against 2.889).
+
+klattsch moves F0 per phoneme (a phoneme's first event takes it to the current `b`; a vowel with a pitch delta glides
+on to b + delta by 75-85% of it), so the contour is sampled where klattsch reaches its values: a `b` before every
+phoneme token, a transient delta to 85% of each vowel. Everything else in the string is unchanged.
+
+**Fitting** (`tools/voicelab/prosodyfit.py`): a proxy of fidelity's prosody group that reads the F0 klattsch will
+render off the compiled schedule (`tools/voicelab/prosody_f0.mjs`; ~0.1 s for 80 sentences against ~10 s to render
+and run Praat; with `prosody` its r and detrended r are within 0.01 of the audio's, for BASE 0.05 / 0.10 low), maximised by Nelder-Mead on the train split of `climb.py split`
+(80 sentences) and checked on the 20 held out, then with audio. Kokoro's contour (am_onyx) is: a quick rise to the
+first accent, accents peaking at the very start of the stressed vowel (median 5% into it; the rise in the onset)
+and falling slowly through it, strong downstep of prenuclear accents, a nuclear accent back up, ~3.7 st/s
+declination. The fit agrees: `peak` -0.14 (a late peak, 0.7, scores 2.68), `rise` 43 / `fall` 470 ms, downstep 0.52,
+nuclear 0.58 x accent not downstepped (downstepped: 4.02 against 4.07 by the proxy on train), micro 1.6 st / 50 ms,
+dip 1.2 st. The Harvard sentences have one comma and no question, so `tools/voicelab/phrasing.py` builds a Kokoro
+set of 20 (`work/voicelab/phrasing/`): Kokoro ends comma phrases level or slightly falling (-1.1 st over the last
+vowel), does not reset after them (fitted `reset` 0, `continuation` -0.6), and ends yes/no questions falling like
+statements in both voices (am_onyx -3.0 st, am_michael -8.0 over the last vowel; statements -2.9 / -8.8): hence
+`question` 0 by default; the textbook tunes (`continuation: 3, question: 6, reset: 0.6`) score r 0.67 / detrended
+0.41 on that set against 0.83 / 0.57 (BASE: 0.30 / 0.25). `top` puts the rendered median F0 on the spec's pitch
+(fidelity `median_st` +0.02).
+
+On the Kokoro corpus (`fidelity.py --audio`, BASE = `presets/kokoro-durations.json` + `mitalk-bursts` +
+`coarticulation` + `glottal` + `nasals` + `stops`): score 1.866 -> 2.889 (dur 1.092 -> 1.092, spec 3.918 -> 4.041,
+pros 0.588 -> 3.533); F0 r 0.421 -> 0.905, detrended 0.289 -> 0.698, rmse 2.49 -> 1.27 st, sd ratio 0.41 -> 0.89;
+MCD 3.454 -> 3.431, mcd_cmn 3.249 -> 3.223 (Kokoro against Kokoro, am_michael scored as the system: r 0.78,
+detrended 0.76). Held out (20 sentences): 1.545 -> 2.588, pros 0.293 -> 3.308, r 0.387 -> 0.904, detrended
+0.193 -> 0.654 (train: 1.959 -> 2.981, detrended 0.313 -> 0.711). Each part left out (full corpus): declination
+2.314, accents 2.619, downstep 2.717, nuclear accent 2.823, initial rise 2.828, final lowering 2.832, microprosody
+2.850 (micro alone 2.875, dip alone 2.865). The other Kokoro voice, am_michael (nothing fitted to it; proxy): r
+0.28 -> 0.66, detrended 0.24 -> 0.56.
 
 Presets fitted against Kokoro by `tools/voicelab/climb.py` are spec fragments in `presets/` (merge one into a spec:
 `{"mode": "speak", "text": ..., ...preset}`): `kokoro-durations.json` (`rules`, `phoneDur`, `functionWords`) and
