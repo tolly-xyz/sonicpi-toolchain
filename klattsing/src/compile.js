@@ -13,6 +13,7 @@ import { coartOptions, coartDirectives } from './coarticulation.js';
 import { nasalOptions, nasalDirectives } from './nasals.js';
 import { stopOptions, planStops, afterSilence, beforeSilence } from './stops.js';
 import { prosodyOptions, accentPlan, intonate } from './prosody.js';
+import { fricOptions, fricDirectives } from './fricatives.js';
 
 const DIPH = { AY: ['AA', 'IY'], EY: ['EH', 'IY'], OW: ['AO', 'UW'], AW: ['AA', 'UW'], OY: ['AO', 'IY'] };
 const NOTE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -98,11 +99,13 @@ export function glottalDirs(g) {
   const num = (v) => String(Math.round(v * 1e4) / 1e4);
   return ['[GS=1]', ...Object.entries(GLOTTAL_KEYS).map(([k, d]) => `[${d}=${num(x[k])}]`)].join(' ');
 }
-function prefix(o) {
+function prefix(o, mode = 'speak') {
   const bank = bankName(o), co = coartOptions(o.coarticulation);
   return [bank ? `[bank=${bank}]` : '', o.transition ? `[TR=${o.transition}]` : '', co ? coartDirectives(co) : '', glottalDirs(o.glottal),
-    nasalDirectives(nasalOptions(o)), voiceOf(o)].filter(Boolean).join(' ');
+    nasalDirectives(nasalOptions(o)), fricDirectives(fricOptions(o), mode), voiceOf(o)].filter(Boolean).join(' ');
 }
+// the directives every string of spec o starts with (bank chain, TR, coarticulation, glottal, nasals, fricatives, voice)
+export const prefixOf = (o) => (o.mode === 'sing' ? prefix({ voice: 'sing', ...o }, 'sing') : prefix(o));
 const asp = (s, o) => (o.aspiration !== false && s.aspMs ? `r${f1(s.aspMs)} HH ` : '');
 // "stops" (stops.js): a consonant's context-dependent entry (onsetCode / codaCode / aspCode), named in the
 // timeline by its lexical phoneme; fix: sing's correction for a rest next to it
@@ -230,7 +233,7 @@ export function sing(o, meta) {
   const vo = { voice: 'sing', ...o };
   const [accUp, accDown] = accentDirs(merged(ACCENT_DELTA.sing, o.accentDelta));
   const breath = o.aspiration === 'breath', [hUp, hDown] = breathDirs(o, voiceOf(vo));
-  let out = `${prefix(vo)} `;
+  let out = `${prefix(vo, 'sing')} `;
   const ph = (ms, p, info, suffix = '') => { out += `r${f1(ms)} ${p}${suffix} `; m?.push(info); };
   plan.forEach((x, k) => {
     const { s, at } = x;

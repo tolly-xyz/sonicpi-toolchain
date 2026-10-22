@@ -1,5 +1,6 @@
 // Golden audio (test/audio-hash.mjs): every reference spec and the voicelab configs (with coarticulation + glottal
-// too) render the same samples as with the engine from before the nasal patch ([NAS] and the nasal pole-zero path).
+// too) render the same samples as with the engine from before the nasal patch ([NAS] and the nasal pole-zero path);
+// round 3's BASE (all four features, and a sung line) as before the fricatives patch (the frication path).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

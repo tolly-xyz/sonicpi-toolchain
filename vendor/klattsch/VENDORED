@@ -27,3 +27,15 @@ tgies/klattsch @ 63dc2c6 (MIT), vendored with patches:
     silence, e.g. a voice bar: the parameters it sets reached in inMs (default 20, at most 40% of the closure), its A1-A3 times fade by the
     release; under [CO] the formants it sets in a formant event, the others at the vowel's VC boundary) and release: false (no burst, the
     closure fills the slot: an unreleased stop); klattsing's "stops" option generates such entries. An entry without them renders as before
+  src/engine/synth-core.js, src/engine/sequencer.js: [FRIC=x] fricatives. The synth gains a frication path after Klatt's (1980)
+    parallel branch: white noise (under [GS] with AM, while voiced, modulated by the glottal flow like the source's own noise, at
+    depth AM x voicing x FM; FM default 1) through three resonators of its own, FF1/BF1/AF1, FF2/BF2/AF2, FF3/BF3/AF3 (bandpass
+    biquads, the middle one's sign flipped), and AB, a bypass, added to the formant output; each parameter glides linearly on its
+    own clock, and { fricOnly: true } events move them alone. It runs only
+    once a target carries one of these keys (until then every sample is as before). Under [FRIC=x] a bank entry's frication
+    {FF1 ... AB, FM, rise, fall, fallTo, fallToC, in} drives it in fricOnly events (frequencies and FM at the phoneme's start, amplitudes
+    times x over rise ms, falling over the last fall share of the slot to fallTo before a vowel-like phoneme or fallToC before
+    anything else), in (ms) times the entry's first main-path event, every other phoneme's first event and every silence zero
+    the amplitudes, and such an entry is never nasalized ([NAS]); the frequencies follow the formant scale. Without [FRIC] the
+    frication fields are dropped and the schedule is unchanged (audio fixture: klattsing/test/audio.test.js, round 3's BASE
+    included); klattsing's "fricatives" option generates the entries

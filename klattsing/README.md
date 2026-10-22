@@ -28,7 +28,7 @@ per syllable, or `"auto"`), `bpm`, `melody` (auto: `scale`, `long`, `short`, `la
 `dynamics` (loudness by stress, a klattsch patch; off by default), `durations` (`"v0"` for the first
 reconstruction), `rules`; and the opt-in options below (`bankPatch`, `functionWords`, `intonation`,
 `breathLevel`, `breathVoicing`, `pauseMs`, `accentDelta`, `phoneDur`, `coarticulation`, `glottal`, `nasals`, `stops`,
-`prosody`).
+`prosody`, `fricatives`).
 
 ## Options for optimizers (all opt-in; leaving them out gives exactly the strings from before)
 
@@ -48,6 +48,7 @@ reconstruction), `rules`; and the opt-in options below (`bankPatch`, `functionWo
 | `glottal` | `true`, or `{rd: 1, rdEffort: 6, tilt: 0, jitter: 0.5, shimmer: 5, aspMod: 1, flutter: 0, aspTilt: 0, noiseTilt: 15}` (fields over these; `null` keeps one) (off) | an LF voice source instead of klattsch's Rosenberg pulse, with Klatt's low-passed noise (a klattsch patch, below): `[GS=1] [RD=..] [RDE=..] [TL=..] [JIT=..] [SHIM=..] [AM=..] [FL=..] [AT=..] [NT=..]` after the bank and `TR`, before the voice |
 | `stops` | `true`, or `{voiceBar: {F1: 180, BW1: 60, A1: 0.07, inMs: 20, fade: 0.35}, burst: 1, burstFit: ["T", "D", "K"], burstLocus: false, burstGain: 1, aspiration: 1, aspirationGain: 1, vot: false, votTotal: false, flap: "words", flapMs: 0, flapLocus: false, unreleased: "consonant", glottalStop: false, closureMs: null, voicingTail: 0.02}` (fields over these) (off) | context-dependent stop consonants (`src/stops.js`, below): a voice bar in B/D/G closures after a voiced sound (a fading voicing tail in P/T/K ones), bursts by place and the following vowel, aspiration through the vowel's formants, flaps, unreleased stops before consonants, as entries of a generated bank `<base>--st<hash>` (after the other generated banks) that a klattsch patch reads (a stop's `closure` and `release: false`). Timings and the timeline's phonemes are unchanged (unless `vot`/`votTotal`/`flapMs`) |
 | `prosody` | `true`, or `{accent: 3.3, downstep: 0.52, nuclear: 0.58, peak: -0.14, rise: 43, fall: 470, top: 2.65, declination: 3.1, initial: 3.6, initialMs: 86, reset: 0, final: 0, finalFrom: 0, continuation: -0.6, question: 0, micro: 1.6, microMs: 50, microOffset: 0, dip: 1.2, effort: false}` (fields over these; `null` keeps one) (off) | speak: a pitch-accent intonation model in place of `intonation` (`src/prosody.js`, below): accents on content words only, smooth rise-falls peaking at `peak` of the stressed vowel, downstep, a nuclear accent, declination with an initial rise and resets, (opt-in) phrase-final lowering, comma and (opt-in) question tunes, F0 raised after voiceless and lowered in voiced obstruents. A `b` directive per phoneme and a pitch delta per vowel; timings, phonemes and timelines unchanged. Sing mode ignores it |
+| `fricatives` | `true`, or `{gain: 1, singGain: 4, rise: 5, fall: 0.3, fallTo: 0.3, fallToC: 0.05, in: 10, phonemes: {S: {field: value, frication: {FF1, BF1, AF1, FF2, BF2, AF2, FF3, BF3, AF3, AB, FM, rise, fall, fallTo, fallToC, in}}}}` (fields over these; `null` removes one) (off) | fricatives with their own noise spectra, levels and envelopes (`src/fricatives.js`, below): F V TH DH S Z SH ZH get entries of a generated bank `<base>--fr<hash>` (after coarticulation's, before the stops') whose `frication` drives a klattsch patch, `[FRIC=gain]`: a frication path of its own (noise through three resonators and a bypass, Klatt 1980's parallel branch), fitted to Kokoro; sung, `[FRIC=gain x singGain]`. Timings and the timeline's phonemes are unchanged |
 
 ### The LF voice source (`glottal`)
 
@@ -220,6 +221,49 @@ reset 0.6, final 3, continuation 3, question 6, effort, no initial rise or micro
 initial -2, place -1 words); singing (`sing` ignores `prosody`, its strings are byte-identical): 61.2% -> 61.2%. The
 other Kokoro voice, am_michael (nothing fitted to it; proxy): r 0.28 -> 0.65, detrended 0.24 -> 0.53.
 
+### Fricatives (`fricatives`)
+
+Without it a klattsch fricative is white noise through the three formants that also carry the voice: one resonance
+each (F at 1.1 kHz, TH 2.6, SH 1.8, S 5.5), the voiced ones' noise tied to their voicing. Against the Kokoro corpus
+(`tools/voicelab/fricscope.py`, BASE = `kokoro-durations` + `mitalk-bursts` + `coarticulation` + `glottal` + `nasals` +
+`stops`; Kokoro / klattsch, dB re the neighbouring vowel) F, TH and SH have their spectral centroids at 1.9 / 2.4 / 2.5
+kHz where Kokoro's are at 7.0 / 6.2 / 3.8 (Jongman, Wayland & Wong 2000, JASA 108: S/Z peaks 4-7 kHz, SH/ZH 2.5-4 kHz,
+F/V/TH/DH flat, diffuse and weak), and V, Z, DH are 5-9 dB too loud (-12 / -11 / -16 vs -4 / -6 / -7: Kokoro's are a
+voice bar with little frication). `fricatives` gives the engine a frication path after Klatt's (1980) parallel branch
+(white noise through FF1-FF3/BF1-BF3 resonators with amplitudes AF1-AF3 and a bypass AB, independent of the voice; a
+klattsch patch, `vendor/klattsch/VENDORED`) and each fricative an entry (`FRICATION` in `src/fricatives.js`):
+
+- **spectra** fitted to Kokoro's median mean spectra (40 mel bands) by `tools/voicelab/fricfit.py` (the path is
+  linear, so its spectrum is known in closed form up to one scale: least squares from several starts, rendered in
+  vowel contexts in the corpus's proportions, three rounds); S peaks at 5 kHz with a 6-11 kHz plateau, SH at 3.4 kHz,
+  F and TH flat with a rise above 7 kHz;
+- **levels** per fricative scaled so that in the corpus itself the level re the vowels is Kokoro's (Kokoro / klattsch:
+  S -15 / -15, SH -14 / -14, F -29 / -29, TH -30 / -32, Z -11 / -14, V -12 / -14; DH -16 / -25: raising it the last
+  9 dB cost fidelity);
+- **mixed voicing**: the voiced ones fully voiced through a low F1 (a voice bar at Kokoro's level) with the frication
+  on top, its noise modulated by the glottal flow under `glottal`; the voiceless ones keep a weak main-path noise
+  through a broad F1 (BW1 600), the low-frequency floor Kokoro's have (without it they are 20-40 dB short below
+  1.5 kHz, and louder frication only widens that gap);
+- **envelopes**: full strength within `rise` ms, dying away over the last `fall` of the slot to `fallTo` before a vowel
+  (`fallToC` before a consonant or pause), as Kokoro's sibilants do; `in` ms for the main path's change into it.
+
+On the Kokoro corpus (`fidelity.py --audio`, BASE as above): score 1.866 -> 2.289 (dur 1.092 -> 1.092, spec 3.918 ->
+5.192, pros 0.588 -> 0.584), MCD 3.45 -> 3.18, mcd_cmn 3.25 -> 3.00; fricatives' MCD 4.08 -> 2.89 (mcd_cmn 3.77 ->
+2.77; S 3.87 -> 2.98, Z 4.53 -> 3.23, SH 4.92 -> 2.55, F 4.91 -> 2.41, V 3.63 -> 2.77, TH 4.90 -> 2.84, DH 3.76 -> 2.73),
+other classes unchanged; fricscope's mean-spectrum distance 3.68 -> 2.40 dB. Along the way: the spectra fitted in
+vowel contexts alone 2.221; then the low-frequency floor (S) 2.280; the corpus levels 2.285; the bank's F1 under
+F/TH/SH's floor 2.289. Refitting the spectra in the corpus itself (`fricfit.py --corpus`) gave 2.156, and a weak
+periodic murmur instead of the noise floor 2.164; a global `gain` of 0.8-1.5 moves the score by < 0.01.
+Whisper minimal pairs (`tools/voicelab/pairs.py`, 139 words, BASE as above): 69.1% -> 71.2%, McNemar p = 0.65 (8 vs
+11 discordant); the fricatives class 62% -> 69% (13 words), and of the 38 words with a fricative 26 -> 32 were heard
+(fry, save, safe, sum, shop, shell, shin, ship gained; sin, that lost; the other discordant words have none). Sung
+(pairs.py's sing mode: `mitalk-bursts` + `coarticulation` + `nasals` + `stops`, no `glottal`) at speech's frication
+levels (`singGain: 1`) it hurt: 61.2% -> 56.1%, p = 0.21 (15 vs 8), fricatives 54% -> 38%. Without the option sung
+fricatives are about as loud as the vowels (no glottal noise low-pass; S +0.4, SH -0.5 dB rms re the vowel, against
+-13 / -10 with it; presumably next to long sung vowels the weaker ones are lost); `singGain` (4, +12 dB, chosen from that level
+gap after this one Whisper run) puts them back near base sing's level with the fitted spectra: 61.2% -> 61.9%, p = 1
+(9 vs 10), fricatives 54% -> 69%; against `singGain: 1`, 56.1% -> 61.9%, p = 0.021 (1 vs 9).
+
 Presets fitted against Kokoro by `tools/voicelab/climb.py` are spec fragments in `presets/` (merge one into a spec:
 `{"mode": "speak", "text": ..., ...preset}`): `kokoro-durations.json` (`rules`, `phoneDur`, `functionWords`) and
 `kokoro-voice.json` (that plus voice, prosody and `bankPatch` from the voice search).
@@ -274,3 +318,5 @@ large-v3-turbo with Kokoro TTS as the ceiling. Change a rule or the engine, run 
 `fidelity.py` scores a speak config against the Kokoro corpus without Whisper; `stopscope.py CONFIG [--by p,next]`
 compares its stops with Kokoro's part by part (closure voicing, burst spectra and their mel-cepstral distance, VOT),
 and `burstfit.py` fits burst bandwidths and amplitudes to Kokoro's from stopscope's `--rows`.
+`fricscope.py CONFIG [--by p,next]` does the same for fricatives (spectra, spectral moments as Jongman et al. 2000,
+level re the vowels, voicing, envelopes), and `fricfit.py` fits the `fricatives` entries to Kokoro's spectra.

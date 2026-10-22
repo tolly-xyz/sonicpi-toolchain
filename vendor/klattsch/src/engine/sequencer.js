@@ -1,7 +1,7 @@
 // Phoneme-string parser and schedule compiler
 
 import { banks, resolveBank } from './banks/index.js';
-import { PARAMS, NASAL_PARAMS, NASAL_DEFAULT } from './synth-core.js';
+import { PARAMS, NASAL_PARAMS, NASAL_DEFAULT, FRIC_PARAMS } from './synth-core.js';
 
 // (sonicpi-toolchain patch) coarticulation ([CO=x]): formant frequencies move in their own schedule events
 const FORMANTS = ['F1', 'F2', 'F3'];
@@ -52,6 +52,10 @@ const DEFAULTS = Object.freeze({
   nasalized: Object.freeze({ FNP: 250, BNP: 100, FNZ: 250, BNZ: 100, AN: 0.4 }),
 });
 const NASAL_FREQ = /^(F|B)N[PZ]2?$/;   // nasal pole/zero frequencies and bandwidths: they follow the formant scale
+// (sonicpi-toolchain patch) [FRIC=x]: the frication path's frequencies and bandwidths (formant scale), amplitudes
+const FRIC_FREQ = /^[FB]F[1-3]$/;
+const FRIC_AMPS = ['AF1', 'AF2', 'AF3', 'AB'];
+const FRIC_ZERO = Object.freeze({ AF1: 0, AF2: 0, AF3: 0, AB: 0 });
 
 const HOMOGLYPH_MAP = {
   // Greek uppercase that look like Latin uppercase
@@ -273,6 +277,8 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
     }
     // (sonicpi-toolchain patch) a bank's nasal fields act only with [NAS] (which also resets them after a nasal)
     if (!nasalMode()) for (const k of NASAL_PARAMS) delete out[k];
+    // (sonicpi-toolchain patch) a bank's frication {...} drives fricOnly events under [FRIC] (fricationOut), not targets
+    if ('frication' in out) delete out.frication;
     return out;
   };
 
@@ -411,7 +417,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
     }
     nasalUsed = true;
     pendingNasal = nasalScaled(NASAL_DEFAULT);
-    if (!(extras.NAS > 0) || p.nasal || p.isStop || !((p.voicing ?? 0) >= 1)) return null;
+    if (!(extras.NAS > 0) || p.nasal || p.isStop || !((p.voicing ?? 0) >= 1) || (p.frication && fricMode())) return null;
     const prevN = nasalOf(prevPh.get(t)), nextN = nasalOf(nextPh.get(t));
     if (!prevN && !nextN) return null;
     const cv = nasalCap(extras.NASCV ?? DEFAULTS.nasalCV, slotMs), vc = nasalCap(extras.NASVC ?? DEFAULTS.nasalVC, slotMs);
@@ -430,6 +436,44 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
     if (nextN && vc < 1 && vc > 0) nasalOnly(start + slotMs * (1 - vc), nasalizedBy(nextN), slotMs * vc);
   };
 
+  // (sonicpi-toolchain patch) frication, active while [FRIC=x] is set: a bank entry's frication {FF1, BF1, AF1, FF2,
+  // BF2, AF2, FF3, BF3, AF3, AB, FM, rise, fall, fallTo, fallToC, in} drives the synth's frication path (noise through its
+  // own resonators, independent of the voicing and F1-F3: synth-core FRIC_PARAMS) in fricOnly events: at the
+  // phoneme's start its resonators' frequencies and bandwidths and FM (1 ms) and its amplitudes times x (over rise ms,
+  // default 5, at most half the slot), and over the last fall share of the slot (default 0) the amplitudes falling
+  // to fallTo of themselves (default 0) before a vowel-like phoneme (voicing >= 1, not a stop, nasal or frication
+  // entry; neighbours as for [CO]), else (a consonant, a pause) to fallToC (default fallTo): the frication dies away
+  // as the constriction opens and the voicing of the next vowel
+  // starts. Every other phoneme's first event and every silence take the amplitudes to 0 (the frication ends over
+  // its usual transition); `in`: the fricative's own first (main-path) event's transition, ms (fricTrans). A phoneme
+  // with frication is never nasalized ([NAS]). Without [FRIC] a bank's frication
+  // fields do nothing and the schedule is unchanged.
+  const fricMode = () => extras.FRIC !== undefined;
+  let pendingFric = null;      // frication amplitudes 0 for the next emit (the first event of a phoneme without frication)
+  let fricOnlyEvents = 0;
+  const fricOnly = (atMs, target, transitionMs) => {
+    schedule.push({ atMs, target, transitionMs: Math.max(transitionMs, 0.1), fricOnly: true });
+    fricOnlyEvents++;
+  };
+  const fricationOut = (t, fr, slotStart, slotMs) => {
+    const x = extras.FRIC, freq = {}, amp = {};
+    for (const k of FRIC_PARAMS) {
+      if (!(k in fr)) continue;
+      if (FRIC_AMPS.includes(k)) amp[k] = fr[k] * x; else freq[k] = FRIC_FREQ.test(k) ? fr[k] * scale : fr[k];
+    }
+    for (const k of FRIC_AMPS) if (!(k in amp)) amp[k] = 0;
+    if (Object.keys(freq).length) fricOnly(slotStart, freq, 1);
+    fricOnly(slotStart, amp, Math.min(fr.rise ?? 5, slotMs * 0.5));
+    const fall = Math.min(Math.max(fr.fall ?? 0, 0), 1);
+    if (fall > 0) {
+      const n = nextPh.get(t), ne = entryOf(n);
+      const vowelLike = ne && !ne.isStop && !ne.nasal && !ne.frication && (ne.voicing ?? 0) >= 1;
+      const to = vowelLike ? (fr.fallTo ?? 0) : (fr.fallToC ?? fr.fallTo ?? 0), down = {};
+      for (const k of FRIC_AMPS) down[k] = amp[k] * to;
+      fricOnly(slotStart + slotMs * (1 - fall), down, slotMs * fall);
+    }
+  };
+
   const renderPhoneme = (t, slotMs) => {
     const p = phonemes[t.code];
     if (!p) {
@@ -437,16 +481,25 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
       return 0;
     }
     const nasalPlan = nasalBefore(t, p, slotMs);
+    const fr = fricMode() && p.frication ? p.frication : null;
+    if (fricMode() && !fr) pendingFric = FRIC_ZERO;
+    const slotStart = timeMs;
     const r = renderPhonemeEvents(t, p, slotMs);
     pendingNasal = null;
+    pendingFric = null;
     nasalAfter(nasalPlan, slotMs);
+    if (fr) fricationOut(t, fr, slotStart, slotMs);
     return r;
   };
   // (sonicpi-toolchain patch) [NAST=ms] under [NAS]: the transition of the first event into a nasal consonant and
   // into a (non-stop) phoneme after one (amplitudes, bandwidths, nasal parameters; [CO]'s formant moves keep their
   // own): the oral closure and release that bound a murmur are abrupt. Absent: the usual transition.
-  const nasalTrans = (t, p, usual, slotMs) => (nasalMode() && extras.NAST !== undefined && (p.nasal || nasalOf(prevPh.get(t)))
-    ? Math.max(0.1, Math.min(extras.NAST, slotMs * 0.9)) : usual);
+  const nasalTrans = (t, p, usual, slotMs) => fricTrans(p, (nasalMode() && extras.NAST !== undefined && (p.nasal || nasalOf(prevPh.get(t)))
+    ? Math.max(0.1, Math.min(extras.NAST, slotMs * 0.9)) : usual), slotMs);
+  // (sonicpi-toolchain patch) [FRIC]: a frication entry's `in` (ms) is the transition of its first event (the main
+  // path: the voicing of the sound before it ending, the fricative's own voice coming in); absent: the usual one
+  const fricTrans = (p, usual, slotMs) => (fricMode() && p.frication && p.frication.in != null
+    ? Math.max(0.1, Math.min(p.frication.in, slotMs * 0.9)) : usual);
   const renderPhonemeEvents = (t, p, slotMs) => {
     const startF0 = t.stressed ? f0 + DEFAULTS.stressF0Lift : f0;
     const endF0 = startF0 + t.pitchDelta;
@@ -547,6 +600,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
 
   const emit = (target, transitionMs) => {
     if (pendingNasal) { target = { ...pendingNasal, ...target }; pendingNasal = null; }
+    if (pendingFric) { target = { ...pendingFric, ...target }; pendingFric = null; }
     schedule.push({
       atMs: timeMs,
       // [AV=x] (sonicpi-toolchain patch): loudness multiplier, moved like any other parameter
@@ -557,8 +611,8 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
       ...(extras.CO !== undefined ? { params: NON_FORMANTS } : {}),
     });
   };
-  const silence = (transitionMs = 30) => emit(
-    nasalMode() ? { ...nasalScaled(NASAL_DEFAULT), A1: 0, A2: 0, A3: 0 } : { A1: 0, A2: 0, A3: 0 }, transitionMs);
+  const silence = (transitionMs = 30) => emit({
+    ...(nasalMode() ? nasalScaled(NASAL_DEFAULT) : {}), ...(fricMode() ? FRIC_ZERO : {}), A1: 0, A2: 0, A3: 0 }, transitionMs);
 
   for (const t of tokens) {
     if (t.type === 'unknown') {
@@ -713,8 +767,8 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
   if (phrases.length) phrases[phrases.length - 1].tEndMs = timeMs;
 
   // (sonicpi-toolchain patch) [CO]: the synth applies events in array order
-  // (sonicpi-toolchain patch) [NAS]: a vowel's nasal glides were pushed after its own events
-  if (formantEvents || nasalOnlyEvents) schedule.sort((a, b) => a.atMs - b.atMs);
+  // (sonicpi-toolchain patch) [NAS]: a vowel's nasal glides were pushed after its own events; [FRIC]: likewise
+  if (formantEvents || nasalOnlyEvents || fricOnlyEvents) schedule.sort((a, b) => a.atMs - b.atMs);
 
   return { schedule, totalMs: timeMs, warnings, phrases, source, engine };
 }
