@@ -72,7 +72,7 @@ def render(cfg, words, path):
     specs = []
     for i, w in enumerate(words):
         base = {k: v for k, v in cfg.items() if k in ("bank", "transition", "aspiration", "voice", "rules", "accent", "gate", "hold", "durations", "dynamics",
-                                                      "coarticulation", "glottal", "nasals", "stops")}
+                                                      "coarticulation", "glottal", "nasals", "stops", "fricatives")}
         if cfg.get("mode", "speak") == "sing":
             nsyl = 2 if NUM[i] == "seven" else 1
             notes = [["E2", 4 // nsyl]] * nsyl + [["r", 2], ["G2", 8]]
