@@ -20,8 +20,14 @@ cepstrum floor is ~-60 to -65 dB re the vowel), from several starts; then render
 Kokoro's spectrum + (CALIB_CONFIG's fricative in the synthetic contexts - its median in the corpus rows), per band,
 for what the synthetic contexts get wrong (pass 2: CALIB_CONFIG = the config with pass 1's entries).
 
+--corpus: the same model fitted in the corpus itself (each round renders all of it through fricscope three times: as
+it is, with the frication off, with the voice off too), to Kokoro's median spectra there. (Tried for the shipped
+entries: worse by fidelity, 2.156 vs 2.221, than the vowel-context fit; FRICATION keeps the latter, its levels then
+scaled per fricative to Kokoro's in the corpus, fricscope's level re the vowels.)
+
 usage: fricfit.py CONFIG --kokoro ROWS.json [--calib CALIB_CONFIG] [--phones S,Z,...] [--start FIT.json] [--rounds 3]
                   [--out FIT.json]
+       fricfit.py CONFIG --corpus [--limit N] [--phones ...] [--start FIT.json] [--rounds 3] [--out FIT.json]
   prints per fricative the rendered RMS error before / after and the fitted entry (JSON, for FRICATION).
 """
 import argparse, base64, collections, json, math, os, subprocess, sys, threading
