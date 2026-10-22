@@ -12,6 +12,7 @@ import { DUR } from './phones.js';
 import { coartOptions, coartDirectives } from './coarticulation.js';
 import { nasalOptions, nasalDirectives } from './nasals.js';
 import { stopOptions, planStops, afterSilence, beforeSilence } from './stops.js';
+import { prosodyOptions, accentPlan, intonate } from './prosody.js';
 
 const DIPH = { AY: ['AA', 'IY'], EY: ['EH', 'IY'], OW: ['AO', 'UW'], AW: ['AA', 'UW'], OY: ['AO', 'IY'] };
 const NOTE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -135,11 +136,19 @@ const breathDirs = (o, voice) => [`h${o.breathLevel ?? BREATH_LEVEL} `, `h${voic
 export function speak(o, meta) {
   const m = Array.isArray(meta) ? meta : null;
   const rate = o.rate ?? 1, base = hz(o.pitch ?? 'A2'), ws = words(o.text, o.rules, o.durations, o);
-  const I = merged(INTONATION, o.intonation);
+  // prosody (prosody.js): pitch accents and phrasing in place of intonation, laid over the string at the end
+  const P = prosodyOptions(o.prosody), plan = P && accentPlan(ws);
+  const I = P ? { accent: 0, finalFall: 0, declination: 0, questionRise: 0 } : merged(INTONATION, o.intonation);
   const [accUp, accDown] = accentDirs(merged(ACCENT_DELTA.speak, o.accentDelta));
   const breath = o.aspiration === 'breath', [hUp, hDown] = breathDirs(o, voiceOf(o));
   let out = `${prefix(o)} b${f1(base)} `, t = 0, lastB = f1(base);   // t: ms since the sentence began (declination)
-  const ph = (ms, p, info, suffix = '') => { out += `r${f1(ms)} ${p}${suffix} `; m?.push(info); t += ms; };
+  // prosody: each phoneme token's place in out ("r<ms> CODE") and time (T: ms since the utterance began)
+  const toks = P ? [] : null;
+  let T = 0;
+  const ph = (ms, p, info, suffix = '', kind = 'other') => {
+    if (toks) { toks.push({ at: out.length, len: `r${f1(ms)} ${p}`.length, start: T, ms, kind, word: info.word, syl: info.syl }); T += ms; }
+    out += `r${f1(ms)} ${p}${suffix} `; m?.push(info); t += ms;
+  };
   ws.forEach((w, wi) => {
     w.syllables.forEach((s, si) => {
       const final = (w.punct !== '' || wi === ws.length - 1) && si === w.syllables.length - 1;
@@ -154,20 +163,21 @@ export function speak(o, meta) {
         // pitch: a rise on primary stress, a fall at the end of a phrase (a rise, with questionRise, after '?')
         const st = final ? (I.questionRise && w.punct.includes('?') ? I.questionRise : -I.finalFall) : s.stress === 1 ? I.accent : 0;
         const delta = st ? f1(b * (2 ** (st / 12) - 1)) : 0;
-        const acc = o.accent !== false && s.stress === 1;
+        const acc = o.accent !== false && (P?.effort ? plan.accented.has(`${wi}:${si}`) : s.stress === 1);
         if (acc) out += accUp;
         if (breathHere) { out += hUp; ph(s.aspMs, BREATH_PREFIX + s.nucleus, { ...at, asp: true, p: s.nucleus }); out += hDown; }
-        ph(s.nucleusMs * rate, s.nucleus, at, delta ? `(${delta > 0 ? '+' : ''}${delta})` : '');
+        ph(s.nucleusMs * rate, s.nucleus, at, delta ? `(${delta > 0 ? '+' : ''}${delta})` : '', 'vowel');
         if (acc) out += accDown;
       }
       s.coda.forEach((p, i) => ph(s.codaMs[i] * rate, ...consonant(s, 'codaCode', i, p, at)));
       if (final && w.punct) {
         out += `p${Math.round(pauseOf(o, w.punct) * rate)} `;
+        T += Math.round(pauseOf(o, w.punct) * rate);
         t = /[.!?]/.test(w.punct) ? 0 : t + pauseOf(o, w.punct) * rate;
       }
     });
   });
-  return out.trim();
+  return (P ? intonate(out, toks, plan, P, base) : out).trim();
 }
 
 // notes: one per syllable: [note, length] with length in sixteenths at bpm (or { ms }), or null for a rest
