@@ -3,7 +3,7 @@
 
 usage (/home/user/tts/venv/bin/python):
   prosodyfit.py measure CONFIG_JSON [--split train|held|all]          proxy F0 metrics of a speak config
-  prosodyfit.py fit BASE_JSON [--evals N] [--start PROSODY_JSON] [--free k1,k2,...] [--out FILE]
+  prosodyfit.py fit BASE_JSON [--evals N] [--start PROSODY_JSON] [--free k1,k2,...] [--out FILE] [--split train|phrasing]
   prosodyfit.py check CONFIG_JSON                                   fidelity.py --audio prosody on train and held-out
 
 A proxy of fidelity.py's prosody group, ~50x faster: instead of rendering audio and running Praat, the F0 klattsch
@@ -27,13 +27,15 @@ ROOT = F.ROOT
 HELPER = os.path.join(HERE, "prosody_f0.mjs")
 # fittable parameters: (lower, upper, initial step). `top` only shifts the whole contour, which the F0 metrics
 # (semitones re each side's median) cannot see: it is set from median_st (`check`), not fitted, so it is left out
-# of the default free set (FREE). continuation, question and reset have nothing to fit on (one comma, no question
-# in the corpus).
+# of the default free set (FREE). continuation, question and reset have nothing to fit on in the Harvard corpus (one
+# comma, no question): tools/voicelab/phrasing.py has a Kokoro set for them (--split phrasing).
 SPACE = {"accent": (0, 10, 1.0), "downstep": (0.3, 1.2, 0.1), "nuclear": (0, 3, 0.2), "peak": (-0.6, 1.5, 0.15),
-         "rise": (10, 500, 40), "fall": (40, 800, 50), "declination": (0, 10, 1.0), "decay": (-4, 10, 1.0),
-         "decayMs": (50, 3000, 150), "final": (-4, 10, 1.0), "finalFrom": (0, 1, 0.3), "micro": (-2, 6, 0.5),
-         "microMs": (10, 300, 30), "dip": (-2, 4, 0.5), "top": (-4, 8, 1.0)}
-FREE = [k for k in SPACE if k != "top"]
+         "rise": (10, 500, 40), "fall": (40, 800, 50), "declination": (0, 10, 1.0), "initial": (-4, 10, 1.0),
+         "initialMs": (10, 1000, 30), "final": (-4, 10, 1.0), "finalFrom": (0, 1, 0.3), "micro": (-2, 6, 0.5),
+         "microMs": (10, 300, 30), "dip": (-2, 4, 0.5), "top": (-4, 8, 1.0),
+         # phrasing (fit them with --split phrasing --free continuation,reset)
+         "continuation": (-6, 8, 1.0), "question": (0, 12, 1.0), "reset": (0, 1, 0.2)}
+FREE = [k for k in SPACE if k not in ("top", "continuation", "question", "reset")]
 
 class Worker:
     def __init__(self, n=2):
@@ -110,8 +112,13 @@ def brief(p, s=None):
     return out
 
 def splits(voice):
+    """train / held (climb.py split), all (the Harvard corpus), phrasing (tools/voicelab/phrasing.py: commas,
+    questions; when built)."""
     tr, he = C.split(voice)
-    return {"train": tr, "held": he, "all": F.corpus(voice)}
+    out = {"train": tr, "held": he, "all": F.corpus(voice)}
+    import phrasing
+    if os.path.exists(os.path.join(phrasing.OUT, "index.json")): out["phrasing"] = phrasing.load(voice)
+    return out
 
 def cmd_measure(a):
     cfg = json.loads(open(a.config).read() if os.path.exists(a.config) else a.config)
@@ -124,7 +131,7 @@ def cmd_fit(a):
     base = json.loads(open(a.base).read() if os.path.exists(a.base) else a.base)
     start = json.loads(a.start) if a.start else {}
     pros0 = base.get("prosody") if isinstance(base.get("prosody"), dict) else {}
-    S = splits(a.voice); train = S["train"]
+    S = splits(a.voice); train = S[a.split]
     free = a.free.split(",") if a.free else FREE
     js = ("const p = await import('./klattsing/src/prosody.js'); console.log(JSON.stringify(p.PROSODY))")
     D = json.loads(subprocess.run(["node", "--input-type=module", "-e", js], capture_output=True, text=True, cwd=ROOT, check=True).stdout)
@@ -153,7 +160,7 @@ def cmd_fit(a):
         print(f"round {rnd_}: train pros {-r.fun:.4f} ({len(cache)} evals, {time.time() - t0:.0f} s)", flush=True)
     c = cfg_of(best[1])
     out = {"prosody": c["prosody"], "free": free, "evals": len(cache)}
-    for name in ("train", "held"):
+    for name in ([a.split] if a.split not in ("train", "held") else []) + ["train", "held"]:
         p = proxy(c, S[name], a.voice); s, z = pros_score(p, S[name], a.voice)
         p0 = proxy(base, S[name], a.voice); s0, _ = pros_score(p0, S[name], a.voice)
         out[name] = {"fit": brief(p, s), "base": brief(p0, s0)}
@@ -163,12 +170,17 @@ def cmd_fit(a):
 def cmd_check(a):
     cfg = json.loads(open(a.config).read() if os.path.exists(a.config) else a.config)
     S = splits(a.voice)
+    shift = F.kokoro_shift(a.voice)
     for name in ("train", "held"):
-        r = C.evaluate_recs(cfg, S[name], audio=True, voice=a.voice)
-        res, per_utt = F._measure(cfg, S[name], True, "stop", 2, F.kokoro_shift(a.voice))
+        # as climb.evaluate_recs (relative to config {} on the same sentences), one render
+        res, per_utt = F._measure(cfg, S[name], True, "stop", 2, shift)
+        comp = F.components(res, per_utt)
+        ref = F.reference(S[name], a.voice, True, "stop", 2, shift, comp if cfg == {} else None)
+        total, groups, _ = F.score(comp, ref)
         p = res["prosody"]
-        print(name, json.dumps({"score": r["score"], "scores": r["scores"], **{k: round(p[k], 4) for k in ("r", "r_detrended", "rmse_st", "sd_ratio")},
-                                "mcd": round(res["spectral"]["mcd"], 4), "mcd_cmn": round(res["spectral"]["mcd_cmn"], 4)}))
+        print(name, json.dumps({"score": round(total, 4), "scores": {k: round(v, 4) for k, v in groups.items()},
+                                **{k: round(p[k], 4) for k in ("r", "r_detrended", "rmse_st", "sd_ratio", "median_st")},
+                                "mcd": round(res["spectral"]["mcd"], 4), "mcd_cmn": round(res["spectral"]["mcd_cmn"], 4)}), flush=True)
 
 def main(argv):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -177,6 +189,7 @@ def main(argv):
     e = sub.add_parser("measure"); e.add_argument("config"); e.add_argument("--split", default="train,held")
     f = sub.add_parser("fit"); f.add_argument("base"); f.add_argument("--evals", type=int, default=400)
     f.add_argument("--start"); f.add_argument("--free"); f.add_argument("--out"); f.add_argument("--restarts", type=int, default=2)
+    f.add_argument("--split", default="train", help="the sentences to fit on (default train; phrasing: the comma/question set)")
     c = sub.add_parser("check"); c.add_argument("config")
     a = ap.parse_args(argv)
     {"measure": cmd_measure, "fit": cmd_fit, "check": cmd_check}[a.cmd](a)

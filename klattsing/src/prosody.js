@@ -1,32 +1,43 @@
 // "prosody" (speak): a pitch-accent intonation model instead of speak's fixed rise on every stressed syllable.
-//   "prosody": true                     the defaults below (PROSODY, fitted to the Kokoro corpus)
+//   "prosody": true                     the defaults below (PROSODY, fitted to Kokoro: tools/voicelab/prosodyfit.py)
 //   "prosody": { accent, downstep, ... } fields over PROSODY (null keeps one)
 // After Pierrehumbert (1980) and ToBI (Silverman et al. 1992; Beckman & Ayers Elam 1997): the F0 of an
 // intonational phrase is a sequence of pitch accents over a declining baseline, ended by a phrase accent and a
-// boundary tone; and after Fujisaki's model (Fujisaki & Hirose 1984): log F0 is a phrase component (the baseline,
-// falling fastest at first, reset at each phrase) plus smooth accent components. All values in semitones re the
-// spec's pitch, times in ms.
+// boundary tone; and after Fujisaki's model (Fujisaki & Hirose 1984): log F0 is a phrase component (a baseline with
+// a quick rising onset, reset at each sentence) plus smooth, overlapping accent components. All values are in
+// semitones re the spec's pitch, times in ms.
 //   - accents: the primary-stressed syllable of every content word (not UNACCENTED: function words, two-syllable
 //     prepositions and conjunctions, demonstratives, wh-words, reflexives); a phrase without a content word
 //     accents its last word; the last accent of a phrase is its nuclear accent. Each accent is a smooth rise-fall
 //     (raised-cosine flanks: `rise` ms up to the peak, `fall` ms down from it) peaking at `peak` of the stressed
-//     vowel (0 its start, 1 its end; negative: in the onset), `accent` st over the baseline for a phrase's first
-//     accent; every later one is `downstep` times the one before (H* !H* ...: Liberman & Pierrehumbert 1984), the
-//     nuclear one `nuclear` times that again. Overlapping accents take the higher (close accents make a plateau).
-//   - baseline: starts `top` st over the spec's pitch and falls `declination` st per second (Cohen, Collier &
-//     't Hart 1982) plus `decay` st over an exponential with time constant `decayMs` (the falling part of a
-//     Fujisaki phrase component: fast at first); after a sentence ends (. ! ?) it starts again at `top`, after a
-//     comma (, ; : --) it is reset `reset` of the way back up (a partial reset: Ladd 1988), its decay scaled alike.
+//     vowel (0 its start, 1 its end; negative: in the onset). A phrase's first accent is `accent` st over the
+//     baseline, every later prenuclear one `downstep` times the one before (H* !H* ...: Liberman & Pierrehumbert
+//     1984), and the nuclear accent `nuclear` x `accent` whatever comes before it (Kokoro's nuclear accents are not
+//     downstepped: fitted that way 4.07 against 4.02 on the train split, by the proxy). Overlapping accents take the
+//     higher, so close accents make a plateau, not a dip (the "hat pattern": 't Hart, Collier & Cohen 1990).
+//   - baseline: `top` st over the spec's pitch, falling `declination` st per second (Cohen, Collier & 't Hart
+//     1982); a phrase starts `initial` st under it, rising to it with time constant `initialMs` (a low initial
+//     boundary %L, the rising onset of a Fujisaki phrase component). After a sentence ends (. ! ?) it starts at
+//     `top` again; after a comma (, ; : --) it is reset `reset` of the way back up (a partial reset: Ladd 1988),
+//     its initial dip scaled alike.
 //   - phrase ends: a declarative (. ! or none) is lowered `final` st by its end (L-L%), ramped from the start of
-//     its last vowel (finalFrom 0) or of the nuclear vowel (1; the L- phrase accent spreading from the nuclear
-//     accent) or in between; a comma phrase rises `continuation` st over its last vowel (L-H%); a yes/no question
-//     (`?`, not starting with a wh-word) takes a low nuclear accent and rises `question` st from the start of the
-//     nuclear vowel to its end (L* H-H%); a wh-question falls like a declarative.
+//     its last vowel (finalFrom 0) or of the nuclear vowel (1: the L- phrase accent spreading from the nuclear
+//     accent) or in between; a comma phrase is not lowered but ends `continuation` st up over its last vowel (the
+//     continuation rise L-H% when positive); a yes/no question (`?`, the sentence not starting with a wh-word) with
+//     `question` > 0 takes a low nuclear accent and rises `question` st from the start of the nuclear vowel to its
+//     end (L* H-H%); with `question` 0, and a wh-question always, it ends like a statement.
 //   - segmental perturbations (microprosody: Lehiste & Peterson 1961; Hombert 1978; Silverman 1986; Kingston &
 //     Diehl 1994): a vowel right after a voiceless obstruent (or its aspiration) starts `micro` st higher,
-//     decaying with time constant `microMs`; voiced obstruents (B D G V DH Z ZH JH, the flap) are `dip` st lower.
+//     decaying with time constant `microMs`; voiced obstruents (B D G V DH Z ZH JH, stops' flap) are `dip` st lower.
 //   - effort: true moves speak's effort/tilt accent (accentDelta) from every primary stress to the accented
-//     syllables only.
+//     syllables only. Off: spectral balance marks lexical stress, accented or not (Sluijter & van Heuven 1996), and
+//     fidelity ties (2.979 / 2.981 on the train split).
+// Fitted (prosodyfit.py fit, a proxy of fidelity's F0 metrics read off the schedule): the accents, baseline, final
+// lowering and microprosody on the Harvard corpus's train split (80 sentences); continuation and reset on the
+// Kokoro phrasing set (tools/voicelab/phrasing.py: 20 sentences with commas and questions; Kokoro ends a comma
+// phrase level or slightly falling, does not reset after it, and ends yes/no questions falling, in both voices:
+// -3.0 st over the last vowel in am_onyx, -8.0 in am_michael, like its statements -2.9 / -8.8); `top` so the
+// rendered median F0 is the spec's pitch (fidelity median_st ~0; the F0 metrics cannot see it).
 // Rendering: klattsch moves F0 per phoneme (each phoneme's first event takes it to the `b` value; a vowel with a
 // pitch delta "(+x)" then glides to b + x by ~75-85% of it), so the contour is sampled there: a `b` directive
 // before each phoneme token, and on vowels a transient delta to the value near the vowel's end. The timing and
@@ -34,14 +45,13 @@
 import { FUNCTION_WORDS } from './function_words.js';
 
 export const PROSODY = {
-  accent: 3, downstep: 0.7, nuclear: 1, peak: 0.5, rise: 150, fall: 200,
-  top: 2, declination: 3, decay: 0, decayMs: 400, reset: 0.6,
-  final: 3, finalFrom: 0, continuation: 3, question: 6,
-  micro: 0, microMs: 60, dip: 0, effort: true,
+  accent: 3.3, downstep: 0.52, nuclear: 0.58, peak: -0.14, rise: 43, fall: 470,
+  top: 2.65, declination: 3.1, initial: 3.6, initialMs: 86, reset: 0,
+  final: 3.4, finalFrom: 0, continuation: -0.6, question: 0,
+  micro: 1.6, microMs: 50, dip: 1.2, effort: false,
 };
-const NUM = Object.keys(PROSODY).filter((k) => k !== 'effort');
 const KEYS = Object.keys(PROSODY);
-const POSITIVE = ['rise', 'fall', 'decayMs', 'microMs'];
+const POSITIVE = ['rise', 'fall', 'initialMs', 'microMs'];
 
 // closed-class words FUNCTION_WORDS leaves out (it lists one-syllable words, for the duration rules): prepositions
 // and conjunctions of two syllables, demonstratives, wh-words, reflexive pronouns. Kokoro's lexicon gives these no
@@ -122,7 +132,9 @@ const bump = (x, rise, fall) => (x < 0 ? (x > -rise ? 0.5 + 0.5 * Math.cos(Math.
 // the contour: plan (accentPlan), tokens [{ start, ms, kind: "vowel" | "other", p (lexical phoneme), code (the
 // string's), asp, gap (a pause before it), word, syl }] in time order (ms from the start of the utterance) -> t (ms) -> st re the pitch
 export function contour(plan, tokens, P) {
-  const ph = plan.phrases.map((x) => ({ ...x, start: Infinity, end: -Infinity, lastVowel: null, vowels: new Map(), peaks: [] }));
+  // tune: the phrase's kind, a yes/no question ending like a statement unless P.question rises it
+  const ph = plan.phrases.map((x) => ({ ...x, tune: x.kind === 'question' && !P.question ? 'final' : x.kind,
+    start: Infinity, end: -Infinity, lastVowel: null, vowels: new Map(), peaks: [] }));
   const phraseOf = (word) => ph.findIndex((x) => word >= x.from && word <= x.to);
   for (const t of tokens) {
     const x = ph[phraseOf(t.word)];
@@ -136,16 +148,16 @@ export function contour(plan, tokens, P) {
     if (x.start === Infinity) continue;
     const r = x.sentenceStart || prevEnd === null ? 1 : P.reset;
     x.b0 = x.sentenceStart || prevEnd === null ? P.top : prevEnd + r * (P.top - prevEnd);
-    x.decay = r * P.decay;
-    prevEnd = x.b0 - P.declination * (x.end - x.start) / 1000 - x.decay * (1 - Math.exp(-(x.end - x.start) / P.decayMs));
+    x.initial = r * P.initial;
+    prevEnd = x.b0 - P.declination * (x.end - x.start) / 1000 - x.initial * Math.exp(-(x.end - x.start) / P.initialMs);
   }
   for (const a of plan.accents) {
     const x = ph[a.phrase], v = x.vowels.get(`${a.word}:${a.syl}`);
     if (!v) continue;
-    let h = P.accent * P.downstep ** a.k * (a.nuclear ? P.nuclear : 1);
+    let h = a.nuclear ? P.accent * P.nuclear : P.accent * P.downstep ** a.k;
     if (a.nuclear) {
       x.nucleus = v;
-      if (x.kind === 'question') h = 0;              // L*: the rise comes after it
+      if (x.tune === 'question') h = 0;              // L*: the rise comes after it
     }
     x.peaks.push({ at: v.start + P.peak * v.ms, h });
   }
@@ -165,13 +177,13 @@ export function contour(plan, tokens, P) {
     let j = 0;
     while (j + 1 < live.length && t >= live[j + 1].start) j++;
     const x = live[j], dt = Math.max(0, t - x.start);
-    let f = x.b0 - P.declination * dt / 1000 - x.decay * (1 - Math.exp(-dt / P.decayMs)), a = 0;
+    let f = x.b0 - P.declination * dt / 1000 - x.initial * Math.exp(-dt / P.initialMs), a = 0;
     for (const p of x.peaks) a = Math.max(a, p.h * bump(t - p.at, P.rise, P.fall));
     f += a;
     const lv = x.lastVowel, nv = x.nucleus ?? lv, span = (from) => ramp((t - from) / Math.max(1, x.end - from));
     if (lv) {
-      if (x.kind === 'final') f -= P.final * span(lv.start + P.finalFrom * (Math.min(nv.start, lv.start) - lv.start));
-      else if (x.kind === 'continuation') f += P.continuation * span(lv.start);
+      if (x.tune === 'final') f -= P.final * span(lv.start + P.finalFrom * (Math.min(nv.start, lv.start) - lv.start));
+      else if (x.tune === 'continuation') f += P.continuation * span(lv.start);
       else f += P.question * span(nv.start);
     }
     for (const [s, e, st, tau] of seg) if (t >= s && t < e) f += tau ? st * Math.exp(-(t - s) / tau) : st;
@@ -179,9 +191,11 @@ export function contour(plan, tokens, P) {
   };
 }
 
-// where klattsch's F0 reaches a phoneme's values: a vowel's start value is held from ~min(20-25 ms, 25%) to 25%
-// of it, its end value reached at 75% (a vowel with a glideTo, most of them) to 85% (the others); a consonant's
-// one value after its first transition (min(35 ms, 40%))
+// where klattsch's F0 reaches a phoneme's values: a vowel takes its start value over its first ~20-25 ms and holds
+// it to 25% of the vowel, then glides to its end value by 75% (a vowel with a glideTo, most of them) or 85% (the
+// others) and holds it; a consonant takes its one value over its first transition (min(35 ms, 40%)). So a vowel's
+// contour is sampled at 10% and 85% of it (the proxy: train 3.74 against 3.70 at 25% / 80%), a consonant's where
+// its transition ends.
 const AT_START = 0.1, AT_END = 0.85;
 const f1 = (x) => Math.round(x * 10) / 10;
 // the speak string with the contour: tokens [{ at, len, start, ms, kind, p, code, asp, gap, word, syl }] locate each

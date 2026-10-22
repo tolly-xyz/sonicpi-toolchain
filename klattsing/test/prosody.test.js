@@ -40,7 +40,7 @@ function toksOf(text) {
   return { ws, toks, end: t };
 }
 // all off: a flat line at the spec's pitch
-const FLAT = { accent: 0, top: 0, declination: 0, decay: 0, final: 0, continuation: 0, question: 0, micro: 0, dip: 0 };
+const FLAT = { accent: 0, top: 0, declination: 0, initial: 0, final: 0, continuation: 0, question: 0, micro: 0, dip: 0 };
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg ?? ''} ${a} != ${b}`);
 
 test('prosody: off (false, null, absent) changes nothing; sing ignores it', () => {
@@ -81,7 +81,8 @@ test('prosody: accent heights, downstep, nuclear, peak alignment', () => {
   const { ws, toks } = toksOf('Big dogs dig deep holes.');
   const P = prosodyOptions({ ...FLAT, accent: 3, downstep: 0.7, nuclear: 1.5, peak: 0.5, rise: 80, fall: 80 });
   const f = contour(accentPlan(ws), toks, P), vs = toks.filter((t) => t.kind === 'vowel');
-  vs.forEach((v, k) => near(f(v.start + 0.5 * v.ms), 3 * 0.7 ** k * (k === vs.length - 1 ? 1.5 : 1), `accent ${k}`));
+  // prenuclear accents downstepped, the nuclear one nuclear x accent
+  vs.forEach((v, k) => near(f(v.start + 0.5 * v.ms), k === vs.length - 1 ? 3 * 1.5 : 3 * 0.7 ** k, `accent ${k}`));
   // the peak is the maximum: lower 30 ms either side, back to the baseline before the rise starts
   const v = vs[1];
   assert.ok(f(v.start + 30) < f(v.start + 60) && f(v.start + 90) < f(v.start + 60));
@@ -91,12 +92,12 @@ test('prosody: accent heights, downstep, nuclear, peak alignment', () => {
   near(g(vs[0].start - 30), 3);
 });
 
-test('prosody: baseline: declination, exponential decay, top', () => {
+test('prosody: baseline: declination, the initial rise, top', () => {
   const { ws, toks, end } = toksOf('Big dogs dig deep holes.');
   const f = contour(accentPlan(ws), toks, prosodyOptions({ ...FLAT, top: 2, declination: 4 }));
   for (const t of [0, 300, 900]) near(f(t), 2 - 4 * t / 1000);
-  const g = contour(accentPlan(ws), toks, prosodyOptions({ ...FLAT, decay: 3, decayMs: 200 }));
-  for (const t of [0, 100, 700]) near(g(t), -3 * (1 - Math.exp(-t / 200)));
+  const g = contour(accentPlan(ws), toks, prosodyOptions({ ...FLAT, initial: 3, initialMs: 200 }));
+  for (const t of [0, 100, 700]) near(g(t), -3 * Math.exp(-t / 200));
   assert.ok(end > 700);
 });
 
@@ -145,7 +146,7 @@ test('prosody: microprosody: a vowel after a voiceless obstruent starts higher, 
   near(fw(flap.start + 5), -1); near(fw(flap.start + flap.ms), 0, 'no raise after a flap');
 });
 
-test('prosody: the string: only the pitch changes (phonemes, durations, timelines); effort on accented syllables', () => {
+test('prosody: the string: only the pitch changes (phonemes, durations, timelines); effort', () => {
   const text = 'The birch canoe slid on the smooth planks, before the rain.';
   const base = { text, functionWords: true };
   const s = speak({ ...base, prosody: true }), s0 = speak({ ...base, intonation: { accent: 0, finalFall: 0 } });
@@ -157,10 +158,12 @@ test('prosody: the string: only the pitch changes (phonemes, durations, timeline
   // every phoneme token has its F0 (the opening b of the string is left out: the first token sets it)
   assert.ok(pitches(s).every((x) => x.f0 > 0));
   assert.match(s, /^g0\.5 t0 h0\.05 b\d+(\.\d+)? r/);
-  // effort: true (default) puts accentDelta on the accented syllables: "before" (stress 1, unaccented) loses it
+  // effort: speak's accentDelta stays on every primary stress (default), with true on the accented syllables
+  // only: "before" (stress 1, unaccented) loses it
   const eff = (x) => (x.match(/g\+0\.1/g) ?? []).length;
-  assert.equal(eff(s), plan(text).accents.length);
-  assert.equal(eff(speak({ ...base, prosody: { effort: false } })), eff(s0));
+  assert.equal(eff(s), eff(s0));
+  assert.equal(eff(speak({ ...base, prosody: { effort: true } })), plan(text).accents.length);
+  assert.ok(plan(text).accents.length < eff(s0));
   assert.equal(speak({ ...base, prosody: { ...PROSODY } }), s);
 });
 
