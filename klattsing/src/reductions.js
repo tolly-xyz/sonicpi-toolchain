@@ -25,7 +25,7 @@
 //   hDrop     (off) him / his / her / have / has / had lose their H inside a phrase when weak ("tell 'im";
 //             Roach 2009, Cruttenden 2014: usual in unstressed pronouns and auxiliaries, not phrase-initially)
 //   elision   (off) "and" loses its D before a consonant (ən: the most frequent -t/-d deletion of all, Neu 1980,
-//             Guy 1980), "must" / "just" their T before a consonant
+//             Guy 1980), "must" its T before a consonant
 //   assimilation (off) a word-final N takes the place of a following word-initial labial (M before P B M) or
 //             velar (NG before K G) in the same phrase ("ten pins", "in case"; regressive place assimilation of
 //             word-final alveolars, Gimson 1962; gradient and optional, Nolan 1992, Ellis & Hardcastle 2002: off)
@@ -193,7 +193,7 @@ export function reduceWords(ws, o) {
       if (o.hDrop && H_DROP.has(word) && !phraseStart(i)) pron = pron.replace(/^HH /, '');
       if (o.elision && nextW && !startsWithVowel(nextW)) {
         if (word === 'and') pron = pron.replace(/ D$/, '');
-        if (word === 'must' || word === 'just') pron = pron.replace(/ T$/, '');
+        if (word === 'must') pron = pron.replace(/ T$/, '');
       }
     }
     if (word === 'the' && o.the && !phraseEnd(i) && startsWithVowel(nextW)) { pron = o.the === 'IY' ? 'DH IY0' : 'DH IH0'; weak = true; }
