@@ -310,7 +310,9 @@ On the Kokoro corpus (`fidelity.py --audio`, BASE = `kokoro-durations` + `mitalk
 `nasals` + `stops` + `prosody` + `fricatives`): score 3.262 -> 3.279 (dur 1.092 -> 1.126, spec 5.280 -> 5.293, pros
 3.415 -> 3.418): klattsing's phones match Kokoro's in 2378 of the 2454 Kokoro phones instead of 2359 (Needleman-Wunsch,
 substitutions 91 -> 65; of fidelity's aligned pairs 96.1% -> 97.2% identical); words pronounced as Kokoro does 682 -> 708
-of 778 ("to" T AH 18 times, "was" W AH Z 14, "the" before a vowel 5, "than" 2, "read", "lives", "perfect"); vowel
+of 778 ("to" T AH 18 times, "was" W AH Z 14, "than" 2, "read", "lives"; against it "for" 2, existential "there" 2, "at",
+"are", "will", and "close" / "use" where Kokoro takes the adjective / noun for a verb: "Always close the barn door", "Use a
+pencil"; "the" before a vowel is Kokoro's DH IH, a near match); vowel
 durations log_rmse 0.286 -> 0.280 (unstressed 0.305 -> 0.296), r 0.835 -> 0.842; vowel MCD 3.394 -> 3.385 (mcd_cmn 3.092 ->
 3.080; AH 3.55 -> 3.50). Kokoro (misaki's lexicon) keeps "and" AE N D, "for" F AO R (3 of 4), "at" AE T (2 of 3),
 existential "there" strong and "your" Y UH R: the literature's forms are kept all the same (each a tie: "for" strong
