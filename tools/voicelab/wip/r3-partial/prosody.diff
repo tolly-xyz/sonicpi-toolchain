@@ -1,0 +1,491 @@
+diff --git a/klattsing/src/compile.js b/klattsing/src/compile.js
+index 6b49e5e..3ff5872 100644
+--- a/klattsing/src/compile.js
++++ b/klattsing/src/compile.js
+@@ -12,6 +12,7 @@ import { DUR } from './phones.js';
+ import { coartOptions, coartDirectives } from './coarticulation.js';
+ import { nasalOptions, nasalDirectives } from './nasals.js';
+ import { stopOptions, planStops, afterSilence, beforeSilence } from './stops.js';
++import { prosodyOptions, accentPlan, intonate } from './prosody.js';
+ 
+ const DIPH = { AY: ['AA', 'IY'], EY: ['EH', 'IY'], OW: ['AO', 'UW'], AW: ['AA', 'UW'], OY: ['AO', 'IY'] };
+ const NOTE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+@@ -135,11 +136,19 @@ const breathDirs = (o, voice) => [`h${o.breathLevel ?? BREATH_LEVEL} `, `h${voic
+ export function speak(o, meta) {
+   const m = Array.isArray(meta) ? meta : null;
+   const rate = o.rate ?? 1, base = hz(o.pitch ?? 'A2'), ws = words(o.text, o.rules, o.durations, o);
+-  const I = merged(INTONATION, o.intonation);
++  // prosody (prosody.js): pitch accents and phrasing in place of intonation, laid over the string at the end
++  const P = prosodyOptions(o.prosody), plan = P && accentPlan(ws);
++  const I = P ? { accent: 0, finalFall: 0, declination: 0, questionRise: 0 } : merged(INTONATION, o.intonation);
+   const [accUp, accDown] = accentDirs(merged(ACCENT_DELTA.speak, o.accentDelta));
+   const breath = o.aspiration === 'breath', [hUp, hDown] = breathDirs(o, voiceOf(o));
+   let out = `${prefix(o)} b${f1(base)} `, t = 0, lastB = f1(base);   // t: ms since the sentence began (declination)
+-  const ph = (ms, p, info, suffix = '') => { out += `r${f1(ms)} ${p}${suffix} `; m?.push(info); t += ms; };
++  // prosody: each phoneme token's place in out ("r<ms> CODE") and time (T: ms since the utterance began)
++  const toks = P ? [] : null;
++  let T = 0;
++  const ph = (ms, p, info, suffix = '', kind = 'other') => {
++    if (toks) { toks.push({ at: out.length, len: `r${f1(ms)} ${p}`.length, start: T, ms, kind, word: info.word, syl: info.syl }); T += ms; }
++    out += `r${f1(ms)} ${p}${suffix} `; m?.push(info); t += ms;
++  };
+   ws.forEach((w, wi) => {
+     w.syllables.forEach((s, si) => {
+       const final = (w.punct !== '' || wi === ws.length - 1) && si === w.syllables.length - 1;
+@@ -154,20 +163,21 @@ export function speak(o, meta) {
+         // pitch: a rise on primary stress, a fall at the end of a phrase (a rise, with questionRise, after '?')
+         const st = final ? (I.questionRise && w.punct.includes('?') ? I.questionRise : -I.finalFall) : s.stress === 1 ? I.accent : 0;
+         const delta = st ? f1(b * (2 ** (st / 12) - 1)) : 0;
+-        const acc = o.accent !== false && s.stress === 1;
++        const acc = o.accent !== false && (P?.effort ? plan.accented.has(`${wi}:${si}`) : s.stress === 1);
+         if (acc) out += accUp;
+         if (breathHere) { out += hUp; ph(s.aspMs, BREATH_PREFIX + s.nucleus, { ...at, asp: true, p: s.nucleus }); out += hDown; }
+-        ph(s.nucleusMs * rate, s.nucleus, at, delta ? `(${delta > 0 ? '+' : ''}${delta})` : '');
++        ph(s.nucleusMs * rate, s.nucleus, at, delta ? `(${delta > 0 ? '+' : ''}${delta})` : '', 'vowel');
+         if (acc) out += accDown;
+       }
+       s.coda.forEach((p, i) => ph(s.codaMs[i] * rate, ...consonant(s, 'codaCode', i, p, at)));
+       if (final && w.punct) {
+         out += `p${Math.round(pauseOf(o, w.punct) * rate)} `;
++        T += Math.round(pauseOf(o, w.punct) * rate);
+         t = /[.!?]/.test(w.punct) ? 0 : t + pauseOf(o, w.punct) * rate;
+       }
+     });
+   });
+-  return out.trim();
++  return (P ? intonate(out, toks, plan, P, base) : out).trim();
+ }
+ 
+ // notes: one per syllable: [note, length] with length in sixteenths at bpm (or { ms }), or null for a rest
+diff --git a/klattsing/src/prosody.js b/klattsing/src/prosody.js
+new file mode 100644
+index 0000000..cf29248
+--- /dev/null
++++ b/klattsing/src/prosody.js
+@@ -0,0 +1,170 @@
++// "prosody" (speak): a pitch-accent intonation model instead of speak's fixed rise on every stressed syllable.
++//   "prosody": true                     the defaults below (PROSODY, fitted to the Kokoro corpus)
++//   "prosody": { accent, downstep, ... } fields over PROSODY (null keeps one)
++// After Pierrehumbert (1980) and ToBI (Silverman et al. 1992; Beckman & Ayers Elam 1997): the F0 of an
++// intonational phrase is a sequence of pitch accents on a declining baseline, ended by a phrase accent and a
++// boundary tone; and after Fujisaki's model (Fujisaki & Hirose 1984): the log F0 contour is a phrase component
++// (here: the baseline, declining in time and reset at each phrase) plus smooth accent components.
++//   - accents: the primary-stressed syllable of every content word (not FUNCTION_WORDS, not UNACCENTED); a
++//     phrase without a content word accents its last word. Each accent is a smooth rise-fall (raised-cosine
++//     flanks, `rise` ms up to the peak, `fall` ms down from it) peaking at `peak` of the stressed vowel (0 its
++//     start, 1 its end), `accent` semitones over the baseline for a phrase's first accent; every later accent is
++//     `downstep` times the one before (H* !H* ...: Liberman & Pierrehumbert 1984), the nuclear (last) one `nuclear`
++//     times that again. Overlapping accents take the higher, so close accents make a plateau (no dip).
++//   - baseline: starts `top` semitones over the spec's pitch and falls `declination` semitones per second
++//     (Cohen, Collier & 't Hart 1982); after a sentence ends (. ! ?) it starts at `top` again, after a comma
++//     (; : and the rest) it is reset by `reset` of the way back up (partial reset: Ladd 1988).
++//   - phrase ends: a declarative (. ! or no mark) falls `final` semitones over its last vowel and coda (L-L%);
++//     a comma phrase rises `continuation` (L-H%, the continuation rise); a yes/no question ends in a rise of
++//     `question` from the start of its nuclear vowel (L* H-H%: its nuclear accent stays low); a question
++//     starting with a wh-word falls like a declarative.
++//   - effort: true moves speak's effort/tilt accent (accentDelta) from every primary stress to the accented
++//     syllables only.
++// Rendering: klattsch moves F0 per phoneme (a phoneme's start value, reached over its first transition, and with
++// a pitch delta its end value, reached by ~80% of it), so the contour is sampled at those points: a `b` directive
++// before each phoneme, and on vowels a transient delta "(+x)" to the value at 80% of the vowel. The timing and the
++// phonemes are unchanged.
++import { FUNCTION_WORDS } from './function_words.js';
++
++export const PROSODY = {
++  accent: 3, downstep: 0.7, nuclear: 1, peak: 0.5, rise: 150, fall: 200,
++  top: 2, declination: 3, reset: 0.6, final: 3, continuation: 3, question: 6, effort: true,
++};
++const NUM = ['accent', 'downstep', 'nuclear', 'peak', 'rise', 'fall', 'top', 'declination', 'reset', 'final', 'continuation', 'question'];
++const KEYS = [...NUM, 'effort'];
++
++// closed-class words FUNCTION_WORDS leaves out (it lists one-syllable words, for the duration rules): prepositions
++// and conjunctions of two syllables, demonstratives, wh-words, reflexive pronouns. Kokoro's lexicon gives these no
++// primary stress either ("across", "before", "into", "over", "these", "when", "what", "while", "without").
++export const UNACCENTED = new Set([...FUNCTION_WORDS, ...(
++  'about above across after against along among around before behind below beneath beside besides between beyond ' +
++  'during except inside into onto outside over toward towards under underneath until unto upon within without ' +
++  'because although unless whether while whereas this these those what when where why how ' +
++  'myself yourself himself herself itself ourselves yourselves themselves').split(' ')]);
++const WH = new Set('who whom whose what which when where why how'.split(' '));
++
++const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
++// "prosody": true | {...} -> the full option, or null (off)
++export function prosodyOptions(p) {
++  if (!p) return null;
++  if (p !== true && !isObj(p)) throw new Error(`prosody: true or an object, got ${JSON.stringify(p)}`);
++  const x = { ...PROSODY };
++  for (const [k, v] of Object.entries(p === true ? {} : p)) {
++    if (!KEYS.includes(k)) throw new Error(`prosody.${k}: unknown (${KEYS.join(', ')})`);
++    if (v == null) continue;
++    if (k === 'effort' ? typeof v !== 'boolean' : !(typeof v === 'number' && Number.isFinite(v))) {
++      throw new Error(`prosody.${k}: expected ${k === 'effort' ? 'true or false' : 'a number'}, got ${JSON.stringify(v)}`);
++    }
++    x[k] = v;
++  }
++  for (const k of ['rise', 'fall']) if (x[k] <= 0) throw new Error(`prosody.${k}: ms > 0`);
++  return x;
++}
++
++// words (with syllables and punct) -> { accented: Set of "word:syllable", phrases: [{ from, to, kind, sentenceStart }],
++// accents: [{ word, syl, phrase, k (index in its phrase), nuclear }] }; kind: "final" | "continuation" | "question"
++export function accentPlan(ws) {
++  const phrases = [];
++  let from = 0, sentenceStart = true, firstWord = 0;
++  ws.forEach((w, wi) => {
++    const last = wi === ws.length - 1;
++    if (!w.punct && !last) return;
++    const yesNo = w.punct.includes('?') && !WH.has(ws[firstWord].word);
++    const kind = /[.!]/.test(w.punct) || (!w.punct && last) || (w.punct.includes('?') && !yesNo) ? 'final' : yesNo ? 'question' : 'continuation';
++    phrases.push({ from, to: wi, kind, sentenceStart });
++    sentenceStart = /[.!?]/.test(w.punct);
++    from = wi + 1;
++    if (sentenceStart) firstWord = from;
++  });
++  const accents = [], accented = new Set();
++  phrases.forEach((ph, pi) => {
++    const list = [];
++    // the primary-stressed syllable (else a secondary, else the first with a vowel), -1 if none
++    const stressed = (w) => {
++      const rank = (s) => (!s.nucleus ? -1 : s.stress === 1 ? 2 : s.stress === 2 ? 1 : 0);
++      let best = -1;
++      w.syllables.forEach((s, si) => { if (rank(s) >= 0 && (best < 0 || rank(s) > rank(w.syllables[best]))) best = si; });
++      return best;
++    };
++    for (let wi = ph.from; wi <= ph.to; wi++) {
++      const w = ws[wi];
++      if (UNACCENTED.has(w.word)) continue;
++      const si = stressed(w);
++      if (si >= 0) list.push({ word: wi, syl: si });
++    }
++    if (!list.length) {
++      for (let wi = ph.to; wi >= ph.from; wi--) { const si = stressed(ws[wi]); if (si >= 0) { list.push({ word: wi, syl: si }); break; } }
++    }
++    list.forEach((a, k) => {
++      accents.push({ ...a, phrase: pi, k, nuclear: k === list.length - 1 });
++      accented.add(`${a.word}:${a.syl}`);
++    });
++  });
++  return { phrases, accents, accented };
++}
++
++const ramp = (u) => (u <= 0 ? 0 : u >= 1 ? 1 : 0.5 - 0.5 * Math.cos(Math.PI * u));
++const bump = (x, rise, fall) => (x < 0 ? (x > -rise ? 0.5 + 0.5 * Math.cos(Math.PI * x / rise) : 0) : (x < fall ? 0.5 + 0.5 * Math.cos(Math.PI * x / fall) : 0));
++
++// the contour: plan (accentPlan), tokens [{ start, ms, kind: "vowel" | "other", word, syl }] in time order (ms
++// from the start of the utterance) -> t (ms) -> semitones re the spec's pitch
++export function contour(plan, tokens, P) {
++  const ph = plan.phrases.map((x) => ({ ...x, start: Infinity, end: -Infinity, lastVowel: null, vowels: new Map() }));
++  const phraseOf = (word) => ph.findIndex((x) => word >= x.from && word <= x.to);
++  for (const t of tokens) {
++    const x = ph[phraseOf(t.word)];
++    if (!x) continue;
++    x.start = Math.min(x.start, t.start); x.end = Math.max(x.end, t.start + t.ms);
++    if (t.kind === 'vowel') { x.lastVowel = t; x.vowels.set(`${t.word}:${t.syl}`, t); }
++  }
++  // baseline at each phrase's start: top after a sentence start, else reset part of the way back to top
++  let prevEnd = null;
++  for (const x of ph) {
++    if (x.start === Infinity) { x.b0 = P.top; continue; }
++    x.b0 = x.sentenceStart || prevEnd === null ? P.top : prevEnd + P.reset * (P.top - prevEnd);
++    prevEnd = x.b0 - P.declination * (x.end - x.start) / 1000;
++    x.peaks = [];
++  }
++  for (const a of plan.accents) {
++    const x = ph[a.phrase], v = x.vowels?.get(`${a.word}:${a.syl}`);
++    if (!v) continue;
++    let h = P.accent * P.downstep ** a.k * (a.nuclear ? P.nuclear : 1);
++    if (a.nuclear && x.kind === 'question') { h = 0; x.nucleus = v; }
++    x.peaks.push({ at: v.start + P.peak * v.ms, h });
++  }
++  const live = ph.filter((x) => x.start !== Infinity);
++  return (t) => {
++    if (!live.length) return P.top;
++    let j = 0;
++    while (j + 1 < live.length && t >= live[j + 1].start) j++;
++    const x = live[j];
++    let f = x.b0 - P.declination * Math.max(0, t - x.start) / 1000, a = 0;
++    for (const p of x.peaks) a = Math.max(a, p.h * bump(t - p.at, P.rise, P.fall));
++    f += a;
++    const lv = x.lastVowel;
++    if (lv) {
++      if (x.kind === 'final') f -= P.final * ramp((t - lv.start) / Math.max(1, x.end - lv.start));
++      else if (x.kind === 'continuation') f += P.continuation * ramp((t - lv.start) / Math.max(1, x.end - lv.start));
++      else if (x.kind === 'question') {
++        const n = x.nucleus ?? lv;
++        f += P.question * ramp((t - n.start) / Math.max(1, x.end - n.start));
++      }
++    }
++    return f;
++  };
++}
++
++const f1 = (x) => Math.round(x * 10) / 10;
++// the speak string with the contour: tokens [{ at, len, start, ms, kind, word, syl }] locate each phoneme token
++// ("r<ms> CODE", len chars at index at) in out; base: the spec's pitch in Hz
++export function intonate(out, tokens, plan, P, base) {
++  const f = contour(plan, tokens, P), hzAt = (t) => f1(base * 2 ** (f(t) / 12));
++  let s = '', k = 0, cur = null;
++  for (const x of tokens) {
++    const a = x.kind === 'vowel' ? hzAt(x.start + 0.25 * x.ms) : hzAt(x.start + Math.min(35, 0.4 * x.ms));
++    const d = x.kind === 'vowel' ? f1(hzAt(x.start + 0.8 * x.ms) - a) : 0;
++    s += out.slice(k, x.at) + (a !== cur ? `b${a} ` : '') + out.slice(x.at, x.at + x.len) + (d ? `(${d > 0 ? '+' : ''}${d})` : '');
++    cur = a; k = x.at + x.len;
++  }
++  return s + out.slice(k);
++}
+diff --git a/tools/voicelab/prosody_f0.mjs b/tools/voicelab/prosody_f0.mjs
+new file mode 100644
+index 0000000..8c73ccb
+--- /dev/null
++++ b/tools/voicelab/prosody_f0.mjs
+@@ -0,0 +1,64 @@
++#!/usr/bin/env node
++// The F0 klattsch will render for klattsing speak specs, without rendering audio: a worker for prosodyfit.py.
++// Each stdin line is an array of specs; each reply line is an array of
++//   { phones: timeline phones (as klattsing --timeline), f0: [Hz or 0 every 10 ms from t = 0] }
++// F0 follows the schedule's transitions as the synth moves them (linear, or per parameter along the event's curve
++// when the schedule is shaped); a frame is voiced when the voicing parameter is >= 0.5 and A1 + A2 + A3 > 0.01
++// (an approximation of what Praat finds voiced in the audio). Jitter, shimmer and flutter are left out.
++import { createInterface } from 'node:readline';
++import { dirname, join } from 'node:path';
++import { fileURLToPath } from 'node:url';
++
++const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
++const { addLexicon } = await import(join(ROOT, 'klattsing/src/lexicon.js'));
++const { toKlattsch } = await import(join(ROOT, 'klattsing/src/compile.js'));
++const { timelineFrom } = await import(join(ROOT, 'klattsing/src/timeline.js'));
++const { compileString } = await import(join(ROOT, 'vendor/klattsch/src/engine/index.js'));
++const { CURVES, PARAMS } = await import(join(ROOT, 'vendor/klattsch/src/engine/synth-core.js'));
++addLexicon(join(ROOT, 'dict', 'lexicon.json'));
++
++const TRACK = ['F0', 'voicing', 'A1', 'A2', 'A3'];
++const INIT = { F0: 120, voicing: 0, A1: 0, A2: 0, A3: 0 };
++export function f0Track(schedule, totalMs, stepMs = 10) {
++  const shaped = schedule.some((e) => e.curve || e.params);
++  const mv = {};                              // param -> { from, to, t0, n, shape }
++  for (const k of TRACK) mv[k] = { from: INIT[k], to: INIT[k], t0: 0, n: 0, shape: null };
++  const val = (k, t) => {
++    const m = mv[k];
++    if (m.n <= 0 || t >= m.t0 + m.n) return m.to;
++    const u = Math.max(0, (t - m.t0) / m.n);
++    return m.from + (m.to - m.from) * (m.shape ? m.shape(u) : u);
++  };
++  const out = [];
++  let ei = 0;
++  for (let t = 0; t < totalMs; t += stepMs) {
++    while (ei < schedule.length && schedule[ei].atMs <= t) {
++      const e = schedule[ei++];
++      if (e.nasalOnly) continue;
++      const keys = shaped ? (e.params ?? PARAMS) : PARAMS;
++      const n = Math.max(e.transitionMs ?? 30, 1000 / 48000);
++      for (const k of TRACK) {
++        if (!keys.includes(k)) continue;
++        const from = val(k, e.atMs), to = k in e.target ? e.target[k] : mv[k].to;
++        mv[k] = { from, to, t0: e.atMs, n, shape: shaped ? CURVES[e.curve ?? 0] ?? null : null };
++      }
++    }
++    const voiced = val('voicing', t) >= 0.5 && val('A1', t) + val('A2', t) + val('A3', t) > 0.01;
++    out.push(voiced ? Math.round(val('F0', t) * 100) / 100 : 0);
++  }
++  return out;
++}
++
++for await (const line of createInterface({ input: process.stdin, crlfDelay: Infinity })) {
++  if (!line.trim()) continue;
++  let reply;
++  try {
++    reply = JSON.parse(line).map((spec) => {
++      const meta = [], text = toKlattsch(spec, meta), c = compileString(text);
++      if (c.warnings.length) throw new Error(`klattsch: ${c.warnings.join(', ')}`);
++      const tl = timelineFrom(spec, meta, c), v = c.voices[0];
++      return { phones: tl.phones, totalMs: tl.totalMs, f0: f0Track(v.schedule, v.totalMs) };
++    });
++  } catch (e) { reply = { error: String(e?.message ?? e) }; }
++  process.stdout.write(`${JSON.stringify(reply)}\n`);
++}
+diff --git a/tools/voicelab/prosodyfit.py b/tools/voicelab/prosodyfit.py
+new file mode 100644
+index 0000000..a8898cf
+--- /dev/null
++++ b/tools/voicelab/prosodyfit.py
+@@ -0,0 +1,180 @@
++#!/usr/bin/env python3
++"""Fit klattsing's "prosody" option (pitch accents, downstep, declination, phrase-final lowering) to Kokoro's F0.
++
++usage (/home/user/tts/venv/bin/python):
++  prosodyfit.py eval CONFIG_JSON [--split train|held|all]          proxy F0 metrics of a speak config
++  prosodyfit.py fit BASE_JSON [--evals N] [--start PROSODY_JSON] [--free k1,k2,...] [--out FILE]
++  prosodyfit.py check CONFIG_JSON                                   fidelity.py --audio prosody on train and held-out
++
++A proxy of fidelity.py's prosody group, ~50x faster: instead of rendering audio and running Praat, the F0 klattsch
++will render is read off the compiled schedule (tools/voicelab/prosody_f0.mjs: the synth's F0 transitions, voiced
++where the voicing parameter is >= 0.5 with some amplitude). It is compared with Kokoro's F0 exactly as fidelity.py
++compare_audio does (aligned non-final phones, Kokoro frames mapped piecewise-linearly into klattsing time, semitones
++re each one's median): r, r_detrended, rmse_st, sd_ratio, and the pros score (the mean z of 1 - r, rmse_st,
++1 - r_detrended against config {} on the same sentences, as fidelity's). Fitting maximises the proxy pros score on
++the train split (tools/voicelab/climb.py split) by Nelder-Mead over the free parameters (bounded by clipping);
++`check` scores the result with fidelity.py itself (audio, Praat) on both splits.
++"""
++import argparse, json, math, os, subprocess, sys, threading, time
++import numpy as np
++
++HERE = os.path.dirname(os.path.abspath(__file__))
++sys.path.insert(0, HERE)
++import fidelity as F  # noqa: E402
++import climb as C     # noqa: E402
++
++ROOT = F.ROOT
++HELPER = os.path.join(HERE, "prosody_f0.mjs")
++# fitted parameters: (lower, upper, initial step)
++SPACE = {"accent": (0, 10, 1.0), "downstep": (0.3, 1.2, 0.1), "nuclear": (0, 2, 0.2), "peak": (-0.5, 1.5, 0.15),
++         "rise": (40, 500, 40), "fall": (40, 600, 50), "top": (-4, 8, 1.0), "declination": (0, 10, 1.0),
++         "final": (-4, 10, 1.0)}
++
++class Worker:
++    def __init__(self, n=2):
++        self.ps = [None] * n; self.lock = [threading.Lock() for _ in range(n)]
++    def _req(self, i, specs):
++        with self.lock[i]:
++            if self.ps[i] is None or self.ps[i].poll() is not None:
++                self.ps[i] = subprocess.Popen(["node", HELPER], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, cwd=ROOT)
++            p = self.ps[i]; p.stdin.write(json.dumps(specs) + "\n"); p.stdin.flush(); line = p.stdout.readline()
++        out = json.loads(line)
++        if isinstance(out, dict): raise RuntimeError(out.get("error"))
++        return out
++    def request(self, specs):
++        n = len(self.ps); parts = [specs[k::n] for k in range(n)]; res = [None] * n
++        th = [threading.Thread(target=lambda k=k: res.__setitem__(k, self._req(k, parts[k]))) for k in range(n)]
++        for t in th: t.start()
++        for t in th: t.join()
++        out = [None] * len(specs)
++        for k in range(n):
++            for j, r in enumerate(res[k]): out[k + j * n] = r
++        return out
++W = Worker()
++
++def f0_compare(sys_ph, ft, ff, rec, shift):
++    """fidelity.compare_audio's F0 part: -> (kokoro st, system st, kokoro times) or None."""
++    Kph = F.kokoro_phones(rec, shift)
++    pairs = [(a, b) for a, b in F.align([x["p"] for x in sys_ph], [x["p"] for x in Kph]) if not Kph[b]["last"]]
++    if not pairs: return None
++    aK = np.array([t for a, b in pairs for t in (Kph[b]["start"], Kph[b]["end"])])
++    ak = np.array([t for a, b in pairs for t in (sys_ph[a]["start"], sys_ph[a]["end"])])
++    o = np.argsort(aK, kind="stable"); aK, ak = aK[o], np.maximum.accumulate(ak[o])
++    KF = np.array(rec["f0"]); kt, kf = KF[:, 0], KF[:, 1]
++    inside = np.zeros(len(kt), bool)
++    for a, b in pairs: inside |= (kt >= Kph[b]["start"]) & (kt < Kph[b]["end"])
++    j = np.clip(np.round((np.interp(kt, aK, ak) - ft[0]) / 0.01).astype(int), 0, len(ft) - 1)
++    kv, vk = ff[j], ff[ff > 0]
++    m = inside & (kf > 0) & (kv > 0)
++    if m.sum() < 3 or not len(vk): return None
++    return 12 * np.log2(kf[m] / rec["f0_median"]), 12 * np.log2(kv[m] / np.median(vk)), kt[m]
++
++def proxy(config, recs, voice="am_onyx"):
++    shift = F.kokoro_shift(voice)
++    res = W.request([F.spec_of(config, r) for r in recs])
++    per = {"f0_r": [], "f0_rmse": [], "f0_r_dt": []}; A1, A2 = [], []
++    for rec, x in zip(recs, res):
++        sys_ph = F.klattsing_phones_tl({"phones": x["phones"]})
++        ff = np.array(x["f0"], float); ft = np.arange(len(ff)) * 0.01
++        c = f0_compare(sys_ph, ft, ff, rec, shift)
++        if c is None: continue
++        a1, a2, tt = c; A1.append(a1); A2.append(a2)
++        per["f0_rmse"].append(float(np.sqrt(np.mean((a1 - a2) ** 2))))
++        if len(a1) >= 10: per["f0_r"].append(F.pearson(a2, a1)); per["f0_r_dt"].append(F.detrended_r(tt, a2, a1))
++    A1, A2 = np.concatenate(A1), np.concatenate(A2)
++    for k in per: per[k] = [v for v in per[k] if np.isfinite(v)]
++    return {"r": float(np.mean(per["f0_r"])), "r_detrended": float(np.mean(per["f0_r_dt"])),
++            "rmse_st": float(np.sqrt(np.mean((A1 - A2) ** 2))), "sd_ratio": float(A2.std() / A1.std()), "per": per}
++
++_ref = {}
++def pros_score(p, recs, voice="am_onyx"):
++    """fidelity's pros group (mean z of 1 - r, rmse_st, 1 - r_detrended) against config {} on recs, by the proxy."""
++    key = (voice, tuple(r["id"] for r in recs))
++    if key not in _ref:
++        q = proxy({}, recs, voice)
++        _ref[key] = {"1-r": (1 - q["r"], np.std(q["per"]["f0_r"])), "rmse": (q["rmse_st"], np.std(q["per"]["f0_rmse"])),
++                     "1-r_dt": (1 - q["r_detrended"], np.std(q["per"]["f0_r_dt"]))}
++    ref = _ref[key]
++    vals = {"1-r": 1 - p["r"], "rmse": p["rmse_st"], "1-r_dt": 1 - p["r_detrended"]}
++    z = {k: (ref[k][0] - v) / ref[k][1] for k, v in vals.items()}
++    return float(np.mean(list(z.values()))), z
++
++def brief(p, s=None):
++    out = {k: round(p[k], 4) for k in ("r", "r_detrended", "rmse_st", "sd_ratio")}
++    if s is not None: out["pros"] = round(s, 4)
++    return out
++
++def splits(voice):
++    tr, he = C.split(voice)
++    return {"train": tr, "held": he, "all": F.corpus(voice)}
++
++def cmd_eval(a):
++    cfg = json.loads(open(a.config).read() if os.path.exists(a.config) else a.config)
++    S = splits(a.voice)
++    for name in (a.split.split(",")):
++        p = proxy(cfg, S[name], a.voice); s, z = pros_score(p, S[name], a.voice)
++        print(name, json.dumps(brief(p, s)), json.dumps({k: round(v, 3) for k, v in z.items()}))
++
++def cmd_fit(a):
++    base = json.loads(open(a.base).read() if os.path.exists(a.base) else a.base)
++    start = json.loads(a.start) if a.start else {}
++    pros0 = base.get("prosody") if isinstance(base.get("prosody"), dict) else {}
++    S = splits(a.voice); train = S["train"]
++    free = a.free.split(",") if a.free else list(SPACE)
++    js = ("const p = await import('./klattsing/src/prosody.js'); console.log(JSON.stringify(p.PROSODY))")
++    D = json.loads(subprocess.run(["node", "--input-type=module", "-e", js], capture_output=True, text=True, cwd=ROOT, check=True).stdout)
++    x0 = {**D, **pros0, **start}
++    lo = np.array([SPACE[k][0] for k in free]); hi = np.array([SPACE[k][1] for k in free]); step = np.array([SPACE[k][2] for k in free])
++    def cfg_of(v):
++        pr = dict(x0)
++        for k, val in zip(free, v): pr[k] = round(float(np.clip(val, SPACE[k][0], SPACE[k][1])), 4)
++        return {**base, "prosody": pr}
++    cache, log = {}, []
++    def f(v):
++        c = cfg_of(v); key = json.dumps(c["prosody"], sort_keys=True)
++        if key not in cache:
++            p = proxy(c, train, a.voice); s, _ = pros_score(p, train, a.voice)
++            cache[key] = (s, p); log.append((s, c["prosody"]))
++            if len(cache) % 10 == 0: print(f"eval {len(cache)} best {max(x[0] for x in log):.4f}", flush=True)
++        return -cache[key][0]
++    from scipy.optimize import minimize
++    v0 = np.array([x0[k] for k in free], float)
++    t0 = time.time()
++    best = None
++    for rnd_ in range(a.restarts):
++        r = minimize(f, v0, method="Nelder-Mead", options={"maxfev": a.evals, "initial_simplex": np.vstack([v0] + [v0 + np.eye(len(free))[i] * step[i] for i in range(len(free))]), "xatol": 1e-3, "fatol": 1e-4})
++        v0 = np.clip(r.x, lo, hi)
++        if best is None or r.fun < best[0]: best = (r.fun, v0.copy())
++        print(f"round {rnd_}: train pros {-r.fun:.4f} ({len(cache)} evals, {time.time() - t0:.0f} s)", flush=True)
++    c = cfg_of(best[1])
++    out = {"prosody": c["prosody"], "free": free, "evals": len(cache)}
++    for name in ("train", "held"):
++        p = proxy(c, S[name], a.voice); s, z = pros_score(p, S[name], a.voice)
++        p0 = proxy(base, S[name], a.voice); s0, _ = pros_score(p0, S[name], a.voice)
++        out[name] = {"fit": brief(p, s), "base": brief(p0, s0)}
++    print(json.dumps(out, indent=1))
++    if a.out: json.dump(out, open(a.out, "w"), indent=1)
++
++def cmd_check(a):
++    cfg = json.loads(open(a.config).read() if os.path.exists(a.config) else a.config)
++    S = splits(a.voice)
++    for name in ("train", "held"):
++        r = C.evaluate_recs(cfg, S[name], audio=True, voice=a.voice)
++        res, per_utt = F._measure(cfg, S[name], True, "stop", 2, F.kokoro_shift(a.voice))
++        p = res["prosody"]
++        print(name, json.dumps({"score": r["score"], "scores": r["scores"], **{k: round(p[k], 4) for k in ("r", "r_detrended", "rmse_st", "sd_ratio")},
++                                "mcd": round(res["spectral"]["mcd"], 4), "mcd_cmn": round(res["spectral"]["mcd_cmn"], 4)}))
++
++def main(argv):
++    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
++    ap.add_argument("--voice", default="am_onyx")
++    sub = ap.add_subparsers(dest="cmd", required=True)
++    e = sub.add_parser("eval"); e.add_argument("config"); e.add_argument("--split", default="train,held")
++    f = sub.add_parser("fit"); f.add_argument("base"); f.add_argument("--evals", type=int, default=400)
++    f.add_argument("--start"); f.add_argument("--free"); f.add_argument("--out"); f.add_argument("--restarts", type=int, default=2)
++    c = sub.add_parser("check"); c.add_argument("config")
++    a = ap.parse_args(argv)
++    {"eval": cmd_eval, "fit": cmd_fit, "check": cmd_check}[a.cmd](a)
++
++if __name__ == "__main__":
++    main(sys.argv[1:])
