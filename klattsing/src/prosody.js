@@ -28,16 +28,23 @@
 //     end (L* H-H%); with `question` 0, and a wh-question always, it ends like a statement.
 //   - segmental perturbations (microprosody: Lehiste & Peterson 1961; Hombert 1978; Silverman 1986; Kingston &
 //     Diehl 1994): a vowel right after a voiceless obstruent (or its aspiration) starts `micro` st higher,
-//     decaying with time constant `microMs`; voiced obstruents (B D G V DH Z ZH JH, stops' flap) are `dip` st lower.
+//     decaying with time constant `microMs`; one right before a voiceless obstruent ends `microOffset` st higher
+//     (growing over the same time constant, and held through the obstruent: what a voicing tail sounds at); voiced
+//     obstruents (B D G V DH Z ZH JH, stops' flap) are `dip` st lower.
 //   - effort: true moves speak's effort/tilt accent (accentDelta) from every primary stress to the accented
 //     syllables only. Off: spectral balance marks lexical stress, accented or not (Sluijter & van Heuven 1996), and
 //     fidelity ties (2.979 / 2.981 on the train split).
 // Fitted (prosodyfit.py fit, a proxy of fidelity's F0 metrics read off the schedule): the accents, baseline, final
-// lowering and microprosody on the Harvard corpus's train split (80 sentences); continuation and reset on the
+// lowering and microprosody on the Harvard corpus's train split (80 sentences; microOffset not: Kokoro's vowels end
+// lower before voiceless obstruents, not higher); continuation and reset on the
 // Kokoro phrasing set (tools/voicelab/phrasing.py: 20 sentences with commas and questions; Kokoro ends a comma
 // phrase level or slightly falling, does not reset after it, and ends yes/no questions falling, in both voices:
 // -3.0 st over the last vowel in am_onyx, -8.0 in am_michael, like its statements -2.9 / -8.8); `top` so the
-// rendered median F0 is the spec's pitch (fidelity median_st ~0; the F0 metrics cannot see it).
+// rendered median F0 is the spec's pitch (fidelity median_st ~0; the F0 metrics cannot see it). Except `final`:
+// fitted 3.4 (fidelity 2.889), it made Whisper hear final voiceless stops as voiced in the minimal pairs ("bet" as
+// "bed", "lock" as "log", "sip" as "sib": a low F0 at the vowel's end cues a voiced coda, Castleman & Diehl 1996):
+// 69.1% -> 61.9%, McNemar p = 0.052; microOffset 2 won back half (64.7%), final 0 all of it (69.1%, 10 vs 10
+// discordant) at fidelity 2.832. The declarative still falls (declination, the nuclear accent's fall).
 // Rendering: klattsch moves F0 per phoneme (each phoneme's first event takes it to the `b` value; a vowel with a
 // pitch delta "(+x)" then glides to b + x by ~75-85% of it), so the contour is sampled there: a `b` directive
 // before each phoneme token, and on vowels a transient delta to the value near the vowel's end. The timing and
@@ -47,8 +54,8 @@ import { FUNCTION_WORDS } from './function_words.js';
 export const PROSODY = {
   accent: 3.3, downstep: 0.52, nuclear: 0.58, peak: -0.14, rise: 43, fall: 470,
   top: 2.65, declination: 3.1, initial: 3.6, initialMs: 86, reset: 0,
-  final: 3.4, finalFrom: 0, continuation: -0.6, question: 0,
-  micro: 1.6, microMs: 50, dip: 1.2, effort: false,
+  final: 0, finalFrom: 0, continuation: -0.6, question: 0,
+  micro: 1.6, microMs: 50, microOffset: 0, dip: 1.2, effort: false,
 };
 const KEYS = Object.keys(PROSODY);
 const POSITIVE = ['rise', 'fall', 'initialMs', 'microMs'];
@@ -161,14 +168,16 @@ export function contour(plan, tokens, P) {
     }
     x.peaks.push({ at: v.start + P.peak * v.ms, h });
   }
-  // segmental perturbations: [from, to, st, decay ms or 0]
+  // segmental perturbations: [from, to, st, time constant ms (from `from`; negative: toward `to`) or 0]
   const seg = [];
   const flap = (t) => t.code === 'DQF';                // stops' flap (T or D): voiced
+  const voiceless = (t) => t && ((VOICELESS.has(t.p) && !flap(t)) || t.asp);
   tokens.forEach((t, i) => {
     if ((VOICED_OBSTRUENT.has(t.p) || flap(t)) && !t.asp && P.dip) seg.push([t.start, t.start + t.ms, -P.dip, 0]);
-    const prev = tokens[i - 1];
-    if (t.kind === 'vowel' && P.micro && prev && !t.gap && ((VOICELESS.has(prev.p) && !flap(prev)) || prev.asp)) {
-      seg.push([t.start, t.start + t.ms, P.micro, P.microMs]);
+    const prev = tokens[i - 1], next = tokens[i + 1];
+    if (t.kind === 'vowel' && P.micro && !t.gap && voiceless(prev)) seg.push([t.start, t.start + t.ms, P.micro, P.microMs]);
+    if (t.kind === 'vowel' && P.microOffset && next && !next.gap && voiceless(next) && !next.asp) {
+      seg.push([t.start, t.start + t.ms, P.microOffset, -P.microMs], [next.start, next.start + next.ms, P.microOffset, 0]);
     }
   });
   const live = ph.filter((x) => x.start !== Infinity);
@@ -186,7 +195,9 @@ export function contour(plan, tokens, P) {
       else if (x.tune === 'continuation') f += P.continuation * span(lv.start);
       else f += P.question * span(nv.start);
     }
-    for (const [s, e, st, tau] of seg) if (t >= s && t < e) f += tau ? st * Math.exp(-(t - s) / tau) : st;
+    for (const [s, e, st, tau] of seg) {
+      if (t >= s && t < e) f += !tau ? st : st * Math.exp(tau > 0 ? -(t - s) / tau : (e - t) / tau);
+    }
     return f;
   };
 }

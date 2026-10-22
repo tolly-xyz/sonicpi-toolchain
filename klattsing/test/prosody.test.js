@@ -138,6 +138,12 @@ test('prosody: microprosody: a vowel after a voiceless obstruent starts higher, 
   near(f(at('IY').start), 2);                            // after T
   const bad = toks.filter((t) => t.p === 'AE')[1];
   near(f(bad.start), 0, 'after B: no raise');
+  // microOffset: a vowel before a voiceless obstruent ends higher, the obstruent held there; not before a voiced one
+  const g = contour(accentPlan(ws), toks, prosodyOptions({ ...FLAT, microOffset: 2, microMs: 50 }));
+  const pat = at('AE'), t = toks[toks.indexOf(pat) + 1];
+  near(g(pat.start + pat.ms - 1e-9), 2 * Math.exp(-1e-9 / 50)); near(g(pat.start + pat.ms - 50), 2 * Math.exp(-1));
+  near(g(t.start + 10), 2); near(g(pat.start), 2 * Math.exp(-pat.ms / 50));
+  near(g(bad.start + bad.ms - 1), 0, 'before D: none');
   // a pause before the vowel breaks the context; a flapped T (stops' DQF) counts as voiced
   const water = toksOf('Water.');
   water.toks.find((t) => t.p === 'T').code = 'DQF';
