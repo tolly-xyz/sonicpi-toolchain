@@ -35,7 +35,9 @@ tgies/klattsch @ 63dc2c6 (MIT), vendored with patches:
     once a target carries one of these keys (until then every sample is as before). Under [FRIC=x] a bank entry's frication
     {FF1 ... AB, FM, rise, fall, fallTo, fallToC, in} drives it in fricOnly events (frequencies and FM at the phoneme's start, amplitudes
     times x over rise ms, falling over the last fall share of the slot to fallTo before a vowel-like phoneme or fallToC before
-    anything else), in (ms) times the entry's first main-path event, every other phoneme's first event and every silence zero
-    the amplitudes, and such an entry is never nasalized ([NAS]); the frequencies follow the formant scale. Without [FRIC] the
+    anything else but another fricative, which takes over without a fall), in (ms) times the entry's first main-path event (it
+    also wins over [NAST] after a nasal), every other phoneme's first event and every silence zero the amplitudes (also the
+    first one after a bare [FRIC]), and such an entry is never nasalized ([NAS]); the frequencies follow the formant scale. A
+    frication field removed from an entry (null) keeps the previous fricative's value. Without [FRIC] the
     frication fields are dropped and the schedule is unchanged (audio fixture: klattsing/test/audio.test.js, round 3's BASE
     included); klattsing's "fricatives" option generates the entries

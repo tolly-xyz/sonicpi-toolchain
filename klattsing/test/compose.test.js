@@ -156,3 +156,30 @@ test('fricatives composes with coarticulation, glottal, nasals and stops: each o
   assert.ok(gs / n > 0.95, `LF source on ${(100 * gs / n).toFixed(0)}% of blocks`);
   assert.ok(synth.nasal && synth.fric, 'nasal and frication paths on');
 });
+
+// all six: prosody re-pitches, fricatives adds the frication path; neither may move the other's events
+test('all six features: each changes the sound with the other five on; prosody keeps the frication, fricatives the F0', async () => {
+  const { FormantSynth } = await import('../../vendor/klattsch/src/engine/synth-core.js');
+  const text = 'Miss Sue sells this sea shell, and five good men kept the bottom of it.';
+  const on = { coarticulation: true, glottal: true, nasals: true, stops: true, fricatives: true, prosody: true };
+  const all = { text, ...on }, h = audio(all);
+  for (const k of Object.keys(on)) {
+    const without = { ...all }; delete without[k];
+    assert.notEqual(h, audio(without), `${k} has no effect with the other five on`);
+  }
+  const sched = (spec) => { for (const b of banksFor(spec)) registerBank(b); return compileString(speak(spec)).voices[0]; };
+  const noF = { ...all, fricatives: false }, noP = { ...all, prosody: false };
+  const fo = (v) => JSON.stringify(v.schedule.filter((e) => e.fricOnly).map((e) => [e.atMs.toFixed(2), e.target]));
+  const f0 = (v) => JSON.stringify(v.schedule.filter((e) => e.target?.F0 != null).map((e) => [e.atMs.toFixed(2), Math.round(e.target.F0 * 100)]));
+  const v = sched(all);
+  assert.equal(fo(v), fo(sched(noP)), 'prosody moved the frication events');
+  assert.equal(f0(v), f0(sched(noF)), 'fricatives moved the F0 targets');
+  const synth = new FormantSynth({ sampleRate: 16000, schedule: v.schedule });
+  const buf = new Float32Array(Math.ceil(v.totalMs * 16));
+  let gs = 0, n = 0, peak = 0;
+  for (let i = 0; i < buf.length; i += 160) { synth.process(buf.subarray(i, i + 160)); n++; gs += synth.src.GS; }
+  for (const x of buf) { assert.ok(Number.isFinite(x)); peak = Math.max(peak, Math.abs(x)); }
+  assert.ok(gs / n > 0.95, `LF source on ${(100 * gs / n).toFixed(0)}% of blocks`);
+  assert.ok(synth.nasal && synth.fric, 'nasal and frication paths on');
+  assert.ok(peak < 1, `peak ${peak}`);
+});

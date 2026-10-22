@@ -113,6 +113,17 @@ test('engine: the fall goes to fallTo before a vowel, fallToC before a consonant
   assert.ok(!n.some((e) => e.nasalOnly && e.atMs >= 200), 'no nasalization of Z');
 });
 
+test('engine: no fall into another fricative ("miss Sue": one continuous hiss); a bare [FRIC] ends the frication', () => {
+  const spec = { text: 'Miss Sue.', fricatives: true };
+  const amps = compiled(spec).voices[0].schedule.filter((e) => e.fricOnly && 'AB' in e.target);
+  // S rises, the next S rises (no fall between), its fall before UW
+  assert.equal(amps.length, 3, amps.map((e) => `${e.atMs.toFixed(0)}:${e.target.AF2.toFixed(3)}`).join(' '));
+  assert.ok(amps[1].target.AF2 > 0 && amps[2].target.AF2 < amps[1].target.AF2);
+  const v = compileString(`[bank=${bankName(spec)}] [FRIC=1] AA S [FRIC] AA M p300`).voices[0];
+  const buf = renderToBuffer({ sampleRate: 16000, schedule: v.schedule, totalMs: v.totalMs });
+  assert.ok(rmsDb(buf, buf.length - 3200) < -200, `frication left running after [FRIC]: ${rmsDb(buf, buf.length - 3200).toFixed(0)} dB`);
+});
+
 test('engine: frication parameters move on their own clocks; fricOnly events leave the rest alone', () => {
   const sr = 16000;
   const schedule = [

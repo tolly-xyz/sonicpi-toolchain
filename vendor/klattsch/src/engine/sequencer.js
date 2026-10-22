@@ -450,6 +450,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
   // fields do nothing and the schedule is unchanged.
   const fricMode = () => extras.FRIC !== undefined;
   let pendingFric = null;      // frication amplitudes 0 for the next emit (the first event of a phoneme without frication)
+  let fricUsed = false;        // [FRIC] was on: after a bare [FRIC] the next phoneme or silence ends the frication
   let fricOnlyEvents = 0;
   const fricOnly = (atMs, target, transitionMs) => {
     schedule.push({ atMs, target, transitionMs: Math.max(transitionMs, 0.1), fricOnly: true });
@@ -465,8 +466,9 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
     if (Object.keys(freq).length) fricOnly(slotStart, freq, 1);
     fricOnly(slotStart, amp, Math.min(fr.rise ?? 5, slotMs * 0.5));
     const fall = Math.min(Math.max(fr.fall ?? 0, 0), 1);
-    if (fall > 0) {
-      const n = nextPh.get(t), ne = entryOf(n);
+    const n = nextPh.get(t), ne = entryOf(n);
+    // into another fricative ("this sea", "is this"): no fall, its own onset moves the path on without a gap
+    if (fall > 0 && !(ne && ne.frication)) {
       const vowelLike = ne && !ne.isStop && !ne.nasal && !ne.frication && (ne.voicing ?? 0) >= 1;
       const to = vowelLike ? (fr.fallTo ?? 0) : (fr.fallToC ?? fr.fallTo ?? 0), down = {};
       for (const k of FRIC_AMPS) down[k] = amp[k] * to;
@@ -482,7 +484,8 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
     }
     const nasalPlan = nasalBefore(t, p, slotMs);
     const fr = fricMode() && p.frication ? p.frication : null;
-    if (fricMode() && !fr) pendingFric = FRIC_ZERO;
+    if (fricMode()) { fricUsed = true; if (!fr) pendingFric = FRIC_ZERO; }
+    else if (fricUsed) { pendingFric = FRIC_ZERO; fricUsed = false; }
     const slotStart = timeMs;
     const r = renderPhonemeEvents(t, p, slotMs);
     pendingNasal = null;
@@ -611,8 +614,11 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
       ...(extras.CO !== undefined ? { params: NON_FORMANTS } : {}),
     });
   };
-  const silence = (transitionMs = 30) => emit({
-    ...(nasalMode() ? nasalScaled(NASAL_DEFAULT) : {}), ...(fricMode() ? FRIC_ZERO : {}), A1: 0, A2: 0, A3: 0 }, transitionMs);
+  const silence = (transitionMs = 30) => {
+    const fz = fricMode() || fricUsed;
+    if (!fricMode()) fricUsed = false;
+    return emit({ ...(nasalMode() ? nasalScaled(NASAL_DEFAULT) : {}), ...(fz ? FRIC_ZERO : {}), A1: 0, A2: 0, A3: 0 }, transitionMs);
+  };
 
   for (const t of tokens) {
     if (t.type === 'unknown') {
