@@ -142,7 +142,11 @@ VOICE = {"lead": "g0.65 t0.2 h0.08 s0.98", "gangA": "g0.75 t0.3 h0.12 s0.94", "g
          "gangC": "g0.7 t0.25 h0.1 s1.06"}       # the MC uses klattsing's plain speech voice (clearer in tests)
 # klattsing features from the voicelab tournament: coarticulated formants (Whisper pairs 47% -> 69%) and the LF
 # voice source (much closer to a real voice spectrally)
-FEATURES = {}   # coarticulation + glottal took Whisper per line 57% -> 43% here (they were tuned on speech); see voicelab sing tests
+# klattsing features from the voicelab tournament. Sung lines leave out the glottal source: it costs low sung pitch dearly
+# (pairs sing mode: base 41% / +coarticulation 52% / +nasals 57% / +stops 61%; +glottal alone 25%), and it took this song's
+# lines from 57% to 43% of words heard. Spoken lines (the MC) get all four.
+FEATURES = {"coarticulation": True, "nasals": True, "stops": True}
+FEATURES_SPEAK = {**FEATURES, "glottal": True}
 vox = []
 def chant(sec, k, step, text, style="lead", span=32, end_note=40, hi=47, lo=43, rest=2, bank="silt-stops"):
     """A line chanted from a bar's step: unstressed syllables a 16th, stressed an 8th, the last held to
@@ -168,7 +172,7 @@ def chant(sec, k, step, text, style="lead", span=32, end_note=40, hi=47, lo=43, 
 def say(sec, k, step, text, pitch="A2", rate=1.0):
     bi = bar_of(sec, k)
     vox.append({"t": round(at(bars[bi], step, 0), 4), "style": "mc", "pan": 0.0, "text": text,
-                "spec": {"mode": "speak", "text": text, "pitch": pitch, "rate": rate, "voice": "speak", "bank": "silt-stops", **FEATURES}})
+                "spec": {"mode": "speak", "text": text, "pitch": pitch, "rate": rate, "voice": "speak", "bank": "silt-stops", **FEATURES_SPEAK}})
 
 say("intro", 0, 2, "Ladies, gentlemen, and everybody in between:")
 say("intro", 2, 4, "the floor has left the building.")
