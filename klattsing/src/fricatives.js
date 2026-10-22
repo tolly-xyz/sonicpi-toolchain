@@ -35,14 +35,14 @@ export const FRICATIVES = { gain: 1, rise: 5, fall: 0.3, fallTo: 0.3, fallToC: 0
 // per fricative: main-path fields (the voice) and the frication path's resonators (frequencies, bandwidths in Hz,
 // amplitudes) and bypass
 export const FRICATION = {
-  F:  { voicing: 0, A1: 0, A2: 0, A3: 0, frication: { FF1: 1500, BF1: 2000, AF1: 0.01, FF2: 5000, BF2: 4000, AF2: 0.01, FF3: 9500, BF3: 5000, AF3: 0.03, AB: 0 } },
-  TH: { voicing: 0, A1: 0, A2: 0, A3: 0, frication: { FF1: 1500, BF1: 2000, AF1: 0.005, FF2: 5000, BF2: 4000, AF2: 0.008, FF3: 8500, BF3: 5000, AF3: 0.025, AB: 0 } },
-  S:  { voicing: 0, A1: 0, A2: 0, A3: 0, frication: { FF1: 3600, BF1: 600, AF1: 0.03, FF2: 5300, BF2: 1500, AF2: 0.3, FF3: 9000, BF3: 4000, AF3: 0.12, AB: 0 } },
-  SH: { voicing: 0, A1: 0, A2: 0, A3: 0, frication: { FF1: 2700, BF1: 500, AF1: 0.2, FF2: 3600, BF2: 1200, AF2: 0.3, FF3: 5200, BF3: 2500, AF3: 0.1, AB: 0 } },
-  V:  { voicing: 1, F1: 220, BW1: 80, A1: 0.12, A2: 0, A3: 0, frication: { FF1: 1500, BF1: 2000, AF1: 0.003, FF2: 5000, BF2: 4000, AF2: 0.003, FF3: 9500, BF3: 5000, AF3: 0.008, AB: 0 } },
-  DH: { voicing: 1, F1: 270, BW1: 80, A1: 0.1, A2: 0, A3: 0, frication: { FF1: 1500, BF1: 2000, AF1: 0.003, FF2: 5000, BF2: 4000, AF2: 0.003, FF3: 8500, BF3: 5000, AF3: 0.005, AB: 0 } },
-  Z:  { voicing: 1, F1: 240, BW1: 80, A1: 0.12, A2: 0, A3: 0, frication: { FF1: 3600, BF1: 600, AF1: 0.02, FF2: 5000, BF2: 1500, AF2: 0.15, FF3: 9000, BF3: 4000, AF3: 0.06, AB: 0 } },
-  ZH: { voicing: 1, F1: 270, BW1: 80, A1: 0.12, A2: 0, A3: 0, frication: { FF1: 2700, BF1: 500, AF1: 0.1, FF2: 3600, BF2: 1200, AF2: 0.15, FF3: 5200, BF3: 2500, AF3: 0.05, AB: 0 } },
+  F:  { voicing: 0, A1: 0, A2: 0, A3: 0, frication: { FF1: 2039, BF1: 3955, AF1: 0.00869, FF2: 3036, BF2: 395, AF2: 0.00782, FF3: 9521, BF3: 4027, AF3: 0.00912, AB: 0 } },
+  TH: { voicing: 0, A1: 0, A2: 0, A3: 0, frication: { FF1: 1340, BF1: 150, AF1: 0.00336, FF2: 5104, BF2: 287, AF2: 0.00887, FF3: 9491, BF3: 4208, AF3: 0.00583, AB: 0.00202 } },
+  S:  { voicing: 0, A1: 0, A2: 0, A3: 0, frication: { FF1: 1432, BF1: 176, AF1: 0.04968, FF2: 5000, BF2: 943, AF2: 0.1013, FF3: 9825, BF3: 8000, AF3: 0.0259, AB: 0 } },
+  SH: { voicing: 0, A1: 0, A2: 0, A3: 0, frication: { FF1: 1459, BF1: 150, AF1: 0.0255, FF2: 3382, BF2: 1470, AF2: 0.08536, FF3: 7014, BF3: 6998, AF3: 0.00601, AB: 0 } },
+  V:  { voicing: 1, F1: 220, BW1: 80, A1: 0.0626, A2: 0, A3: 0, frication: { FF1: 1085, BF1: 150, AF1: 0.01657, FF2: 4968, BF2: 8000, AF2: 0.00169, FF3: 4859, BF3: 553, AF3: 0.00082, AB: 0.00203 } },
+  DH: { voicing: 1, F1: 270, BW1: 80, A1: 0.0086, A2: 0, A3: 0, frication: { FF1: 703, BF1: 225, AF1: 0.0045, FF2: 1799, BF2: 521, AF2: 0.00094, FF3: 5075, BF3: 743, AF3: 0.00054, AB: 1e-05 } },
+  Z:  { voicing: 1, F1: 240, BW1: 80, A1: 0.0699, A2: 0, A3: 0, frication: { FF1: 1392, BF1: 150, AF1: 0.03196, FF2: 4796, BF2: 3933, AF2: 0.07667, FF3: 4001, BF3: 2048, AF3: 0.06676, AB: 0.00479 } },
+  ZH: { voicing: 1, F1: 270, BW1: 80, A1: 0.0699, A2: 0, A3: 0, frication: { FF1: 1459, BF1: 150, AF1: 0.0193, FF2: 3382, BF2: 1470, AF2: 0.06461, FF3: 7014, BF3: 6998, AF3: 0.004549, AB: 0 } },
 };
 const ENVELOPE = ['rise', 'fall', 'fallTo', 'fallToC', 'in'];
 const FRIC_FIELDS = ['FF1', 'BF1', 'AF1', 'FF2', 'BF2', 'AF2', 'FF3', 'BF3', 'AF3', 'AB', ...ENVELOPE];

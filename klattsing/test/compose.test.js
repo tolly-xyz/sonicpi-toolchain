@@ -95,3 +95,31 @@ test('all four together (coarticulation, glottal, nasals, stops): each still cha
     assert.notEqual(all, audio(without), `${k} has no effect with the other three on`);
   }
 });
+
+// fricatives (klattsch [FRIC]) on top of all four: its envelopes ride in fricOnly events (frication parameters
+// alone), which must neither read as "GS absent", nor retime coarticulation's formant moves or the nasal glides, and
+// its entries come after coarticulation's (keeping the loci) and before the stops'.
+test('fricatives composes with coarticulation, glottal, nasals and stops: each of the five changes the sound, all stay on', async () => {
+  const { FormantSynth } = await import('../../vendor/klattsch/src/engine/synth-core.js');
+  const text = 'She has seven thick fish, and the zoo kept five of those.';
+  const on = { coarticulation: true, glottal: true, nasals: true, stops: true, fricatives: true };
+  const all = audio({ text, ...on });
+  for (const k of Object.keys(on)) {
+    const without = { text, ...on }; delete without[k];
+    assert.notEqual(all, audio(without), `${k} has no effect with the other four on`);
+  }
+  const s = speak({ text, ...on });
+  assert.match(s, /^\[bank=klatt1980-en--nas[0-9a-f]{12}--co[0-9a-f]{12}--fr[0-9a-f]{12}--st[0-9a-f]{12}\] \[CO=2\].* \[GS=1\].* \[NAS=1\].* \[FRIC=1\]/);
+  for (const b of banksFor({ text, ...on })) registerBank(b);
+  const v = compileString(s).voices[0];
+  assert.ok(v.schedule.some((e) => e.fricOnly), 'expected fricOnly events');
+  assert.ok(v.schedule.some((e) => e.nasalOnly), 'expected nasalOnly events');
+  assert.ok(v.schedule.some((e) => e.params && e.params.join() === 'F1,F2,F3'), 'expected coarticulation formant events');
+  assert.ok(v.schedule.some((e) => e.target.voicing === 1 && e.target.A2 === 0 && e.target.BW1 === 60), 'expected a voice bar');
+  const synth = new FormantSynth({ sampleRate: 16000, schedule: v.schedule });
+  const buf = new Float32Array(Math.ceil(v.totalMs * 16));
+  let gs = 0, n = 0;
+  for (let i = 0; i < buf.length; i += 160) { synth.process(buf.subarray(i, i + 160)); n++; gs += synth.src.GS; }
+  assert.ok(gs / n > 0.95, `LF source on ${(100 * gs / n).toFixed(0)}% of blocks`);
+  assert.ok(synth.nasal && synth.fric, 'nasal and frication paths on');
+});
