@@ -32,13 +32,15 @@
 //     at 80 / 90 / 100% before a vowel, down 25 dB by the end before a consonant); `in` ms: the fricative's first
 //     main-path event (the vowel before it ending).
 //   "fricatives": true                                the defaults below (FRICATIVES, FRICATION)
-//   "fricatives": { gain, rise, fall, fallTo, fallToC, in, phonemes: { S: { field: value, frication: {...} } } }
-// gain: [FRIC=x], all frication amplitudes times x; rise / fall / fallTo / fallToC / in: every fricative's envelope
+//   "fricatives": { gain, singGain, rise, fall, fallTo, fallToC, in, phonemes: { S: { field: value, frication: {...} } } }
+// gain: [FRIC=x], all frication amplitudes times x; singGain: sung, x = gain x singGain (4, +12 dB: at speech's levels
+// against the long sung vowels the sung fricatives were heard less, Whisper pairs 61.2% -> 56.1%, fricatives 54% ->
+// 38%; at x 4, about base sing's own level re the vowels, 61.9%, 69%); rise / fall / fallTo / fallToC / in: every fricative's envelope
 // (a phoneme's own in phonemes.<P>.frication wins); phonemes: fields laid over FRICATION per fricative (bank fields,
 // frication: {FF1, BF1, AF1, FF2, BF2, AF2, FF3, BF3, AF3, AB, FM, rise, fall, fallTo, fallToC, in}; null removes one).
 // FM: the depth of the glottal-flow modulation of the frication noise while voiced (default 1).
 export const FRIC_CODES = ['F', 'V', 'TH', 'DH', 'S', 'Z', 'SH', 'ZH'];
-export const FRICATIVES = { gain: 1, rise: 5, fall: 0.3, fallTo: 0.3, fallToC: 0.05, in: 10 };
+export const FRICATIVES = { gain: 1, singGain: 4, rise: 5, fall: 0.3, fallTo: 0.3, fallToC: 0.05, in: 10 };
 // per fricative: main-path fields (the voice, or the voiceless ones' low-frequency noise) and the frication path's
 // resonators (frequencies, bandwidths in Hz, amplitudes) and bypass; ZH (one token in the corpus) is SH's spectrum at
 // Z's frication level re S, with Z's voice bar
@@ -54,7 +56,7 @@ export const FRICATION = {
 };
 const ENVELOPE = ['rise', 'fall', 'fallTo', 'fallToC', 'in'];
 const FRIC_FIELDS = ['FF1', 'BF1', 'AF1', 'FF2', 'BF2', 'AF2', 'FF3', 'BF3', 'AF3', 'AB', 'FM', ...ENVELOPE];
-const KEYS = ['gain', ...ENVELOPE, 'phonemes'];
+const KEYS = ['gain', 'singGain', ...ENVELOPE, 'phonemes'];
 const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
 const num = (v) => typeof v === 'number' && Number.isFinite(v);
 
@@ -64,7 +66,7 @@ export function fricOptions(o) {
   const x = o.fricatives === true ? {} : o.fricatives;
   if (!isObj(x)) throw new Error(`fricatives: true or an object, got ${JSON.stringify(o.fricatives)}`);
   for (const k of Object.keys(x)) if (!KEYS.includes(k)) throw new Error(`fricatives.${k}: unknown (${KEYS.join(', ')})`);
-  for (const k of ['gain', ...ENVELOPE]) if (x[k] != null && !(num(x[k]) && x[k] >= 0)) throw new Error(`fricatives.${k}: a number >= 0`);
+  for (const k of ['gain', 'singGain', ...ENVELOPE]) if (x[k] != null && !(num(x[k]) && x[k] >= 0)) throw new Error(`fricatives.${k}: a number >= 0`);
   if (x.phonemes != null) {
     if (!isObj(x.phonemes)) throw new Error('fricatives.phonemes: {PHONE: {field: value}}');
     for (const [p, f] of Object.entries(x.phonemes)) {
@@ -82,13 +84,13 @@ export function fricOptions(o) {
     }
   }
   // env: the envelope fields the option sets (over every fricative's own); phonemes: the per-fricative fields
-  const out = { gain: x.gain ?? FRICATIVES.gain, env: {}, phonemes: x.phonemes ?? {} };
+  const out = { gain: x.gain ?? FRICATIVES.gain, singGain: x.singGain ?? FRICATIVES.singGain, env: {}, phonemes: x.phonemes ?? {} };
   for (const k of ENVELOPE) if (x[k] != null) out.env[k] = x[k];
   return out;
 }
 
-// the klattsch directive that switches the frication path on
-export const fricDirectives = (f) => (f ? `[FRIC=${f.gain}]` : '');
+// the klattsch directive that switches the frication path on (sung: gain x singGain)
+export const fricDirectives = (f, mode = 'speak') => (f ? `[FRIC=${mode === 'sing' ? f.gain * f.singGain : f.gain}]` : '');
 
 // the bank entries: each fricative's resolved base entry with FRICATION (and the option's envelope and phonemes)
 // laid over it

@@ -72,6 +72,7 @@ test('option: bad values throw', () => {
   assert.throws(() => fricOptions({ fricatives: 3 }), /true or an object/);
   assert.throws(() => fricOptions({ fricatives: { bogus: 1 } }), /fricatives\.bogus: unknown/);
   assert.throws(() => fricOptions({ fricatives: { gain: -1 } }), /fricatives\.gain/);
+  assert.throws(() => fricOptions({ fricatives: { singGain: 'x' } }), /fricatives\.singGain/);
   assert.throws(() => fricOptions({ fricatives: { phonemes: { M: {} } } }), /fricatives\.phonemes\.M/);
   assert.throws(() => fricOptions({ fricatives: { phonemes: { S: { frication: { FF9: 1 } } } } }), /frication\.FF9: unknown/);
   assert.throws(() => fricOptions({ fricatives: { phonemes: { S: { A1: 'x' } } } }), /phonemes\.S\.A1/);
@@ -159,7 +160,10 @@ test('fricatives: the fitted entries change the sound in speech and song; sing m
   assert.equal(x.length, y.length);
   assert.ok(x.some((v, i) => v !== y[i]));
   const s = sing({ text: 'She sells sea shells', notes: 'auto', fricatives: true });
-  assert.match(s, /\[FRIC=1\] g0\.55/);
+  assert.match(s, /\[FRIC=4\] g0\.55/);                                       // sung: gain x singGain
+  assert.match(sing({ text: 'She sells', notes: 'auto', fricatives: { gain: 0.5, singGain: 3 } }), /\[FRIC=1\.5\]/);
+  assert.match(speak({ text: 'She sells', fricatives: { singGain: 3 } }), /\[FRIC=1\]/);
+  assert.equal(bankName({ mode: 'sing', fricatives: true }), bankName({ fricatives: { singGain: 1 } }), 'the same entries');
   assert.ok(audio({ mode: 'sing', text: 'She sells sea shells', notes: 'auto', fricatives: true }).length > 0);
 });
 
