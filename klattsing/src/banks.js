@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { banks, registerBank } from '../../vendor/klattsch/src/engine/banks/index.js';
 import { VOWELS } from './phones.js';
 import { coartOptions, coartFields } from './coarticulation.js';
+import { nasalOptions, nasalEntries } from './nasals.js';
 
 const BANK_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'banks');
 
@@ -108,6 +109,16 @@ export function coartBank(base, c) {
   return { schemaVersion: 1, name: `${base}--co${hash(canonical({ extends: base, phonemes }))}`, extends: base, phonemes };
 }
 
+// "nasals" (src/nasals.js): M, N, NG with murmur fields (nasal pole-zero pairs) for klattsch's [NAS], generated
+// per bank and options, extending it
+export function nasalBank(base, n) {
+  ensureBank(base);
+  const resolved = banks.get(base);
+  if (!resolved) throw new Error(`unknown bank: ${base}`);
+  const phonemes = nasalEntries(resolved, n);
+  return { schemaVersion: 1, name: `${base}--nas${hash(canonical({ extends: base, phonemes }))}`, extends: base, phonemes };
+}
+
 // spec -> the bank name to select with [bank=NAME] (undefined: klattsch's default), registering inline and
 // generated banks in this process. A plain string bank without a patch is passed through untouched, as before.
 // banksFor(spec) lists the banks a spec's string needs that are not files (inline, bankPatch, coarticulation, breath), parents
@@ -129,6 +140,8 @@ function chain(o) {
   }
   // generated banks are content-addressed: a name already registered is the same bank
   const add = (b) => { if (!banks.list().includes(b.name)) registerBank(b); out.push(b); name = b.name; };
+  const nas = nasalOptions(o);
+  if (nas) add(nasalBank(name || banks.defaultName, nas));
   if (o.bankPatch && Object.keys(o.bankPatch).length) add(patchedBank(name || banks.defaultName, o.bankPatch));
   if (o.coarticulation) add(coartBank(name || banks.defaultName, o.coarticulation));
   if (o.aspiration === 'breath') add(breathBank(name || banks.defaultName, o.breathVoicing));

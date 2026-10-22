@@ -10,6 +10,7 @@ import { FUNCTION_WORDS } from './function_words.js';
 import { bankName, BREATH_PREFIX } from './banks.js';
 import { DUR } from './phones.js';
 import { coartOptions, coartDirectives } from './coarticulation.js';
+import { nasalOptions, nasalDirectives } from './nasals.js';
 
 const DIPH = { AY: ['AA', 'IY'], EY: ['EH', 'IY'], OW: ['AO', 'UW'], AW: ['AA', 'UW'], OY: ['AO', 'IY'] };
 const NOTE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -96,7 +97,8 @@ export function glottalDirs(g) {
 }
 function prefix(o) {
   const bank = bankName(o), co = coartOptions(o.coarticulation);
-  return [bank ? `[bank=${bank}]` : '', o.transition ? `[TR=${o.transition}]` : '', co ? coartDirectives(co) : '', glottalDirs(o.glottal), voiceOf(o)].filter(Boolean).join(' ');
+  return [bank ? `[bank=${bank}]` : '', o.transition ? `[TR=${o.transition}]` : '', co ? coartDirectives(co) : '', glottalDirs(o.glottal),
+    nasalDirectives(nasalOptions(o)), voiceOf(o)].filter(Boolean).join(' ');
 }
 const asp = (s, o) => (o.aspiration !== false && s.aspMs ? `r${f1(s.aspMs)} HH ` : '');
 // the klattsch aspiration (h) a voice string leaves set, so "breath" can restore it

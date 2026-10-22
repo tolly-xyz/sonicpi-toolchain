@@ -1,7 +1,7 @@
 // Phoneme-string parser and schedule compiler
 
 import { banks, resolveBank } from './banks/index.js';
-import { PARAMS } from './synth-core.js';
+import { PARAMS, NASAL_PARAMS, NASAL_DEFAULT } from './synth-core.js';
 
 // (sonicpi-toolchain patch) coarticulation ([CO=x]): formant frequencies move in their own schedule events
 const FORMANTS = ['F1', 'F2', 'F3'];
@@ -39,7 +39,19 @@ const DEFAULTS = Object.freeze({
   coVcMs: 50,
   coJumpMs: 3,
   coVcShare: 0.6,
+  // (sonicpi-toolchain patch) [NAS=x]: share of a vowel nasalized before a nasal consonant ([NASVC]) and after
+  // one ([NASCV]; carryover nasalization is shorter than anticipatory in English, Cohn 1990), and the nasal
+  // parameters of a fully nasalized vowel: a parallel nasal formant AN at FNP 250 Hz, the low nasal pole of
+  // nasalized vowels (P0: Hawkins & Stevens 1985, Chen 1997), the pairs neutral, the level unchanged (GN 1).
+  // AN is set so that the last third of a vowel before a nasal gains what Kokoro's do over its other vowel ends
+  // below 300 Hz (+4 dB; above 300 Hz they lose nothing). Klatt's (1980) recipe, a zero raised above the pole
+  // (FNZ ~450), took 10 dB off everything above it and made the vowels less Kokoro-like at every strength tried
+  // (voicelab fidelity). (Kokoro's vowels are quieter at their ends before nasals, but as much before any consonant.)
+  nasalVC: 0.8,
+  nasalCV: 0.5,
+  nasalized: Object.freeze({ FNP: 250, BNP: 100, FNZ: 250, BNZ: 100, AN: 0.4 }),
 });
+const NASAL_FREQ = /^(F|B)N[PZ]2?$/;   // nasal pole/zero frequencies and bandwidths: they follow the formant scale
 
 const HOMOGLYPH_MAP = {
   // Greek uppercase that look like Latin uppercase
@@ -257,7 +269,10 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
     // engine reading them tracks the running formant scale like F1-3 do.
     for (const k of Object.keys(src)) {
       if (/^(F|BW)[4-9]$/.test(k)) out[k] = src[k] * scale;
+      else if (NASAL_FREQ.test(k)) out[k] = src[k] * scale;    // (sonicpi-toolchain patch) a bank's nasal pole/zero
     }
+    // (sonicpi-toolchain patch) a bank's nasal fields act only with [NAS] (which also resets them after a nasal)
+    if (!nasalMode()) for (const k of NASAL_PARAMS) delete out[k];
     return out;
   };
 
@@ -356,12 +371,83 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
     moveFormants(boundary(ne, rawF(p, true), true), ms, slotStart + slotMs - ms);
   };
 
+  // (sonicpi-toolchain patch) nasals, active while [NAS=x] is set. Every phoneme's first event (and every silence)
+  // carries all nasal parameters: a nasal consonant's own (bank fields FNP, BNP, FNZ, BNZ, AN, FNP2 ..., and
+  // nasal: true), neutral ones (the pairs cancel, AN 0) for everything else, so a murmur never leaks into what
+  // follows. A vowel-like neighbour of a nasal consonant (voicing >= 1, not a stop, not nasal; neighbours as for
+  // [CO]: no pause between) is nasalized: from the first [NASVC] of it before a nasal consonant it glides to the
+  // nasalized values (DEFAULTS.nasalized, over which the consonant's bank field nasalizes {...} is laid), and after
+  // one it starts nasalized and is back to neutral after [NASCV] of it; x scales the nasalization (0: murmurs
+  // only). [NASMS=ms] caps each nasalized span at ms (a long sung vowel stays oral until its last ms before a
+  // nasal, as singers keep it; absent: the shares alone). The vowel's nasal glides are nasalOnly events, which
+  // move only the nasal parameters. Without [NAS] nothing here runs.
+  const nasalMode = () => extras.NAS !== undefined;
+  let pendingNasal = null;     // nasal parameters for the next emit (the first event of a phoneme)
+  let nasalUsed = false;       // [NAS] was on: after a bare [NAS] the next event puts the nasal parameters back
+  let nasalOnlyEvents = 0;
+  const nasalScaled = (x) => {
+    const out = {};
+    for (const k of NASAL_PARAMS) if (k in x) out[k] = NASAL_FREQ.test(k) ? x[k] * scale : x[k];
+    return out;
+  };
+  const nasalOf = (t) => { const e = entryOf(t); return e && e.nasal ? e : null; };
+  // the nasal parameters of a vowel next to nasal consonant entry n, at strength x
+  const nasalizedBy = (n) => {
+    const x = extras.NAS, full = { ...NASAL_DEFAULT, ...DEFAULTS.nasalized, ...(n.nasalizes ?? {}) }, out = {};
+    for (const k of NASAL_PARAMS) out[k] = NASAL_DEFAULT[k] + x * (full[k] - NASAL_DEFAULT[k]);
+    return nasalScaled(out);
+  };
+  const nasalOnly = (atMs, target, transitionMs) => {
+    schedule.push({ atMs, target, transitionMs, nasalOnly: true });
+    nasalOnlyEvents++;
+  };
+  // before a phoneme renders: its first event's nasal parameters; after: the vowel's nasal glides
+  // [NASMS=ms]: a share of slotMs, capped at ms (unchanged when absent or not binding)
+  const nasalCap = (share, slotMs) => (extras.NASMS !== undefined && slotMs * share > extras.NASMS ? Math.max(0, extras.NASMS) / slotMs : share);
+  const nasalBefore = (t, p, slotMs) => {
+    if (!nasalMode()) {
+      if (nasalUsed) { pendingNasal = nasalScaled(NASAL_DEFAULT); nasalUsed = false; }
+      return null;
+    }
+    nasalUsed = true;
+    pendingNasal = nasalScaled(NASAL_DEFAULT);
+    if (!(extras.NAS > 0) || p.nasal || p.isStop || !((p.voicing ?? 0) >= 1)) return null;
+    const prevN = nasalOf(prevPh.get(t)), nextN = nasalOf(nextPh.get(t));
+    if (!prevN && !nextN) return null;
+    const cv = nasalCap(extras.NASCV ?? DEFAULTS.nasalCV, slotMs), vc = nasalCap(extras.NASVC ?? DEFAULTS.nasalVC, slotMs);
+    if (prevN) pendingNasal = nasalizedBy(prevN);
+    else if (vc >= 1) pendingNasal = nasalizedBy(nextN);
+    return { start: timeMs, prevN, nextN, cv, vc };
+  };
+  const nasalAfter = (plan, slotMs) => {
+    if (!plan) return;
+    const { start, prevN, nextN, cv, vc } = plan;
+    if (prevN && nextN && cv + vc >= 1) {
+      nasalOnly(start + slotMs * Math.min(cv, 1 - vc / 2), nasalizedBy(nextN), Math.max(1, slotMs * 0.25));
+      return;
+    }
+    if (prevN && cv < 1) nasalOnly(start + slotMs * Math.min(cv * 0.5, 0.1), nasalScaled(NASAL_DEFAULT), Math.max(1, slotMs * Math.max(cv - Math.min(cv * 0.5, 0.1), 0.01)));
+    if (nextN && vc < 1 && vc > 0) nasalOnly(start + slotMs * (1 - vc), nasalizedBy(nextN), slotMs * vc);
+  };
+
   const renderPhoneme = (t, slotMs) => {
     const p = phonemes[t.code];
     if (!p) {
       warnings.push(`unknown phoneme: ${t.code}`);
       return 0;
     }
+    const nasalPlan = nasalBefore(t, p, slotMs);
+    const r = renderPhonemeEvents(t, p, slotMs);
+    pendingNasal = null;
+    nasalAfter(nasalPlan, slotMs);
+    return r;
+  };
+  // (sonicpi-toolchain patch) [NAST=ms] under [NAS]: the transition of the first event into a nasal consonant and
+  // into a (non-stop) phoneme after one (amplitudes, bandwidths, nasal parameters; [CO]'s formant moves keep their
+  // own): the oral closure and release that bound a murmur are abrupt. Absent: the usual transition.
+  const nasalTrans = (t, p, usual, slotMs) => (nasalMode() && extras.NAST !== undefined && (p.nasal || nasalOf(prevPh.get(t)))
+    ? Math.max(0.1, Math.min(extras.NAST, slotMs * 0.9)) : usual);
+  const renderPhonemeEvents = (t, p, slotMs) => {
     const startF0 = t.stressed ? f0 + DEFAULTS.stressF0Lift : f0;
     const endF0 = startF0 + t.pitchDelta;
     const slotStart = timeMs;
@@ -381,7 +467,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
       return slotMs;
     } else if (p.glideTo) {
       const onset = slotMs * 0.25, glide = slotMs * 0.50, offset = slotMs * 0.25;
-      emit(scaled(p, startF0), Math.min(20, onset));
+      emit(scaled(p, startF0), nasalTrans(t, p, Math.min(20, onset), onset));
       formantsIn(t, p, Math.min(20, onset), slotMs);
       timeMs += onset;
       emit(scaled(p, endF0, p.glideTo), glide);
@@ -390,7 +476,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
       formantsOut(t, p, slotStart, slotMs);
       return slotMs;
     } else if (t.pitchDelta !== 0) {
-      emit(scaled(p, startF0), Math.min(25, slotMs * 0.25));
+      emit(scaled(p, startF0), nasalTrans(t, p, Math.min(25, slotMs * 0.25), slotMs * 0.25));
       formantsIn(t, p, Math.min(25, slotMs * 0.25), slotMs);
       timeMs += slotMs * 0.25;
       emit(scaled(p, endF0), slotMs * 0.6);
@@ -400,7 +486,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
     } else {
       // [TR=ms] (sonicpi-toolchain patch): how long formants take to move into a phoneme
       const trans = Math.min(extras.TR ?? DEFAULTS.defaultTransitionMs, slotMs * (extras.TR ? 0.9 : 0.4));
-      emit(scaled(p, startF0), trans);
+      emit(scaled(p, startF0), nasalTrans(t, p, trans, slotMs));
       formantsIn(t, p, trans, slotMs);
       timeMs += slotMs;
       formantsOut(t, p, slotStart, slotMs);
@@ -433,6 +519,7 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
   });
 
   const emit = (target, transitionMs) => {
+    if (pendingNasal) { target = { ...pendingNasal, ...target }; pendingNasal = null; }
     schedule.push({
       atMs: timeMs,
       // [AV=x] (sonicpi-toolchain patch): loudness multiplier, moved like any other parameter
@@ -443,7 +530,8 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
       ...(extras.CO !== undefined ? { params: NON_FORMANTS } : {}),
     });
   };
-  const silence = (transitionMs = 30) => emit({ A1: 0, A2: 0, A3: 0 }, transitionMs);
+  const silence = (transitionMs = 30) => emit(
+    nasalMode() ? { ...nasalScaled(NASAL_DEFAULT), A1: 0, A2: 0, A3: 0 } : { A1: 0, A2: 0, A3: 0 }, transitionMs);
 
   for (const t of tokens) {
     if (t.type === 'unknown') {
@@ -598,7 +686,8 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
   if (phrases.length) phrases[phrases.length - 1].tEndMs = timeMs;
 
   // (sonicpi-toolchain patch) [CO]: the synth applies events in array order
-  if (formantEvents) schedule.sort((a, b) => a.atMs - b.atMs);
+  // (sonicpi-toolchain patch) [NAS]: a vowel's nasal glides were pushed after its own events
+  if (formantEvents || nasalOnlyEvents) schedule.sort((a, b) => a.atMs - b.atMs);
 
   return { schedule, totalMs: timeMs, warnings, phrases, source, engine };
 }

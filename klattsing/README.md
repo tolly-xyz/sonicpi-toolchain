@@ -26,8 +26,7 @@ per syllable, or `"auto"`), `bpm`, `melody` (auto: `scale`, `long`, `short`, `la
 (formant glide ms, a klattsch patch), `aspiration` (breath after P/T/K, default on), `accent`,
 `dynamics` (loudness by stress, a klattsch patch; off by default), `durations` (`"v0"` for the first
 reconstruction), `rules`; and the opt-in options below (`bankPatch`, `functionWords`, `intonation`,
-`breathLevel`, `breathVoicing`, `pauseMs`, `accentDelta`, `phoneDur`, `coarticulation`).
-`breathLevel`, `breathVoicing`, `pauseMs`, `accentDelta`, `phoneDur`, `glottal`).
+`breathLevel`, `breathVoicing`, `pauseMs`, `accentDelta`, `phoneDur`, `coarticulation`, `glottal`, `nasals`).
 
 ## Options for optimizers (all opt-in; leaving them out gives exactly the strings from before)
 
