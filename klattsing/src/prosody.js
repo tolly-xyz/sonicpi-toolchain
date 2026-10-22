@@ -54,7 +54,7 @@ import { FUNCTION_WORDS } from './function_words.js';
 export const PROSODY = {
   accent: 3.3, downstep: 0.52, nuclear: 0.58, peak: -0.14, rise: 43, fall: 470,
   top: 2.65, declination: 3.1, initial: 3.6, initialMs: 86, reset: 0,
-  final: 0, finalFrom: 0, continuation: -0.6, question: 0,
+  final: 0, finalFrom: 0, finalVoiceless: 1, continuation: -0.6, question: 0,
   micro: 1.6, microMs: 50, microOffset: 0, dip: 1.2, effort: false,
 };
 const KEYS = Object.keys(PROSODY);
@@ -139,15 +139,17 @@ const bump = (x, rise, fall) => (x < 0 ? (x > -rise ? 0.5 + 0.5 * Math.cos(Math.
 // the contour: plan (accentPlan), tokens [{ start, ms, kind: "vowel" | "other", p (lexical phoneme), code (the
 // string's), asp, gap (a pause before it), word, syl }] in time order (ms from the start of the utterance) -> t (ms) -> st re the pitch
 export function contour(plan, tokens, P) {
+  const flap = (t) => t.code === 'DQF';                // stops' flap (T or D): voiced
+  const voiceless = (t) => t && ((VOICELESS.has(t.p) && !flap(t)) || t.asp);
   // tune: the phrase's kind, a yes/no question ending like a statement unless P.question rises it
   const ph = plan.phrases.map((x) => ({ ...x, tune: x.kind === 'question' && !P.question ? 'final' : x.kind,
-    start: Infinity, end: -Infinity, lastVowel: null, vowels: new Map(), peaks: [] }));
+    start: Infinity, end: -Infinity, lastVowel: null, coda: [], vowels: new Map(), peaks: [] }));
   const phraseOf = (word) => ph.findIndex((x) => word >= x.from && word <= x.to);
   for (const t of tokens) {
     const x = ph[phraseOf(t.word)];
     if (!x) continue;
     x.start = Math.min(x.start, t.start); x.end = Math.max(x.end, t.start + t.ms);
-    if (t.kind === 'vowel') { x.lastVowel = t; x.vowels.set(`${t.word}:${t.syl}`, t); }
+    if (t.kind === 'vowel') { x.lastVowel = t; x.coda = []; x.vowels.set(`${t.word}:${t.syl}`, t); } else if (x.lastVowel) x.coda.push(t);
   }
   // the baseline at each phrase's start: top at a sentence start, else reset part of the way back to it
   let prevEnd = null;
@@ -170,8 +172,6 @@ export function contour(plan, tokens, P) {
   }
   // segmental perturbations: [from, to, st, time constant ms (from `from`; negative: toward `to`) or 0]
   const seg = [];
-  const flap = (t) => t.code === 'DQF';                // stops' flap (T or D): voiced
-  const voiceless = (t) => t && ((VOICELESS.has(t.p) && !flap(t)) || t.asp);
   tokens.forEach((t, i) => {
     if ((VOICED_OBSTRUENT.has(t.p) || flap(t)) && !t.asp && P.dip) seg.push([t.start, t.start + t.ms, -P.dip, 0]);
     const prev = tokens[i - 1], next = tokens[i + 1];
@@ -191,7 +191,12 @@ export function contour(plan, tokens, P) {
     f += a;
     const lv = x.lastVowel, nv = x.nucleus ?? lv, span = (from) => ramp((t - from) / Math.max(1, x.end - from));
     if (lv) {
-      if (x.tune === 'final') f -= P.final * span(lv.start + P.finalFrom * (Math.min(nv.start, lv.start) - lv.start));
+      if (x.tune === 'final') {
+        // finalVoiceless: the share of it left when a voiceless obstruent closes the last vowel (its low F0 offset
+        // would cue a voiced coda)
+        const k = P.finalVoiceless !== 1 && x.coda.some((c) => voiceless(c) && !c.asp) ? P.finalVoiceless : 1;
+        f -= k * P.final * span(lv.start + P.finalFrom * (Math.min(nv.start, lv.start) - lv.start));
+      }
       else if (x.tune === 'continuation') f += P.continuation * span(lv.start);
       else f += P.question * span(nv.start);
     }

@@ -110,6 +110,15 @@ test('prosody: phrase ends: final lowering, from the last or the nuclear vowel; 
   near(f(last.start), 0); near(f(end - 250), -4);        // the phrase ends where its pause begins
   const g = contour(accentPlan(ws), toks, { ...P, finalFrom: 1 });
   near(g(nuc.start), 0); assert.ok(g(last.start) < -1, 'lowered from the nuclear vowel on');
+  // finalVoiceless: the share of the lowering left when a voiceless obstruent closes the last vowel ("sit", "desks";
+  // not "garden", "bid", "see")
+  near(contour(accentPlan(ws), toks, { ...P, finalVoiceless: 0 })(end - 250), -4, 'garden: lowered');
+  for (const [text, vl] of [['Big dogs sit.', true], ['Big dogs see desks.', true], ['Big dogs bid.', false], ['Big dogs see.', false]]) {
+    const x = toksOf(text), lv = x.toks.filter((t) => t.kind === 'vowel').at(-1), y = lv.start + lv.ms;
+    const lower = (k) => contour(accentPlan(x.ws), x.toks, { ...P, finalVoiceless: k })(y);
+    near(lower(1), -4 * (0.5 - 0.5 * Math.cos(Math.PI * lv.ms / (x.end - 250 - lv.start))));
+    near(lower(0), vl ? 0 : lower(1), text); near(lower(0.5), vl ? lower(1) / 2 : lower(1), text);
+  }
   // continuation rise at a comma, partial reset after it, full reset after a sentence
   const c = toksOf('Dogs dig, cats nap. Dogs dig.');
   const pc = accentPlan(c.ws), cv = c.toks.filter((t) => t.kind === 'vowel');
