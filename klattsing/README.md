@@ -292,7 +292,8 @@ before syllables are timed (`src/reductions.js`):
   a modal or do, or a subject pronoun, or with an object after it (a determiner or object pronoun next, nothing
   determiner-like before: "always close the door", "Use a pencil"); a noun or adjective after a determiner, possessive or
   number ("their lives", "of perfect"); "read" past after be / have and he / she / it, else present ("Read verse out
-  loud"); "used" Y UW1 S T before "to" unless after be / get ("I used to", not "is used to catch"). A word a project
+  loud"); "used" Y UW1 S T before "to" unless after be / get ("I used to", not "is used to catch"); "lead" L IY1 D (verb,
+  and the noun of "take the lead"), L EH1 D only in the metal's contexts ("lead pipe", "made of lead", "black lead"). A word a project
   lexicon (`dict/lexicon.json`) gives keeps its pronunciation.
 - opt-in, off by default: **`hDrop`** (him, his, her, have, has, had lose their H inside a phrase when weak: "tell 'im";
   Roach, Cruttenden), **`elision`** ("and" loses its D before a consonant, the most frequent -t/-d deletion, Neu 1980,

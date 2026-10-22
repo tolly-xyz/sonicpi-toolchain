@@ -96,6 +96,11 @@ test('heteronyms by context', () => {
   assert.equal(at('The wind blew.', 'wind'), 'W IH1 N D');
   assert.equal(at('Wind the clock.', 'wind'), 'W AY1 N D');
   assert.equal(at('Two: lead.', 'lead'), 'L IY1 D');                  // context does not cross punctuation
+  assert.equal(at('They took the lead early.', 'lead'), 'L IY1 D');  // the noun of "take the lead"
+  assert.equal(at('The old lead pipe burst.', 'lead'), 'L EH1 D');    // the metal
+  assert.equal(at('A ball made of lead sank.', 'lead'), 'L EH1 D');
+  assert.equal(at('They refuse to go.', 'refuse'), 'R IH0 F Y UW1 Z');
+  assert.equal(at('The refuse was burned.', 'refuse'), 'R EH1 F Y UW2 S');
   assert.equal(at('Read verse out loud.', 'read', { heteronyms: false }), 'R EH1 D');
   // every form keeps its word's syllable count (sing gives each syllable a note)
   for (const [w, h] of Object.entries(HETERONYMS)) {

@@ -21,7 +21,8 @@
 //             "to", a modal or do, or a subject pronoun, or with an object after it (a determiner or object
 //             pronoun next, nothing determiner-like before: "always close the door", "Use a pencil"); a noun or
 //             adjective after a determiner; "read" past after be/have and he/she/it, else present; "used" yuːst
-//             before "to" unless after be/get ("I used to", not "is used to catch"); else the entry's default
+//             before "to" unless after be/get ("I used to", not "is used to catch"); "lead" L IY D but the metal
+//             in its contexts ("lead pipe", "made of lead"); else the entry's default
 //   hDrop     (off) him / his / her / have / has / had lose their H inside a phrase when weak ("tell 'im";
 //             Roach 2009, Cruttenden 2014: usual in unstressed pronouns and auxiliaries, not phrase-initially)
 //   elision   (off) "and" loses its D before a consonant (ən: the most frequent -t/-d deletion of all, Neu 1980,
@@ -83,12 +84,12 @@ const nv = (noun, verb, def = 'noun') => ({ noun, verb, def });
 export const HETERONYMS = {
   close: nv('K L OW1 S', 'K L OW1 Z'), use: nv('Y UW1 S', 'Y UW1 Z'), excuse: nv('IH0 K S K Y UW1 S', 'IH0 K S K Y UW1 Z'),
   abuse: nv('AH0 B Y UW1 S', 'AH0 B Y UW1 Z'), live: nv('L AY1 V', 'L IH1 V'), wind: nv('W IH1 N D', 'W AY1 N D'),
-  tear: nv('T IH1 R', 'T EH1 R'), lead: nv('L EH1 D', 'L IY1 D', 'verb'), perfect: nv('P ER1 F IH2 K T', 'P ER0 F EH1 K T'),
+  tear: nv('T IH1 R', 'T EH1 R'), lead: 'lead', perfect: nv('P ER1 F IH2 K T', 'P ER0 F EH1 K T'),
   // noun-verb stress pairs: the noun stressed on the first syllable, the verb on the second
   record: nv('R EH1 K ER0 D', 'R IH0 K AO1 R D'), present: nv('P R EH1 Z AH0 N T', 'P R IY0 Z EH1 N T'),
   object: nv('AA1 B JH EH0 K T', 'AH0 B JH EH1 K T'), permit: nv('P ER1 M IH2 T', 'P ER0 M IH1 T'),
   produce: nv('P R OW1 D UW0 S', 'P R AH0 D UW1 S'), project: nv('P R AA1 JH EH0 K T', 'P R AH0 JH EH1 K T'),
-  refuse: nv('R EH1 F Y UW2 Z', 'R IH0 F Y UW1 Z', 'verb'), conduct: nv('K AA1 N D AH0 K T', 'K AH0 N D AH1 K T'),
+  refuse: nv('R EH1 F Y UW2 S', 'R IH0 F Y UW1 Z', 'verb'), conduct: nv('K AA1 N D AH0 K T', 'K AH0 N D AH1 K T'),
   contract: nv('K AA1 N T R AE2 K T', 'K AH0 N T R AE1 K T'), increase: nv('IH1 N K R IY2 S', 'IH2 N K R IY1 S'),
   decrease: nv('D IY1 K R IY2 S', 'D IH0 K R IY1 S'), insult: nv('IH1 N S AH2 L T', 'IH2 N S AH1 L T'),
   progress: nv('P R AA1 G R EH2 S', 'P R AH0 G R EH1 S'), rebel: nv('R EH1 B AH0 L', 'R IH0 B EH1 L'),
@@ -104,6 +105,11 @@ export const HETERONYMS = {
   objects: { noun: 'AA1 B JH EH0 K T S', verb: 'AH0 B JH EH1 K T S', def: 'noun', third: true },
   read: 'read', used: 'used',
 };
+// "lead": L IY1 D (the verb, and the noun of "take the lead", "the lead role"), the metal L EH1 D only in its
+// contexts: before a noun it makes ("lead pipe", "lead poisoning"), after "of" ("made of lead") and in black /
+// red / white lead (graphite, the pigments)
+const METAL_NEXT = set('pipe pipes paint pencil pencils poisoning weight weights shot ore mine mines crystal oxide foil sinker sinkers soldier soldiers');
+const METAL_PREV = set('of black red white');
 
 const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
 const vowelsIn = (pron) => pron.split(' ').filter((t) => VOWELS.has(t.replace(/\d$/, ''))).length;
@@ -158,6 +164,7 @@ function heteronym(word, prev, next) {
     if (BE.has(prev) || HAVE.has(prev) || SUBJECT_3.has(prev)) return 'R EH1 D';
     return 'R IY1 D';
   }
+  if (h === 'lead') return METAL_NEXT.has(next) || METAL_PREV.has(prev) ? 'L EH1 D' : 'L IY1 D';
   if (h === 'used') {
     const accustomed = BE.has(prev) || GET.has(prev);
     return next === 'to' && !accustomed ? 'Y UW1 S T' : 'Y UW1 Z D';
