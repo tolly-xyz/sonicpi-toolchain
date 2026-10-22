@@ -73,8 +73,9 @@ export function fricOptions(o) {
       }
     }
   }
-  const out = { ...FRICATIVES, phonemes: {} };
-  for (const k of KEYS) if (x[k] != null) out[k] = x[k];
+  // env: the envelope fields the option sets (over every fricative's own); phonemes: the per-fricative fields
+  const out = { gain: x.gain ?? FRICATIVES.gain, env: {}, phonemes: x.phonemes ?? {} };
+  for (const k of ENVELOPE) if (x[k] != null) out.env[k] = x[k];
   return out;
 }
 
@@ -85,7 +86,7 @@ export const fricDirectives = (f) => (f ? `[FRIC=${f.gain}]` : '');
 // laid over it
 export function fricEntries(resolved, f) {
   const phonemes = {};
-  const env = Object.fromEntries(ENVELOPE.map((k) => [k, f[k]]));
+  const env0 = Object.fromEntries(ENVELOPE.map((k) => [k, FRICATIVES[k]]));
   for (const code of FRIC_CODES) {
     const base = resolved.phonemes[code];
     if (!base) continue;
@@ -93,7 +94,8 @@ export function fricEntries(resolved, f) {
     const { frication: frX = {}, ...mainX } = f.phonemes[code] ?? {};
     const e = { ...base, ...main };
     for (const [k, v] of Object.entries(mainX)) { if (v === null) delete e[k]; else e[k] = v; }
-    const fr = { ...fr0, ...env };
+    // the envelope: the defaults, the fricative's own (FRICATION), the option's, phonemes.<P>.frication
+    const fr = { ...env0, ...fr0, ...f.env };
     for (const [k, v] of Object.entries(frX)) { if (v === null) delete fr[k]; else fr[k] = v; }
     e.frication = fr;
     phonemes[code] = e;

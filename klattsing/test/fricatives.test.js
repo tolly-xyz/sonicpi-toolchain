@@ -47,7 +47,7 @@ test('option: [FRIC=gain] and a generated bank <base>--fr<hash> with an entry pe
   for (const c of FRIC_CODES) {
     const e = b.phonemes[c];
     assert.ok(e.frication && typeof e.frication.AF1 === 'number', c);
-    for (const k of ['rise', 'fall', 'fallTo', 'fallToC', 'in']) assert.equal(e.frication[k], FRICATIVES[k], `${c}.${k}`);
+    for (const k of ['rise', 'fall', 'fallTo', 'fallToC', 'in']) assert.equal(e.frication[k], FRICATION[c].frication[k] ?? FRICATIVES[k], `${c}.${k}`);
     assert.equal(e.voicing, FRICATION[c].voicing);
   }
   // the chain: after coarticulation (its loci carry over), before stops

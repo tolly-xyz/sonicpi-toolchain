@@ -146,8 +146,9 @@ def path_mel(fr):
 
 # fitted vector: log frequencies / bandwidths in bounds (each resonator keeps a role: FF1 low-mid, FF2 mid-high, FF3
 # high), log amplitudes (the bypass and resonators can switch off), log of the voice bar's level (voiced)
-BOUNDS = {"FF1": (700, 4500), "FF2": (1500, 8500), "FF3": (4000, 11500), "BF1": (150, 8000), "BF2": (150, 8000),
-          "BF3": (150, 8000), "AF1": (1e-6, 3), "AF2": (1e-6, 3), "AF3": (1e-6, 3), "AB": (1e-7, 1)}
+# (bandwidths from 200 Hz: narrower noise resonances whistle)
+BOUNDS = {"FF1": (700, 4500), "FF2": (1500, 8500), "FF3": (4000, 11500), "BF1": (200, 8000), "BF2": (200, 8000),
+          "BF3": (200, 8000), "AF1": (1e-6, 3), "AF2": (1e-6, 3), "AF3": (1e-6, 3), "AB": (1e-7, 1)}
 
 def vec(fr):
     return np.array([math.log(np.clip(fr.get(k, 0), *BOUNDS[k])) for k in RES])
@@ -194,14 +195,104 @@ def off(e, voice=True):
     return out
 
 
+# ---------------------------------------------------------------- corpus mode: the corpus itself as the context
+def corpus_medians(rows, phones):
+    """per fricative: Kokoro's and klattsing's median 40-band spectra (dB re the vowel) over the rows where both say
+    it, and Kokoro's median cepstrum floor (dB re the vowel)"""
+    out = {}
+    for p in phones:
+        rs = [r for r in rows if r["p"] == p and r["kp"] == p]
+        if not rs: continue
+        out[p] = {"K": np.median(np.array([r["K"]["_mel"] for r in rs]), axis=0),
+                  "k": np.median(np.array([r["k"]["_mel"] for r in rs]), axis=0),
+                  "floor": float(np.median([r["K"]["_floor"] for r in rs])), "n": len(rs)}
+    return out
+
+def fit_fields(e):
+    """an entry's fitted fields, as a "fricatives.phonemes" override"""
+    return {**{k: e[k] for k in MAIN if k in e}, "frication": {k: v for k, v in e["frication"].items() if k in RES + ["FM"]}}
+
+def with_entries(cfg, E):
+    fr = cfg.get("fricatives"); fr = {} if fr is True or not isinstance(fr, dict) else dict(fr)
+    ph = {p: dict(v) for p, v in (fr.get("phonemes") or {}).items()}
+    for p, e in E.items(): ph[p] = {**ph.get(p, {}), **fit_fields(e)}
+    return {**cfg, "fricatives": {**fr, "phonemes": ph}}
+
+def derive_zh(fits):
+    """ZH (one token in the corpus): SH's spectrum at Z's frication level re S (power over the bands), Z's voice"""
+    if not all(p in fits for p in ("SH", "Z", "S")): return None
+    pw = lambda fr: float(path_mel(fr).sum())
+    k = math.sqrt(pw(fits["Z"]["frication"]) / pw(fits["S"]["frication"]))
+    fr = {q: (v * k if q in ("AF1", "AF2", "AF3", "AB") else v) for q, v in fits["SH"]["frication"].items()}
+    fr.pop("FM", None)
+    return {**{q: fits["Z"][q] for q in MAIN if q in fits["Z"]}, "frication": fr}
+
+def corpus_fit(a, cfg, start):
+    """--corpus: each round renders the whole corpus three times through fricscope (as it is, with every fricative's
+    frication off, and with their voice off too) and fits each fricative's closed-form model to Kokoro's median
+    spectrum, the scale c, the voice V and what leaks in L read from klattsing's median spectra in the corpus"""
+    phones = [p for p in a.phones.split(",") if p in start]
+    E = {p: fit_fields(start[p]) for p in phones}
+    for p in phones:
+        if a.murmur is not None and p not in VOICED and E[p].get("voicing", 0) < 1:
+            E[p] = {**E[p], "voicing": 1, "F1": a.murmur_f1, "BW1": a.murmur_bw1, "A1": a.murmur, "A2": 0, "A3": 0,
+                    "frication": {**E[p]["frication"], "FM": 0}}
+    voiced = {p: p in VOICED or E[p].get("voicing", 0) >= 1 for p in phones}
+    rng = np.random.default_rng(0)
+    run = lambda E2: corpus_medians(FS.run(with_entries(cfg, E2), a.limit), phones)
+    silent = lambda e, voice=True: {**e, "frication": {**e["frication"], "AF1": 0, "AF2": 0, "AF3": 0, "AB": 0},
+                                    **({} if voice else {"A1": 0})}
+    R = run(E)
+    def err(p, mel):
+        fl = a.floor if a.floor is not None else R[p]["floor"]; band = bands(p)
+        return float(np.sqrt(np.mean((np.maximum(mel, fl)[band] - np.maximum(R[p]["K"], fl)[band]) ** 2)))
+    bands = lambda p: FS.MEL_F >= (a.fmin if a.fmin is not None else 100 if voiced[p] else 1000)
+    first = {p: R[p]["k"] for p in phones if p in R}
+    for rd in range(a.rounds):
+        Roff = run({p: silent(e) for p, e in E.items()})
+        Rleak = run({p: silent(e, False) for p, e in E.items()}) if any(voiced.values()) else Roff
+        for p in phones:
+            if p not in R: continue
+            fl = a.floor if a.floor is not None else R[p]["floor"]
+            full, V, L = (10 ** (R[p]["k"] / 10), 10 ** (Roff[p]["k"] / 10), 10 ** (Rleak[p]["k"] / 10))
+            if not voiced[p]: L = V
+            fric = full - V
+            good = fric > 0.5 * full
+            if good.sum() < 3: good = np.argsort(-(fric / full))[:8]
+            c = float(np.median(full[good] / path_mel(E[p]["frication"])[good]))
+            fr, s, mrms = fit_model(R[p]["K"], bands(p), fl, c, np.maximum(V - L, 0), L, {**E[p]["frication"]}, voiced[p], rng)
+            E[p] = {**E[p], "frication": {**E[p]["frication"], **fr}}
+            if voiced[p]: E[p]["A1"] = float(E[p]["A1"] * math.sqrt(s))
+            print(f"  {p} round {rd + 1}: model {mrms:.2f} dB (c {c:.3g}, voice x{math.sqrt(s) if voiced[p] else 1:.2f})", flush=True)
+        R = run(E)
+        print(f"round {rd + 1}: " + "  ".join(f"{p} {err(p, R[p]['k']):.2f}" for p in phones if p in R), flush=True)
+    fits = {p: rnd(E[p]) for p in phones}
+    zh = derive_zh(fits)
+    if zh and "ZH" not in fits: fits["ZH"] = rnd(zh)
+    sel = [i for i in range(40) if i % 3 == 0]
+    for p in phones:
+        if p not in R: continue
+        print(f"{p} (n {R[p]['n']}): rms {err(p, first[p]):.2f} -> {err(p, R[p]['k']):.2f} dB  {json.dumps(fits[p])}")
+        print("   band   " + " ".join(f"{FS.MEL_F[i] / 1000:5.1f}" for i in sel))
+        print("   kokoro " + " ".join(f"{R[p]['K'][i]:5.0f}" for i in sel))
+        print("   before " + " ".join(f"{first[p][i]:5.0f}" for i in sel))
+        print("   after  " + " ".join(f"{R[p]['k'][i]:5.0f}" for i in sel), flush=True)
+    if a.out: json.dump(fits, open(a.out, "w"), indent=1)
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("config"); ap.add_argument("--kokoro", required=True)
+    ap.add_argument("config"); ap.add_argument("--kokoro", help="fricscope --rows (synthetic mode: the targets)")
+    ap.add_argument("--corpus", action="store_true", help="fit in the corpus (fricscope renders of CONFIG), not in "
+                    "synthetic contexts: no --kokoro or --calib needed; the fricatives' medians over the whole corpus")
+    ap.add_argument("--limit", type=int, help="--corpus: the first N sentences")
+    ap.add_argument("--murmur-f1", type=float, default=200); ap.add_argument("--murmur-bw1", type=float, default=100)
     ap.add_argument("--phones", default=",".join(p for p in FRICS if p != "ZH")); ap.add_argument("--calib")
     ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument("--fmin", type=float, help="lowest band fitted (default: 1000 Hz voiceless, below which the vowels' "
                     "voicing leaking in dominates, not the frication; 100 Hz voiced, the voice bar)")
-    ap.add_argument("--floor", type=float, default=-65); ap.add_argument("--out")
+    ap.add_argument("--floor", type=float, help="dB re the vowel both sides are held above (default -65; --corpus: "
+                    "Kokoro's median cepstrum floor per fricative)"); ap.add_argument("--out")
     ap.add_argument("--start", help="JSON {P: entry fields} over the config's entries to start from")
     ap.add_argument("--murmur", type=float, help="voiceless fricatives get a weak voice (voicing 1, FM 0, F1 200, BW1 100) "
                     "starting at A1 = this, fitted like the voiced ones' voice bar, over the bands from --fmin (default 100)")
@@ -213,6 +304,15 @@ def main():
     a = ap.parse_args()
     cfg = json.load(open(a.config)) if os.path.exists(a.config) else json.loads(a.config)
     if not cfg.get("fricatives"): cfg["fricatives"] = True
+    if a.corpus:
+        worker = Worker()
+        start = worker.resolve(cfg, FRICS)
+        if a.start:
+            for p, e in json.load(open(a.start)).items():
+                start[p] = {**start[p], **{k: v for k, v in e.items() if k != "frication"},
+                            "frication": {**start[p].get("frication", {}), **e.get("frication", {})}}
+        return corpus_fit(a, cfg, start)
+    if a.floor is None: a.floor = -65
     T = kokoro_targets(json.load(open(a.kokoro)))
     calib = (json.load(open(a.calib)) if os.path.exists(a.calib) else json.loads(a.calib)) if a.calib else None
     worker = Worker()
