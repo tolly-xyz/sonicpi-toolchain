@@ -174,7 +174,7 @@ tone, with Fujisaki's (Fujisaki & Hirose 1984) superposition of a phrase compone
   obstruent); voiced obstruents (and stops' flap) are `dip` st lower (Lehiste & Peterson 1961; Hombert 1978; Silverman
   1986; Kingston & Diehl 1994).
 - `effort: true` moves `accentDelta` from every primary stress to the accented syllables only (off: spectral
-  balance marks lexical stress whether accented or not, Sluijter & van Heuven 1996; fidelity ties, 2.887 against 2.889).
+  balance marks lexical stress whether accented or not, Sluijter & van Heuven 1996; fidelity ties, 2.830 against 2.832).
 
 klattsch moves F0 per phoneme (a phoneme's first event takes it to the current `b`; a vowel with a pitch delta glides
 on to b + delta by 75-85% of it), so the contour is sampled where klattsch reaches its values: a `b` before every
@@ -186,15 +186,15 @@ and run Praat; with `prosody` its r and detrended r are within 0.01 of the audio
 maximised by Nelder-Mead on the train split of `climb.py split` (80 sentences) and checked on the 20 held out, then
 with audio. Kokoro's contour (am_onyx) is: a quick rise to the first accent, accents peaking at the very start of the
 stressed vowel (median 5% into it; the rise in the onset) and falling slowly through it, strong downstep of
-prenuclear accents, a nuclear accent back up, ~3.7 st/s declination. The fit agrees: `peak` -0.14 (a late peak, 0.7, scores 2.68), `rise` 43 / `fall` 470 ms, downstep 0.52,
+prenuclear accents, a nuclear accent back up, ~3.7 st/s declination. The fit agrees: `peak` -0.14 (a late peak, 0.7, scores 2.597 against 2.832), `rise` 43 / `fall` 470 ms, downstep 0.52,
 nuclear 0.58 x accent not downstepped (downstepped: 4.02 against 4.07 by the proxy on train), micro 1.6 st / 50 ms,
 dip 1.2 st, `final` 3.4 st (Kokoro's vowels end lower, not higher, before voiceless obstruents: `microOffset` stays
 0 for Kokoro). The Harvard sentences have one comma and no question, so `tools/voicelab/phrasing.py` builds a Kokoro
 set of 20 (`work/voicelab/phrasing/`): Kokoro ends comma phrases level or slightly falling (-1.1 st over the last
 vowel), does not reset after them (fitted `reset` 0, `continuation` -0.6), and ends yes/no questions falling like
 statements in both voices (am_onyx -3.0 st, am_michael -8.0 over the last vowel; statements -2.9 / -8.8): hence
-`question` 0 by default; the textbook tunes (`continuation: 3, question: 6, reset: 0.6`) score r 0.67 / detrended
-0.41 on that set against 0.81 / 0.56 (BASE: 0.30 / 0.25). `top` puts the rendered median F0 on the spec's pitch
+`question` 0 by default; the textbook tunes (`continuation: 3, question: 6, reset: 0.6`) score r 0.65 / detrended
+0.40 on that set against 0.81 / 0.56 (BASE: 0.30 / 0.25). `top` puts the rendered median F0 on the spec's pitch
 (fidelity `median_st` +0.01).
 
 **Final lowering is off** (`final: 0`): with the fitted 3.4 st, fidelity is best (2.889) but Whisper's minimal pairs
@@ -202,8 +202,9 @@ statements in both voices (am_onyx -3.0 st, am_michael -8.0 over the last vowel;
 p = 0.052, 16 against 6 discordant): mostly final voiceless stops heard as voiced ("bet" as "bed", "lock" as "log",
 "sip" as "sib", "coat" as "code", "pat" as "pad"): a low F0 at a vowel's end cues a voiced coda (Castleman & Diehl
 1996), and klattsch's other voicing cues are weak. Raising the vowel's end before a voiceless obstruent
-(`microOffset: 2`, against Kokoro) won back half (64.7%, p = 0.26); `final: 0` all of it (69.1%, 10 against 10
-discordant, p = 1) for 0.06 of fidelity.
+(`microOffset: 2`, against Kokoro) won back half (64.7%, p = 0.26), and so did keeping the lowering except where a
+voiceless obstruent closes the last vowel (65.5%, p = 0.36; fidelity 2.852, so not kept); `final: 0` won back all of
+it (69.1%, 10 against 10 discordant, p = 1) for 0.06 of fidelity.
 
 On the Kokoro corpus (`fidelity.py --audio`, BASE = `presets/kokoro-durations.json` + `mitalk-bursts` +
 `coarticulation` + `glottal` + `nasals` + `stops`): score 1.866 -> 2.832 (dur 1.092 -> 1.092, spec 3.918 -> 4.017,
@@ -211,10 +212,11 @@ pros 0.588 -> 3.387); F0 r 0.421 -> 0.895, detrended 0.289 -> 0.672, rmse 2.49 -
 MCD 3.454 -> 3.436, mcd_cmn 3.249 -> 3.228 (Kokoro against Kokoro, am_michael scored as the system: r 0.78,
 detrended 0.76). Held out (20 sentences): 1.545 -> 2.538, pros 0.293 -> 3.157, r 0.387 -> 0.889, detrended
 0.193 -> 0.631 (train: 1.959 -> 2.921, detrended 0.313 -> 0.683). With `final: 3.4`: 2.889 (pros 3.533, r 0.905,
-detrended 0.698). Each part left out of that (full corpus): declination 2.314, accents 2.619, downstep 2.717, the
-nuclear accent 2.823, the initial rise 2.828, final lowering 2.832, microprosody 2.850 (micro alone 2.875, dip alone
-2.865); the predecessor's hand-set values (accent 3, downstep 0.7, peak 0.5, rise 150 / fall 200 ms, no microprosody)
-2.682. Whisper minimal pairs: 69.1% -> 69.1% (p = 1; fricatives +1, nasals +3, liquids +1, manner -2, voicing-
+detrended 0.698). Each part left out of the defaults (full corpus): declination 2.151, accents 2.616, downstep
+2.717, the initial rise 2.770, microprosody 2.798 (micro alone 2.813, dip alone 2.818), the nuclear accent 2.815;
+a late peak (`peak` 0.7) 2.597, with `rise` 150 / `fall` 200 ms 2.694; the textbook phrase tunes 2.820; textbook
+values throughout (accent 3, downstep 0.7, nuclear 1, peak 0.5, rise 150 / fall 200 ms, top 2, declination 3,
+reset 0.6, final 3, continuation 3, question 6, effort, no initial rise or microprosody) 2.678. Whisper minimal pairs: 69.1% -> 69.1% (p = 1; fricatives +1, nasals +3, liquids +1, manner -2, voicing-
 initial -2, place -1 words); singing (`sing` ignores `prosody`, its strings are byte-identical): 61.2% -> 61.2%. The
 other Kokoro voice, am_michael (nothing fitted to it; proxy): r 0.28 -> 0.65, detrended 0.24 -> 0.53.
 

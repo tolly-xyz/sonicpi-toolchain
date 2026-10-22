@@ -33,7 +33,7 @@
 //     obstruents (B D G V DH Z ZH JH, stops' flap) are `dip` st lower.
 //   - effort: true moves speak's effort/tilt accent (accentDelta) from every primary stress to the accented
 //     syllables only. Off: spectral balance marks lexical stress, accented or not (Sluijter & van Heuven 1996), and
-//     fidelity ties (2.979 / 2.981 on the train split).
+//     fidelity ties (2.830 / 2.832).
 // Fitted (prosodyfit.py fit, a proxy of fidelity's F0 metrics read off the schedule): the accents, baseline, final
 // lowering and microprosody on the Harvard corpus's train split (80 sentences; microOffset not: Kokoro's vowels end
 // lower before voiceless obstruents, not higher); continuation and reset on the
@@ -43,8 +43,9 @@
 // rendered median F0 is the spec's pitch (fidelity median_st ~0; the F0 metrics cannot see it). Except `final`:
 // fitted 3.4 (fidelity 2.889), it made Whisper hear final voiceless stops as voiced in the minimal pairs ("bet" as
 // "bed", "lock" as "log", "sip" as "sib": a low F0 at the vowel's end cues a voiced coda, Castleman & Diehl 1996):
-// 69.1% -> 61.9%, McNemar p = 0.052; microOffset 2 won back half (64.7%), final 0 all of it (69.1%, 10 vs 10
-// discordant) at fidelity 2.832. The declarative still falls (declination, the nuclear accent's fall).
+// 69.1% -> 61.9%, McNemar p = 0.052; microOffset 2 won back half (64.7%), as did sparing vowels closed by a
+// voiceless obstruent (65.5%), final 0 all of it (69.1%, 10 vs 10 discordant) at fidelity 2.832. The declarative
+// still falls (declination, the nuclear accent's fall).
 // Rendering: klattsch moves F0 per phoneme (each phoneme's first event takes it to the `b` value; a vowel with a
 // pitch delta "(+x)" then glides to b + x by ~75-85% of it), so the contour is sampled there: a `b` directive
 // before each phoneme token, and on vowels a transient delta to the value near the vowel's end. The timing and
