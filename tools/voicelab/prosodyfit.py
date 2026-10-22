@@ -2,7 +2,7 @@
 """Fit klattsing's "prosody" option (pitch accents, downstep, declination, phrase-final lowering) to Kokoro's F0.
 
 usage (/home/user/tts/venv/bin/python):
-  prosodyfit.py eval CONFIG_JSON [--split train|held|all]          proxy F0 metrics of a speak config
+  prosodyfit.py measure CONFIG_JSON [--split train|held|all]          proxy F0 metrics of a speak config
   prosodyfit.py fit BASE_JSON [--evals N] [--start PROSODY_JSON] [--free k1,k2,...] [--out FILE]
   prosodyfit.py check CONFIG_JSON                                   fidelity.py --audio prosody on train and held-out
 
@@ -25,10 +25,15 @@ import climb as C     # noqa: E402
 
 ROOT = F.ROOT
 HELPER = os.path.join(HERE, "prosody_f0.mjs")
-# fitted parameters: (lower, upper, initial step)
-SPACE = {"accent": (0, 10, 1.0), "downstep": (0.3, 1.2, 0.1), "nuclear": (0, 2, 0.2), "peak": (-0.5, 1.5, 0.15),
-         "rise": (40, 500, 40), "fall": (40, 600, 50), "top": (-4, 8, 1.0), "declination": (0, 10, 1.0),
-         "final": (-4, 10, 1.0)}
+# fittable parameters: (lower, upper, initial step). `top` only shifts the whole contour, which the F0 metrics
+# (semitones re each side's median) cannot see: it is set from median_st (`check`), not fitted, so it is left out
+# of the default free set (FREE). continuation, question and reset have nothing to fit on (one comma, no question
+# in the corpus).
+SPACE = {"accent": (0, 10, 1.0), "downstep": (0.3, 1.2, 0.1), "nuclear": (0, 3, 0.2), "peak": (-0.6, 1.5, 0.15),
+         "rise": (10, 500, 40), "fall": (40, 800, 50), "declination": (0, 10, 1.0), "decay": (-4, 10, 1.0),
+         "decayMs": (50, 3000, 150), "final": (-4, 10, 1.0), "finalFrom": (0, 1, 0.3), "micro": (-2, 6, 0.5),
+         "microMs": (10, 300, 30), "dip": (-2, 4, 0.5), "top": (-4, 8, 1.0)}
+FREE = [k for k in SPACE if k != "top"]
 
 class Worker:
     def __init__(self, n=2):
@@ -108,7 +113,7 @@ def splits(voice):
     tr, he = C.split(voice)
     return {"train": tr, "held": he, "all": F.corpus(voice)}
 
-def cmd_eval(a):
+def cmd_measure(a):
     cfg = json.loads(open(a.config).read() if os.path.exists(a.config) else a.config)
     S = splits(a.voice)
     for name in (a.split.split(",")):
@@ -120,7 +125,7 @@ def cmd_fit(a):
     start = json.loads(a.start) if a.start else {}
     pros0 = base.get("prosody") if isinstance(base.get("prosody"), dict) else {}
     S = splits(a.voice); train = S["train"]
-    free = a.free.split(",") if a.free else list(SPACE)
+    free = a.free.split(",") if a.free else FREE
     js = ("const p = await import('./klattsing/src/prosody.js'); console.log(JSON.stringify(p.PROSODY))")
     D = json.loads(subprocess.run(["node", "--input-type=module", "-e", js], capture_output=True, text=True, cwd=ROOT, check=True).stdout)
     x0 = {**D, **pros0, **start}
@@ -169,12 +174,12 @@ def main(argv):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--voice", default="am_onyx")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    e = sub.add_parser("eval"); e.add_argument("config"); e.add_argument("--split", default="train,held")
+    e = sub.add_parser("measure"); e.add_argument("config"); e.add_argument("--split", default="train,held")
     f = sub.add_parser("fit"); f.add_argument("base"); f.add_argument("--evals", type=int, default=400)
     f.add_argument("--start"); f.add_argument("--free"); f.add_argument("--out"); f.add_argument("--restarts", type=int, default=2)
     c = sub.add_parser("check"); c.add_argument("config")
     a = ap.parse_args(argv)
-    {"eval": cmd_eval, "fit": cmd_fit, "check": cmd_check}[a.cmd](a)
+    {"measure": cmd_measure, "fit": cmd_fit, "check": cmd_check}[a.cmd](a)
 
 if __name__ == "__main__":
     main(sys.argv[1:])

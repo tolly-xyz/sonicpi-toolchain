@@ -141,12 +141,17 @@ export function speak(o, meta) {
   const I = P ? { accent: 0, finalFall: 0, declination: 0, questionRise: 0 } : merged(INTONATION, o.intonation);
   const [accUp, accDown] = accentDirs(merged(ACCENT_DELTA.speak, o.accentDelta));
   const breath = o.aspiration === 'breath', [hUp, hDown] = breathDirs(o, voiceOf(o));
-  let out = `${prefix(o)} b${f1(base)} `, t = 0, lastB = f1(base);   // t: ms since the sentence began (declination)
-  // prosody: each phoneme token's place in out ("r<ms> CODE") and time (T: ms since the utterance began)
+  // (with prosody every phoneme gets its own b, so the sentence's opening one is left out)
+  let out = P ? `${prefix(o)} ` : `${prefix(o)} b${f1(base)} `, t = 0, lastB = f1(base);   // t: ms since the sentence began (declination)
+  // prosody: each phoneme token's place in out ("r<ms> CODE"), time (T: ms since the utterance began), lexical
+  // phoneme, whether it is an aspiration, and whether a pause comes before it (gap)
   const toks = P ? [] : null;
-  let T = 0;
+  let T = 0, gap = true;
   const ph = (ms, p, info, suffix = '', kind = 'other') => {
-    if (toks) { toks.push({ at: out.length, len: `r${f1(ms)} ${p}`.length, start: T, ms, kind, word: info.word, syl: info.syl }); T += ms; }
+    if (toks) {
+      toks.push({ at: out.length, len: `r${f1(ms)} ${p}`.length, start: T, ms, kind, p: info.p ?? p, code: p, asp: !!info.asp, gap, word: info.word, syl: info.syl });
+      T += ms; gap = false;
+    }
     out += `r${f1(ms)} ${p}${suffix} `; m?.push(info); t += ms;
   };
   ws.forEach((w, wi) => {
@@ -172,7 +177,7 @@ export function speak(o, meta) {
       s.coda.forEach((p, i) => ph(s.codaMs[i] * rate, ...consonant(s, 'codaCode', i, p, at)));
       if (final && w.punct) {
         out += `p${Math.round(pauseOf(o, w.punct) * rate)} `;
-        T += Math.round(pauseOf(o, w.punct) * rate);
+        T += Math.round(pauseOf(o, w.punct) * rate); gap = true;
         t = /[.!?]/.test(w.punct) ? 0 : t + pauseOf(o, w.punct) * rate;
       }
     });
