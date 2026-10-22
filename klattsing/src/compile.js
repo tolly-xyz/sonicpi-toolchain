@@ -14,6 +14,7 @@ import { nasalOptions, nasalDirectives } from './nasals.js';
 import { stopOptions, planStops, afterSilence, beforeSilence } from './stops.js';
 import { prosodyOptions, accentPlan, intonate } from './prosody.js';
 import { fricOptions, fricDirectives } from './fricatives.js';
+import { reductionOptions, reduceWords } from './reductions.js';
 
 const DIPH = { AY: ['AA', 'IY'], EY: ['EH', 'IY'], OW: ['AO', 'UW'], AW: ['AA', 'UW'], OY: ['AO', 'IY'] };
 const NOTE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -69,10 +70,23 @@ export function durTable(phoneDur) {
   return { ...DUR, ...phoneDur };
 }
 
+// o.reductions (reductions.js): weak forms, heteronyms by context, ...: the parsed words with those forms, cached
+// per parse (the parsed array) and option value
+const reducedCache = new WeakMap();
+function reduced(ws, x) {
+  if (!x) return ws;
+  let m = reducedCache.get(ws);
+  if (!m) reducedCache.set(ws, (m = new Map()));
+  const key = JSON.stringify(x);
+  let r = m.get(key);
+  if (!r) { r = reduceWords(ws, reductionOptions(x)); if (m.size >= 64) m.clear(); m.set(key, r); }
+  return r;
+}
+
 // o.functionWords: true (FUNCTION_WORDS) or a list of words: one-syllable ones get stress 0 before the rules
 export function words(text, rules, version, o = {}) {
   const fw = o.functionWords && (o.functionWords === true ? FUNCTION_WORDS : new Set(o.functionWords.map((x) => x.toLowerCase())));
-  const ws = parse(text).map((w) => {
+  const ws = reduced(parse(text), o.reductions).map((w) => {
     const reduce = fw && w.syllables.length === 1 && fw.has(w.word);
     return { ...w, syllables: w.syllables.map((s) => (reduce ? { ...s, stress: 0 } : { ...s })) };
   });
