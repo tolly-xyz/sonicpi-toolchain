@@ -94,10 +94,11 @@ export function lociOf(o) {
   return out;
 }
 
-// the klattsch bank fields that carry it: {CODE: fields to merge into the base bank's entry}
-export function coartFields(o, has) {
+// the klattsch bank fields that carry it: {CODE: fields to merge into the base bank's entry}; extraVowels: vowel
+// codes beyond the lexical 15 the bank has ("vowels": AX, IX, AXR, <vowel>QR)
+export function coartFields(o, has, extraVowels = []) {
   const fields = {};
-  for (const v of VOWELS) if (has(v)) fields[v] = { vowel: true };
+  for (const v of [...VOWELS, ...extraVowels]) if (has(v)) fields[v] = { vowel: true };
   const smooth = new Set(Object.values(LOCI).filter((x) => x.smooth).flatMap((x) => x.phones.split(' ')));
   for (const [p, locus] of Object.entries(lociOf(o))) if (locus && has(p)) fields[p] = { locus, ...(smooth.has(p) ? { smooth: true } : {}) };
   if (o.burst) for (const p of VELAR_STOPS) if (fields[p]) fields[p].locusBurst = true;

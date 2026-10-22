@@ -52,6 +52,11 @@ const DEFAULTS = Object.freeze({
   nasalized: Object.freeze({ FNP: 250, BNP: 100, FNZ: 250, BNZ: 100, AN: 0.4 }),
 });
 const NASAL_FREQ = /^(F|B)N[PZ]2?$/;   // nasal pole/zero frequencies and bandwidths: they follow the formant scale
+// (sonicpi-toolchain patch) a gliding entry's glide window [a, b] (shares of its slot), or null (the usual 0.25-0.75)
+const glideWindow = (p) => {
+  const w = p.glide;
+  return Array.isArray(w) && w.length === 2 && w.every(Number.isFinite) && w[0] >= 0 && w[0] < w[1] && w[1] <= 1 ? w : null;
+};
 // (sonicpi-toolchain patch) [FRIC=x]: the frication path's frequencies and bandwidths (formant scale), amplitudes
 const FRIC_FREQ = /^[FB]F[1-3]$/;
 const FRIC_AMPS = ['AF1', 'AF2', 'AF3', 'AB'];
@@ -279,6 +284,8 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
     if (!nasalMode()) for (const k of NASAL_PARAMS) delete out[k];
     // (sonicpi-toolchain patch) a bank's frication {...} drives fricOnly events under [FRIC] (fricationOut), not targets
     if ('frication' in out) delete out.frication;
+    // (sonicpi-toolchain patch) a gliding entry's glide window times its events (renderPhonemeEvents), not a target
+    if ('glide' in out) delete out.glide;
     return out;
   };
 
@@ -553,8 +560,19 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
       emit(scaled(p, startF0), nasalTrans(t, p, Math.min(20, onset), onset));
       formantsIn(t, p, Math.min(20, onset), slotMs);
       timeMs += onset;
-      emit(scaled(p, endF0, p.glideTo), glide);
-      if (extras.CO !== undefined) moveFormants(scaleF(rawF(p, true)), glide, timeMs);
+      // (sonicpi-toolchain patch) a bank entry's glide: [a, b] (shares of the slot, 0 <= a < b <= 1) times the formant
+      // glide from its onset targets to glideTo (default 0.25-0.75): under [CO] the formant event alone (the other
+      // parameters and F0 keep 0.25-0.75), without it the whole second event (F0 too)
+      const w = glideWindow(p);
+      if (w && extras.CO === undefined) {
+        timeMs = slotStart + slotMs * w[0];
+        emit(scaled(p, endF0, p.glideTo), slotMs * (w[1] - w[0]));
+        timeMs = slotStart + onset;
+      } else emit(scaled(p, endF0, p.glideTo), glide);
+      if (extras.CO !== undefined) {
+        if (w) moveFormants(scaleF(rawF(p, true)), slotMs * (w[1] - w[0]), slotStart + slotMs * w[0]);
+        else moveFormants(scaleF(rawF(p, true)), glide, timeMs);
+      }
       timeMs += glide + offset;
       formantsOut(t, p, slotStart, slotMs);
       return slotMs;

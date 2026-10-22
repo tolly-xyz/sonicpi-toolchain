@@ -11,6 +11,13 @@ export const LIQUIDS = new Set('L R'.split(' '));
 export const GLIDES = new Set('W Y'.split(' '));
 export const VOICED = new Set('B D G V DH Z ZH JH M N NG L R W Y'.split(' ').concat([...VOWELS]));
 export const SONORANT = (p) => VOWELS.has(p) || NASALS.has(p) || LIQUIDS.has(p) || GLIDES.has(p);
+// klattsch vowel codes beyond the lexical 15 ("vowels", src/vowels.js): reduced AX IX AXR (unstressed AH IH ER) and
+// r-colored <vowel>QR (a vowel before R in its syllable); vowelOf(code): the lexical vowel a code stands for, or null
+export const REDUCED_CODES = { AX: 'AH', IX: 'IH', AXR: 'ER' };
+export const RHOTIC_SUFFIX = 'QR';
+export const vowelOf = (c) => (VOWELS.has(c) ? c : REDUCED_CODES[c]
+  ?? (c.endsWith(RHOTIC_SUFFIX) && VOWELS.has(c.slice(0, -RHOTIC_SUFFIX.length)) ? c.slice(0, -RHOTIC_SUFFIX.length) : null));
+export const isVowelCode = (c) => vowelOf(c) !== null;
 
 export const DUR = {          // [inherent, minimum]
   AA: [240, 100], AE: [230, 80], AH: [140, 60], AO: [240, 100], AW: [260, 100], AY: [250, 150],
