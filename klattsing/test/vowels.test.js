@@ -45,8 +45,11 @@ test('option: a generated bank <base>--vw<hash> (after bankPatch, before coartic
     const t = VOWEL_TARGETS[c];
     if (t) {
       for (const f of ['F1', 'F2', 'F3']) { assert.equal(P[c][f], t[f], `${c}.${f}`); assert.equal(P[c].glideTo[f], t.glideTo[f], `${c}.glideTo.${f}`); }
+      for (const f of ['BW1', 'BW2', 'BW3', 'A1', 'A2', 'A3']) if (f in t) assert.equal(P[c][f], t[f], `${c}.${f}`);
       assert.deepEqual(P[c].glide, t.glide, `${c}.glide`);
     }
+    // a complete klattsch entry
+    for (const f of ['voicing', 'F1', 'F2', 'F3', 'BW1', 'BW2', 'BW3', 'A1', 'A2', 'A3']) assert.ok(Number.isFinite(P[c][f]), `${c}.${f}`);
   }
   // every vowel has an onset and an offset target (inherent spectral change), not only the diphthongs
   for (const v of VOWELS) assert.ok(['F1', 'F2'].some((f) => P[v][f] !== P[v].glideTo[f]), v);
@@ -67,14 +70,15 @@ test('option: a generated bank <base>--vw<hash> (after bankPatch, before coartic
 test('fields: targets, reduced, weak, rhotic and phonemes switch their parts; bad values throw', () => {
   const P = (v) => banks.get(bankName({ vowels: v })).phonemes;
   const k = banks.get('klatt1980-en').phonemes;
-  assert.equal(P({ targets: false }).AA, undefined, 'targets: false leaves the 15 to the base bank');
+  assert.deepEqual(P({ targets: false }).AA, k.AA, 'targets: false leaves the 15 to the base bank');
   assert.ok(P({ targets: false }).AX && P({ targets: false }).AOQR);
   assert.equal(P({ reduced: false, weak: false }).AX, undefined);
   assert.equal(P({ rhotic: false }).AOQR, undefined);
   assert.equal(P({ glide: false }).AY.glide, undefined);
-  const ph = P({ phonemes: { IY: { F2: 2500, glideTo: { F3: 3100 }, glide: [0.1, 0.6] }, AX: { BW1: null } } });
+  const ph = P({ phonemes: { IY: { F2: 2500, glideTo: { F3: 3100 }, glide: [0.1, 0.6] }, AX: { BW1: null, glideTo: null }, AY: { glide: null } } });
   assert.equal(ph.IY.F2, 2500); assert.equal(ph.IY.glideTo.F3, 3100); assert.deepEqual(ph.IY.glide, [0.1, 0.6]);
-  assert.ok(!('BW1' in ph.AX));
+  // null: the base bank's value (AX: AH's), or none
+  assert.equal(ph.AX.BW1, k.AH.BW1); assert.equal(ph.AX.glideTo, undefined); assert.equal(ph.AY.glide, undefined);
   assert.equal(k.AA.glideTo, undefined, 'the base bank is untouched');
   for (const bad of [{ targets: 1 }, { foo: true }, { weak: 'to' }, { phonemes: { XX: {} } }, { phonemes: { AA: { glide: [0.8, 0.2] } } },
     { phonemes: { AA: { F9: 1 } } }, { singGlideMs: -1 }, 'yes']) {
