@@ -102,6 +102,8 @@ function prefix(o) {
   return [bank ? `[bank=${bank}]` : '', o.transition ? `[TR=${o.transition}]` : '', co ? coartDirectives(co) : '', glottalDirs(o.glottal),
     nasalDirectives(nasalOptions(o)), voiceOf(o)].filter(Boolean).join(' ');
 }
+// the directives every string of spec o starts with (bank chain, TR, coarticulation, glottal, nasals, voice)
+export const prefixOf = (o) => prefix(o.mode === 'sing' ? { voice: 'sing', ...o } : o);
 const asp = (s, o) => (o.aspiration !== false && s.aspMs ? `r${f1(s.aspMs)} HH ` : '');
 // "stops" (stops.js): a consonant's context-dependent entry (onsetCode / codaCode / aspCode), named in the
 // timeline by its lexical phoneme; fix: sing's correction for a rest next to it
