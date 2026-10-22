@@ -90,12 +90,12 @@ def klattsing_phones(tl, durs):
                     "stress": d.get("stress"), "gap_after": i in pau_after, "gap_before": (i - 1) in pau_after or i == 0})
     return out
 
-def analyse(rec, tl, dur, y, shift, KT):
+def analyse(rec, tl, dur, y, shift, KT, tracks=True):
     """One sentence: klattsing's timeline, durationsOf result and 24 kHz audio y against Kokoro's record -> the vowel
     rows, each with its formant points in both and fidelity's per-segment mcd / mcd_cmn (the cepstral mean over all the
     sentence's aligned segments subtracted on each side, as fidelity.compare_audio does)."""
     kph = klattsing_phones(tl, dur); Kph = F.kokoro_phones(rec, shift)
-    ktr = formants(y)
+    ktr = formants(y) if tracks else None
     pairs = [(a, b) for a, b in F.align([q["p"] for q in kph], [q["p"] for q in Kph]) if not Kph[b]["last"]]
     keep = [(a, b) for a, b in pairs if kph[a]["end"] > kph[a]["start"] and Kph[b]["end"] > Kph[b]["start"]]
     tK, CK = F.kokoro_features(rec); tk, Ck = F.cepstra(y)
@@ -119,7 +119,7 @@ def analyse(rec, tl, dur, y, shift, KT):
         out.append({"p": x["p"], "code": x["code"], "kp": X["p"], "stress": x["stress"], "prev": prev, "next": nxt["p"] if nxt else None,
                     "r": r_after, "word": rec["words"][x["word"]] if x["word"] < len(rec["words"]) else "?", "utt": rec["id"],
                     "ms": (x["end"] - x["start"]) * 1000, "msK": X["ms"], "mcd": m[0], "mcd_cmn": m[1],
-                    "k": track_points(ktr, x["start"], x["end"]).tolist(), "K": track_points(KT[rec["id"]], X["start"], X["end"]).tolist()})
+                    **({"k": track_points(ktr, x["start"], x["end"]).tolist(), "K": track_points(KT[rec["id"]], X["start"], X["end"]).tolist()} if tracks else {})})
     return out
 
 def run(config, limit=None, voice="am_onyx", jobs=2):

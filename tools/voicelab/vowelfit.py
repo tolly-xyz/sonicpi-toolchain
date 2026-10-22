@@ -98,31 +98,35 @@ def update(e, d, n, max_step, fields, ridge=0.1):
         out["glideTo"][f] = float(np.clip(e["glideTo"][f] + c[1], lo, hi))
     return out
 
+EXTRA = ("BW1", "BW2", "BW3", "A1", "A2", "A3")
 def rounded(entries):
     out = {}
     for c, e in entries.items():
         x = {f: int(round(e[f])) for f in FS}
         x["glideTo"] = {f: int(round(e["glideTo"][f])) for f in FS}
         if e.get("glide"): x["glide"] = [round(float(v), 2) for v in e["glide"]]
+        for f in EXTRA:
+            if f in e: x[f] = round(float(e[f]), 1 if f.startswith("BW") else 3)
         out[c] = x
     return out
 
 def config_with(config, entries, vowels=None):
     v = dict(vowels or (config.get("vowels") if isinstance(config.get("vowels"), dict) else {}) or {})
-    v["phonemes"] = {**v.get("phonemes", {}), **{c: {**{f: e[f] for f in FS}, "glideTo": e["glideTo"], "glide": e.get("glide")} for c, e in rounded(entries).items()}}
+    v["phonemes"] = {**v.get("phonemes", {}), **{c: {**{f: e[f] for f in FS + EXTRA if f in e}, "glideTo": e["glideTo"], "glide": e.get("glide")}
+                                                for c, e in rounded(entries).items()}}
     return {**config, "vowels": v}
 
-def measure(config, jobs=2):
-    """one render: fidelity's score (as fidelity.evaluate, audio) and vowelscope's rows."""
-    recs = F.corpus("am_onyx"); shift = F.kokoro_shift("am_onyx")
-    KT = VS.kokoro_tracks("am_onyx", recs)
+def measure(config, jobs=2, recs=None, tracks=True):
+    """one render: fidelity's score (as fidelity.evaluate, audio; relative to {} on the same records) and vowelscope's rows."""
+    recs = recs or F.corpus("am_onyx"); shift = F.kokoro_shift("am_onyx")
+    KT = VS.kokoro_tracks("am_onyx", F.corpus("am_onyx"))
     dur, per_utt = F.duration_metrics(config, recs, "stop")
     for r in recs: F.kokoro_features(r)
     durs = F._worker.request([F.spec_of(config, r) for r in recs])
     def then(i, tl, y):
         ft, ff = F.f0_track(y)
         return (F.compare_audio(F.klattsing_phones_tl(tl, "stop"), y, ft, ff, recs[i], shift),
-                VS.analyse(recs[i], tl, durs[i], y, shift, KT))
+                VS.analyse(recs[i], tl, durs[i], y, shift, KT, tracks))
     out = F.render(config, recs, jobs, then)
     spectral, prosody, pu = F.aggregate_audio([a for a, _ in out]); per_utt.update(pu)
     res = {"duration": dur, "spectral": spectral, "prosody": prosody}
@@ -142,6 +146,77 @@ def per_code(rows):
         if usable(r): g.setdefault(r["code"], []).append(r)
     return g
 
+# ---------------------------------------------------------------- stage 2: the vowels' MCD against Kokoro's
+# Parallel coordinate descent: one parameter of every code moved by +delta (one render) and by -delta (another);
+# each code keeps the best of -delta / 0 / +delta by its own vowels' summed mcd + mcd_cmn (a code's entry mostly
+# shapes its own vowels; the full score checks the joint move). Parameters: onset F1-F3, offset gF1-gF3 (glideTo),
+# the glide window ga / gb, and (multiplicative) A2, A3, BW1, BW2, BW3.
+DELTA = {"F1": 30, "F2": 80, "F3": 120, "gF1": 30, "gF2": 80, "gF3": 120, "ga": 0.1, "gb": 0.1,
+         "A2": 0.15, "A3": 0.15, "BW1": 0.2, "BW2": 0.2, "BW3": 0.2}
+def base_entry(code):
+    return klatt_bank()[lex(code)]
+
+def moved(e, code, p, dx):
+    e = json.loads(json.dumps(e))
+    if p in FS:
+        lo, hi = LIMITS[p]; e[p] = float(np.clip(e[p] + dx, lo, hi))
+    elif p.startswith("gF"):
+        f = p[1:]; lo, hi = LIMITS[f]; e["glideTo"][f] = float(np.clip(e["glideTo"][f] + dx, lo, hi))
+    elif p in ("ga", "gb"):
+        a, b = e.get("glide") or [0.25, 0.75]
+        if p == "ga": a = float(np.clip(a + dx, 0, b - 0.15))
+        else: b = float(np.clip(b + dx, a + 0.15, 1))
+        e["glide"] = [round(a, 3), round(b, 3)]
+    else:
+        v = e.get(p, base_entry(code)[p]); e[p] = float(v * (1 + dx))
+    return e
+
+def probe(cfg, entries, vopt, recs, jobs=2):
+    """per code: (sum of mcd + mcd_cmn over its usable vowels, n), and the overall mean mcd / mcd_cmn of all segments"""
+    res, rows = measure(config_with(cfg, entries, vopt), jobs, recs, tracks=False)
+    J = {}
+    for r in rows:
+        if not usable(r) or not np.isfinite(r["mcd"]): continue
+        j = J.setdefault(r["code"], [0.0, 0]); j[0] += r["mcd"] + r["mcd_cmn"]; j[1] += 1
+    return J, res
+
+def mcd_stage(cfg, entries, vopt, recs, held, params, sweeps, movable, scale=1.0, log=None, jobs=2):
+    J0, res0 = probe(cfg, entries, vopt, recs, jobs)
+    print(f"mcd stage start: train score {res0['score']:.4f} spec {res0['scores']['spec']:.3f} vowels {res0['vowel'][0]:.4f}/{res0['vowel'][1]:.4f}", flush=True)
+    best_score, best = res0["score"], json.loads(json.dumps(entries))
+    for sw in range(sweeps):
+        for p in params:
+            d = DELTA[p] * scale
+            codes = [c for c in entries if c in J0 and (movable is None or c in movable)]
+            Jp, _ = probe(cfg, {c: (moved(e, c, p, d) if c in codes else e) for c, e in entries.items()}, vopt, recs, jobs)
+            Jm, _ = probe(cfg, {c: (moved(e, c, p, -d) if c in codes else e) for c, e in entries.items()}, vopt, recs, jobs)
+            moves = {}
+            for c in codes:
+                f0, fp, fm = J0[c][0], Jp.get(c, [np.inf])[0], Jm.get(c, [np.inf])[0]
+                curv = fp - 2 * f0 + fm
+                if curv > 1e-9: x = float(np.clip(0.5 * (fm - fp) / curv, -1, 1))       # the parabola's minimum
+                else: x = 1.0 if fp < fm else -1.0
+                if min(fp, fm) >= f0 and curv > 1e-9 and abs(x) < 0.25: continue
+                if min(fp, fm) >= f0 and not curv > 1e-9: continue
+                moves[c] = x * d
+            trial = {c: (moved(e, c, p, moves[c]) if c in moves else e) for c, e in entries.items()}
+            Jt, rest = probe(cfg, trial, vopt, recs, jobs)
+            gain = sum(J0[c][0] - Jt.get(c, J0[c])[0] for c in J0) / max(1, sum(v[1] for v in J0.values()))
+            line = (f"sweep {sw} {p:4s} d {d:g}: {len(moves)} codes moved, train score {res0['score']:.4f} -> {rest['score']:.4f} "
+                    f"(spec {res0['scores']['spec']:.3f} -> {rest['scores']['spec']:.3f}, pros {res0['scores']['pros']:.3f} -> {rest['scores']['pros']:.3f}), "
+                    f"vowels {rest['vowel'][0]:.4f}/{rest['vowel'][1]:.4f}, per-vowel gain {gain:+.4f}  "
+                    + " ".join(f"{c}{moves[c]:+.3g}" for c in sorted(moves)))
+            if rest["score"] >= res0["score"] - 0.002:
+                entries, J0, res0 = trial, Jt, rest
+                if rest["score"] > best_score: best_score, best = rest["score"], json.loads(json.dumps(entries))
+            else: line += "  (rejected)"
+            print(line, flush=True)
+            if log: json.dump(rounded(entries), open(log, "w"), indent=1)
+    if held:
+        rh, _ = measure(config_with(cfg, best, vopt), jobs, held, tracks=False)
+        print(f"held-out: score {rh['score']:.4f} {json.dumps({k: round(v, 3) for k, v in rh['scores'].items()})} vowels {rh['vowel'][0]:.4f}/{rh['vowel'][1]:.4f}", flush=True)
+    return best
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("config"); ap.add_argument("--rounds", type=int, default=4)
@@ -150,6 +225,10 @@ def main():
     ap.add_argument("--no-windows", action="store_true"); ap.add_argument("--max-step", type=float, default=250)
     ap.add_argument("--fields", default="F1,F2,F3"); ap.add_argument("--vowels", help="vowels option fields (JSON) besides phonemes")
     ap.add_argument("--min-n", type=int, default=3)
+    ap.add_argument("--mcd", type=int, default=0, help="then this many sweeps of the MCD stage (on the train split)")
+    ap.add_argument("--params", default="F1,F2,F3,gF1,gF2,gF3", help="MCD stage parameters (" + ",".join(DELTA) + ")")
+    ap.add_argument("--scale", type=float, default=1.0, help="MCD stage: deltas times this")
+    ap.add_argument("--all", action="store_true", help="MCD stage on all 100 sentences (default: climb.py's train split, held-out reported)")
     a = ap.parse_args()
     cfg = json.load(open(a.config)) if os.path.exists(a.config) else json.loads(a.config)
     vopt = json.loads(a.vowels) if a.vowels else {}
@@ -160,7 +239,7 @@ def main():
     movable = set(a.codes.split(",")) if a.codes else None
     fields = set(a.fields.split(","))
     hist = []
-    for rnd in range(a.rounds + 1):
+    for rnd in range(a.rounds + 1 if a.rounds >= 0 else 0):
         res, rows = measure(config_with(cfg, entries, vopt))
         G = per_code(rows)
         print(f"round {rnd}: score {res['score']:.4f} {json.dumps({k: round(v, 3) for k, v in res['scores'].items()})} "
@@ -181,9 +260,17 @@ def main():
             if rnd < a.rounds and len(rs) >= a.min_n and (movable is None or c in movable):
                 entries[c] = update(entries[c], d, len(rs), a.max_step, fields)
         if a.out: json.dump(rounded(entries), open(a.out, "w"), indent=1)
-    best = max(hist, key=lambda x: x[0])
-    print(f"best round score {best[0]:.4f}")
-    if a.out: json.dump(rounded(best[1]), open(a.out.replace(".json", ".best.json"), "w"), indent=1)
+    if a.rounds >= 0 and hist:
+        best = max(hist, key=lambda x: x[0])
+        print(f"best round score {best[0]:.4f}")
+        if a.out: json.dump(rounded(best[1]), open(a.out.replace(".json", ".best.json"), "w"), indent=1)
+        entries = best[1]
+    if a.mcd:
+        import climb
+        train, held = (F.corpus("am_onyx"), None) if a.all else climb.split()
+        entries = mcd_stage(cfg, entries, vopt, train, held, a.params.split(","), a.mcd, movable, a.scale,
+                            a.out.replace(".json", ".mcd.json") if a.out else None)
+        if a.out: json.dump(rounded(entries), open(a.out.replace(".json", ".mcd.best.json"), "w"), indent=1)
 
 if __name__ == "__main__":
     main()

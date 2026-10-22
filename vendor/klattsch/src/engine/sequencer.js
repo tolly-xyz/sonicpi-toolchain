@@ -562,8 +562,14 @@ function compileSection(tokens, opts = {}, source = '', sectionSrcStart = 0) {
       timeMs += onset;
       // (sonicpi-toolchain patch) a bank entry's glide: [a, b] (shares of the slot, 0 <= a < b <= 1) times the formant
       // glide from its onset targets to glideTo (default 0.25-0.75): under [CO] the formant event alone (the other
-      // parameters and F0 keep 0.25-0.75), without it the whole second event (F0 too)
-      const w = glideWindow(p);
+      // parameters and F0 keep 0.25-0.75), without it the whole second event (F0 too). [GLMS=ms]: a glide longer than
+      // ms starts later, ending where it would (a sung vowel holds its first target and glides late)
+      let w = glideWindow(p);
+      if (extras.GLMS !== undefined) {
+        const [a, b] = w ?? [0.25, 0.75], g = Math.max(0, extras.GLMS);
+        w = slotMs * (b - a) > g ? [Math.max(a, b - g / slotMs), b] : [a, b];
+        if (!(w[0] < w[1])) w = [b - 0.001, b];
+      }
       if (w && extras.CO === undefined) {
         timeMs = slotStart + slotMs * w[0];
         emit(scaled(p, endF0, p.glideTo), slotMs * (w[1] - w[0]));

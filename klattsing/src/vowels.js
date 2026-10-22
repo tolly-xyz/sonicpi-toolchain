@@ -20,6 +20,8 @@
 //   rhotic    a vowel before R in its syllable ("dark", "four", "there", "clear") -> <vowel>QR: r-colored, F3 falling
 //             through the vowel's second half toward R's (Lehiste 1964; Espy-Wilson 1992: the low F3 of American
 //             English /r/ spreads into the vowel before it), /ɔr/ raised toward [o], /ɛr/ /ɪr/ toward [e] [i]
+//   singGlideMs  sung: [GLMS=ms], every vowel glide at most this long, late in the note (150; false: none); a sung
+//             diphthong is then not split into two vowels either
 //   phonemes  fields over any generated entry (F1-F3, BW1-BW3, A1-A3, glideTo {F1, F2, F3}, glide [a, b]; null removes)
 // Without the option nothing here runs and the strings are unchanged.
 import { VOWELS, REDUCED_CODES, RHOTIC_SUFFIX, vowelOf } from './phones.js';
@@ -30,7 +32,7 @@ export const WEAK_FORMS = ['to', 'was', 'than'];
 export const RHOTIC_VOWELS = 'AA AE AH AO EH IH IY UH UW'.split(' ');
 // a vowel before R without fitted r-colored targets: its own onset, its offset F3 down to this, gliding from this share
 export const RHOTIC_RULE = { F3: 1900, glide: [0.35, 1] };
-export const VOWELS_DEFAULTS = { targets: true, glide: true, reduced: true, weak: true, rhotic: true };
+export const VOWELS_DEFAULTS = { targets: true, glide: true, reduced: true, weak: true, rhotic: true, singGlideMs: 150 };
 const KEYS = [...Object.keys(VOWELS_DEFAULTS), 'phonemes'];
 const FIELDS = ['F1', 'F2', 'F3', 'BW1', 'BW2', 'BW3', 'A1', 'A2', 'A3', 'voicing'];
 const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
@@ -47,6 +49,7 @@ export function vowelOptions(o) {
   if (!isObj(x)) throw new Error(`vowels: true or an object, got ${JSON.stringify(o.vowels)}`);
   for (const k of Object.keys(x)) if (!KEYS.includes(k)) throw new Error(`vowels.${k}: unknown (${KEYS.join(', ')})`);
   for (const k of ['targets', 'glide', 'reduced', 'rhotic']) if (x[k] != null && typeof x[k] !== 'boolean') throw new Error(`vowels.${k}: true or false`);
+  if (x.singGlideMs != null && x.singGlideMs !== false && !(num(x.singGlideMs) && x.singGlideMs >= 0)) throw new Error('vowels.singGlideMs: ms >= 0, or false');
   if (x.weak != null && typeof x.weak !== 'boolean' && !(Array.isArray(x.weak) && x.weak.every((w) => typeof w === 'string'))) {
     throw new Error('vowels.weak: true, false or a list of words');
   }
@@ -106,6 +109,10 @@ export function vowelEntries(resolved, V) {
   }
   return phonemes;
 }
+
+// the directive it adds: sung (sing mode), [GLMS=singGlideMs]: a vowel's glide takes at most that long, ending where its
+// window ends (a held note keeps its first target and glides late, as singers sustain the vowel and move at the end)
+export const vowelDirectives = (V, mode = 'speak') => (V && mode === 'sing' && num(V.singGlideMs) ? `[GLMS=${V.singGlideMs}]` : '');
 
 // per syllable of klattsing's timed words: s.nucleusCode, the code its vowel is rendered with (unset: the vowel itself)
 export function planVowels(ws, V) {

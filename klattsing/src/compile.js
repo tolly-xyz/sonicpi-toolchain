@@ -14,7 +14,7 @@ import { nasalOptions, nasalDirectives } from './nasals.js';
 import { stopOptions, planStops, afterSilence, beforeSilence } from './stops.js';
 import { prosodyOptions, accentPlan, intonate } from './prosody.js';
 import { fricOptions, fricDirectives } from './fricatives.js';
-import { vowelOptions, planVowels } from './vowels.js';
+import { vowelOptions, planVowels, vowelDirectives } from './vowels.js';
 
 const DIPH = { AY: ['AA', 'IY'], EY: ['EH', 'IY'], OW: ['AO', 'UW'], AW: ['AA', 'UW'], OY: ['AO', 'IY'] };
 const NOTE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -106,7 +106,7 @@ export function glottalDirs(g) {
 function prefix(o, mode = 'speak') {
   const bank = bankName(o), co = coartOptions(o.coarticulation);
   return [bank ? `[bank=${bank}]` : '', o.transition ? `[TR=${o.transition}]` : '', co ? coartDirectives(co) : '', glottalDirs(o.glottal),
-    nasalDirectives(nasalOptions(o)), fricDirectives(fricOptions(o), mode), voiceOf(o)].filter(Boolean).join(' ');
+    nasalDirectives(nasalOptions(o)), fricDirectives(fricOptions(o), mode), vowelDirectives(vowelOptions(o), mode), voiceOf(o)].filter(Boolean).join(' ');
 }
 // the directives every string of spec o starts with (bank chain, TR, coarticulation, glottal, nasals, fricatives, voice)
 export const prefixOf = (o) => (o.mode === 'sing' ? prefix({ voice: 'sing', ...o }, 'sing') : prefix(o));
@@ -230,7 +230,8 @@ function singPlan(o) {
     if (gate && (typeof len === 'number' ? len : 0) >= 6) gate = Math.max(gate, slot * (o.hold ?? 0.55));
     if (gate && v > gate) { rest = v - gate; v = gate; }
     const to = extra.to !== undefined ? f1(hz(extra.to) - hz(note)) : 0;
-    const parts = DIPH[s.nucleus] && !s.nucleusCode && v > 200 ? [[DIPH[s.nucleus][0], v * 0.8], [DIPH[s.nucleus][1], v * 0.2]] : [[vowelCode(s), v]];
+    // ("vowels": the diphthong's own entry glides late instead, [GLMS])
+    const parts = DIPH[s.nucleus] && !o.vowels && v > 200 ? [[DIPH[s.nucleus][0], v * 0.8], [DIPH[s.nucleus][1], v * 0.2]] : [[vowelCode(s), v]];
     return { s, at: where[i], rests: (restsBefore[i] ?? []).map(restMs), note, ons, coda, a, parts, to, rest };
   });
   return { ws, plan, tail: (restsBefore[syl.length] ?? []).map(restMs) };
