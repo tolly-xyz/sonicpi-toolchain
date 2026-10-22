@@ -26,8 +26,8 @@ per syllable, or `"auto"`), `bpm`, `melody` (auto: `scale`, `long`, `short`, `la
 (formant glide ms, a klattsch patch), `aspiration` (breath after P/T/K, default on), `accent`,
 `dynamics` (loudness by stress, a klattsch patch; off by default), `durations` (`"v0"` for the first
 reconstruction), `rules`; and the opt-in options below (`bankPatch`, `functionWords`, `intonation`,
-`breathLevel`, `breathVoicing`, `pauseMs`, `accentDelta`, `phoneDur`, `coarticulation`, `glottal`, `nasals`).
-`breathLevel`, `breathVoicing`, `pauseMs`, `accentDelta`, `phoneDur`, `coarticulation`, `glottal`, `stops`).
+`breathLevel`, `breathVoicing`, `pauseMs`, `accentDelta`, `phoneDur`, `coarticulation`, `glottal`, `nasals`, `stops`,
+`fricatives`).
 
 ## Options for optimizers (all opt-in; leaving them out gives exactly the strings from before)
 
@@ -46,6 +46,7 @@ reconstruction), `rules`; and the opt-in options below (`bankPatch`, `functionWo
 | `coarticulation` | `true` or `{degree: 2, codaDegree: (degree), curve: "out", formantCurve: (curve), cv: 60, vc: 50, burst: true, hh: true, sonorants: true, loci: {PHONE: {F1/F2/F3: [k, c]}}}` (off) | context-dependent formant trajectories (klattsch's `[CO=x]` patch, `src/coarticulation.js`): a vowel starts at each neighbouring consonant's locus-equation value `F + degree (k F + c - F)` (loci per place fitted to Kokoro; Sussman et al. 1991) and moves to its target over `cv` ms, and moves toward the next consonant's value over its last `vc` ms (`codaDegree`); HH takes the next vowel's formants (`hh`), velar bursts front before front vowels (`burst`), liquids and glides glide (`sonorants`); every transition eased out (`curve`: `out`, `cos`, `linear`). A generated bank `<base>--co<hash>` carries the loci. Timings and the string's phonemes are unchanged. The curve without the loci: klattsch's `[TC=2]` in `voice` (e.g. `"[TC=2] g0.5 t0 h0.05"`) |
 | `glottal` | `true`, or `{rd: 1, rdEffort: 6, tilt: 0, jitter: 0.5, shimmer: 5, aspMod: 1, flutter: 0, aspTilt: 0, noiseTilt: 15}` (fields over these; `null` keeps one) (off) | an LF voice source instead of klattsch's Rosenberg pulse, with Klatt's low-passed noise (a klattsch patch, below): `[GS=1] [RD=..] [RDE=..] [TL=..] [JIT=..] [SHIM=..] [AM=..] [FL=..] [AT=..] [NT=..]` after the bank and `TR`, before the voice |
 | `stops` | `true`, or `{voiceBar: {F1: 180, BW1: 60, A1: 0.07, inMs: 20, fade: 0.35}, burst: 1, burstFit: ["T", "D", "K"], burstLocus: false, burstGain: 1, aspiration: 1, aspirationGain: 1, vot: false, votTotal: false, flap: "words", flapMs: 0, flapLocus: false, unreleased: "consonant", glottalStop: false, closureMs: null, voicingTail: 0.02}` (fields over these) (off) | context-dependent stop consonants (`src/stops.js`, below): a voice bar in B/D/G closures after a voiced sound (a fading voicing tail in P/T/K ones), bursts by place and the following vowel, aspiration through the vowel's formants, flaps, unreleased stops before consonants, as entries of a generated bank `<base>--st<hash>` (after the other generated banks) that a klattsch patch reads (a stop's `closure` and `release: false`). Timings and the timeline's phonemes are unchanged (unless `vot`/`votTotal`/`flapMs`) |
+| `fricatives` | `true`, or `{gain: 1, rise: 5, fall: 0.3, fallTo: 0.3, fallToC: 0.05, in: 10, phonemes: {S: {field: value, frication: {FF1, BF1, AF1, FF2, BF2, AF2, FF3, BF3, AF3, AB, FM, rise, fall, fallTo, fallToC, in}}}}` (fields over these; `null` removes one) (off) | fricatives with their own noise spectra, levels and envelopes (`src/fricatives.js`, below): F V TH DH S Z SH ZH get entries of a generated bank `<base>--fr<hash>` (after coarticulation's, before the stops') whose `frication` drives a klattsch patch, `[FRIC=gain]`: a frication path of its own (noise through three resonators and a bypass, Klatt 1980's parallel branch), fitted to Kokoro. Timings and the timeline's phonemes are unchanged |
 
 ### The LF voice source (`glottal`)
 
@@ -144,6 +145,41 @@ G 5.18 -> 3.80, T 3.98 -> 3.37, K 4.28 -> 3.83, P 3.43 -> 3.42), vowels unchange
 vowel-formant aspiration (+0.003) are not measurable here (fidelity samples a stop's middle 80%; a burst is 5-25 ms
 of it). On the other Kokoro voice, am_michael (nothing was fitted to it): 0.695 -> 0.916.
 
+### Fricatives (`fricatives`)
+
+Without it a klattsch fricative is white noise through the three formants that also carry the voice: one resonance
+each (F at 1.1 kHz, TH 2.6, SH 1.8, S 5.5), the voiced ones' noise tied to their voicing. Against the Kokoro corpus
+(`tools/voicelab/fricscope.py`, BASE = `kokoro-durations` + `mitalk-bursts` + `coarticulation` + `glottal` + `nasals` +
+`stops`; Kokoro / klattsch, dB re the neighbouring vowel) F, TH and SH have their spectral centroids at 1.9 / 2.4 / 2.5
+kHz where Kokoro's are at 7.0 / 6.2 / 3.8 (Jongman, Wayland & Wong 2000, JASA 108: S/Z peaks 4-7 kHz, SH/ZH 2.5-4 kHz,
+F/V/TH/DH flat, diffuse and weak), and V, Z, DH are 5-9 dB too loud (-12 / -11 / -16 vs -4 / -6 / -7: Kokoro's are a
+voice bar with little frication). `fricatives` gives the engine a frication path after Klatt's (1980) parallel branch
+(white noise through FF1-FF3/BF1-BF3 resonators with amplitudes AF1-AF3 and a bypass AB, independent of the voice; a
+klattsch patch, `vendor/klattsch/VENDORED`) and each fricative an entry (`FRICATION` in `src/fricatives.js`):
+
+- **spectra** fitted to Kokoro's median mean spectra (40 mel bands) by `tools/voicelab/fricfit.py` (the path is
+  linear, so its spectrum is known in closed form up to one scale: least squares from several starts, rendered in
+  vowel contexts in the corpus's proportions, three rounds); S peaks at 5 kHz with a 6-11 kHz plateau, SH at 3.4 kHz,
+  F and TH flat with a rise above 7 kHz;
+- **levels** per fricative scaled so that in the corpus itself the level re the vowels is Kokoro's (Kokoro / klattsch:
+  S -15 / -15, SH -14 / -14, F -29 / -29, TH -30 / -32, Z -11 / -14, V -12 / -14; DH -16 / -25: raising it the last
+  9 dB cost fidelity);
+- **mixed voicing**: the voiced ones fully voiced through a low F1 (a voice bar at Kokoro's level) with the frication
+  on top, its noise modulated by the glottal flow under `glottal`; the voiceless ones keep a weak main-path noise
+  through a broad F1 (BW1 600), the low-frequency floor Kokoro's have (without it they are 20-40 dB short below
+  1.5 kHz, and louder frication only widens that gap);
+- **envelopes**: full strength within `rise` ms, dying away over the last `fall` of the slot to `fallTo` before a vowel
+  (`fallToC` before a consonant or pause), as Kokoro's sibilants do; `in` ms for the main path's change into it.
+
+On the Kokoro corpus (`fidelity.py --audio`, BASE as above): score 1.866 -> 2.289 (dur 1.092 -> 1.092, spec 3.918 ->
+5.192, pros 0.588 -> 0.584), MCD 3.45 -> 3.18, mcd_cmn 3.25 -> 3.00; fricatives' MCD 4.08 -> 2.89 (mcd_cmn 3.77 ->
+2.77; S 3.87 -> 2.98, Z 4.53 -> 3.23, SH 4.92 -> 2.55, F 4.91 -> 2.41, V 3.63 -> 2.77, TH 4.90 -> 2.84, DH 3.76 -> 2.73),
+other classes unchanged; fricscope's mean-spectrum distance 3.68 -> 2.40 dB. Along the way: the spectra fitted in
+vowel contexts alone 2.221; then the low-frequency floor (S) 2.280; the corpus levels 2.285; the bank's F1 under
+F/TH/SH's floor 2.289. Refitting the spectra in the corpus itself (`fricfit.py --corpus`) gave 2.156, and a weak
+periodic murmur instead of the noise floor 2.164; a global `gain` of 0.8-1.5 moves the score by < 0.01.
+WHISPER_RESULTS
+
 Presets fitted against Kokoro by `tools/voicelab/climb.py` are spec fragments in `presets/` (merge one into a spec:
 `{"mode": "speak", "text": ..., ...preset}`): `kokoro-durations.json` (`rules`, `phoneDur`, `functionWords`) and
 `kokoro-voice.json` (that plus voice, prosody and `bankPatch` from the voice search).
@@ -198,3 +234,5 @@ large-v3-turbo with Kokoro TTS as the ceiling. Change a rule or the engine, run 
 `fidelity.py` scores a speak config against the Kokoro corpus without Whisper; `stopscope.py CONFIG [--by p,next]`
 compares its stops with Kokoro's part by part (closure voicing, burst spectra and their mel-cepstral distance, VOT),
 and `burstfit.py` fits burst bandwidths and amplitudes to Kokoro's from stopscope's `--rows`.
+`fricscope.py CONFIG [--by p,next]` does the same for fricatives (spectra, spectral moments as Jongman et al. 2000,
+level re the vowels, voicing, envelopes), and `fricfit.py` fits the `fricatives` entries to Kokoro's spectra.

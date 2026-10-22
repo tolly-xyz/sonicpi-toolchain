@@ -162,3 +162,32 @@ test('fricatives: the fitted entries change the sound in speech and song; sing m
   assert.match(s, /\[FRIC=1\] g0\.55/);
   assert.ok(audio({ mode: 'sing', text: 'She sells sea shells', notes: 'auto', fricatives: true }).length > 0);
 });
+
+test('fricatives: the fitted entries (Jongman et al. 2000): S peaks at 4-7 kHz, SH at 2.5-4, F and TH flat and weak; voiceless ones keep a low-frequency floor', () => {
+  const sr = 24000;
+  const o = { fricatives: true, glottal: true };
+  for (const b of banksFor(o)) registerBank(b);
+  const pre = speak({ text: 'a', ...o }).split(' b')[0];
+  const at = (p) => {
+    const c = compileString(`${pre} b100 r160 AA r220 ${p} r160 AA`);
+    const v = c.voices ? c.voices[0] : c;
+    const x = renderToBuffer({ sampleRate: sr, schedule: v.schedule, totalMs: v.totalMs });
+    const a = Math.round(0.22 * sr), b = a + 2048;        // the fricative's middle
+    const band = (lo, hi) => bandDb(x, a, b, lo, hi, sr) - 10 * Math.log10(hi - lo);   // dB per Hz
+    return { lf: band(100, 1000), b1: band(1000, 2500), b2: band(2500, 4000), b3: band(4000, 7000), b4: band(7000, 11000), all: rmsDb(x, a, b) };
+  };
+  const S = at('S'), SH = at('SH'), F = at('F'), TH = at('TH'), Z = at('Z');
+  assert.ok(S.b3 > S.b2 + 3 && S.b3 > S.b1 + 8, `S peaks at 4-7 kHz ${JSON.stringify(S)}`);
+  assert.ok(SH.b2 > SH.b3 + 3 && SH.b2 > SH.b1 + 5, `SH peaks at 2.5-4 kHz ${JSON.stringify(SH)}`);
+  for (const [p, r] of [['F', F], ['TH', TH]]) {
+    const hi = [r.b1, r.b2, r.b3, r.b4];
+    assert.ok(Math.max(...hi) - Math.min(...hi) < 15, `${p} flat over 1-11 kHz ${JSON.stringify(r)}`);
+    assert.ok(S.all - r.all > 8, `${p} weaker than S`);
+  }
+  assert.ok(Z.b3 > Z.b1 && Z.lf > S.lf + 10, 'Z: sibilant noise over a voice bar');
+  // the voiceless ones' floor: below the peak by 15-45 dB, not missing
+  for (const [p, r] of [['S', S], ['SH', SH]]) {
+    const top = Math.max(r.b1, r.b2, r.b3, r.b4);
+    assert.ok(top - r.lf > 10 && top - r.lf < 45, `${p} low-frequency floor ${(top - r.lf).toFixed(1)} dB under the peak`);
+  }
+});

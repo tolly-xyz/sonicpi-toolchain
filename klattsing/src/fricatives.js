@@ -15,25 +15,33 @@
 // With it each of F V TH DH S Z SH ZH gets an entry (a generated bank "<base>--fr<hash>" extending the spec's, after
 // bankPatch, coarticulation and breath, so coarticulation's loci carry over) whose
 //   - noise is the frication path's: white noise through three resonators of its own and a bypass (Klatt 1980's
-//     parallel branch for frication; klattsch's main path keeps only the voice), the amplitudes fitted to Kokoro's
-//     mean spectra re the neighbouring vowel's level (tools/voicelab/fricfit.py), so the level against the vowels
-//     is Kokoro's too;
+//     parallel branch for frication; klattsch's main path keeps only the voice), the resonators fitted to Kokoro's
+//     mean spectra re the neighbouring vowel (tools/voicelab/fricfit.py: closed-form least squares in vowel contexts)
+//     and the amplitudes then scaled per fricative so that its level re the vowels in the corpus itself is Kokoro's
+//     (tools/voicelab/fricscope.py: S -15, SH -14, F -29, TH -30-32, Z -11-14, V -12-14 dB; DH -16 vs -25, raised
+//     8 of the 17 dB it lacked, further cost fidelity); S peaks at 5 kHz with a 6-11 kHz plateau, SH at 3.4 kHz
+//     (Jongman, Wayland & Wong 2000: 4-7 / 2.5-4 kHz), F and TH flat and weak with a rise above 7 kHz;
 //   - voice is the main path's: voiced fricatives fully voiced (no main-path noise) through a low F1 (a voice bar)
 //     at Kokoro's level under the vowel, with the frication independent of it (mixed voicing; under glottal the
-//     noise is modulated by the glottal flow, as the voice source's own noise is); voiceless ones silent there;
+//     noise is modulated by the glottal flow, as the voice source's own noise is); voiceless ones keep a weak
+//     main-path noise through a broad F1 (BW1 600; S's at 500 Hz) for the low-frequency floor Kokoro's have at
+//     0.1-1.5 kHz (-29 to -48 dB re the vowel; without it their spectra fall 20-40 dB short there);
 //   - envelope: the frication starts at full strength within `rise` ms and dies away over the last `fall` of the
 //     slot to `fallTo` of itself before a vowel-like sound (`fallToC` before a consonant or a pause): the
 //     constriction opens and the next vowel's voicing takes over (Kokoro's sibilants: -2 dB at 10%, -4 / -8 / -14 dB
-//     at 80 / 90 / 100% before a vowel, down 25 dB by the end before a consonant).
+//     at 80 / 90 / 100% before a vowel, down 25 dB by the end before a consonant); `in` ms: the fricative's first
+//     main-path event (the vowel before it ending).
 //   "fricatives": true                                the defaults below (FRICATIVES, FRICATION)
-//   "fricatives": { gain, rise, fall, fallTo, fallToC, phonemes: { S: { field: value, frication: {...} } } }
-// gain: [FRIC=x], all frication amplitudes times x; rise / fall / fallTo / fallToC: every fricative's envelope
+//   "fricatives": { gain, rise, fall, fallTo, fallToC, in, phonemes: { S: { field: value, frication: {...} } } }
+// gain: [FRIC=x], all frication amplitudes times x; rise / fall / fallTo / fallToC / in: every fricative's envelope
 // (a phoneme's own in phonemes.<P>.frication wins); phonemes: fields laid over FRICATION per fricative (bank fields,
-// frication: {FF1, BF1, AF1, FF2, BF2, AF2, FF3, BF3, AF3, AB, rise, fall, fallTo, fallToC}; null removes one).
+// frication: {FF1, BF1, AF1, FF2, BF2, AF2, FF3, BF3, AF3, AB, FM, rise, fall, fallTo, fallToC, in}; null removes one).
+// FM: the depth of the glottal-flow modulation of the frication noise while voiced (default 1).
 export const FRIC_CODES = ['F', 'V', 'TH', 'DH', 'S', 'Z', 'SH', 'ZH'];
 export const FRICATIVES = { gain: 1, rise: 5, fall: 0.3, fallTo: 0.3, fallToC: 0.05, in: 10 };
-// per fricative: main-path fields (the voice) and the frication path's resonators (frequencies, bandwidths in Hz,
-// amplitudes) and bypass
+// per fricative: main-path fields (the voice, or the voiceless ones' low-frequency noise) and the frication path's
+// resonators (frequencies, bandwidths in Hz, amplitudes) and bypass; ZH (one token in the corpus) is SH's spectrum at
+// Z's frication level re S, with Z's voice bar
 export const FRICATION = {
   F:  { voicing: 0, BW1: 600, A1: 0.01397, A2: 0, A3: 0, frication: { FF1: 2039, BF1: 3955, AF1: 0.01734, FF2: 3036, BF2: 395, AF2: 0.0156, FF3: 9521, BF3: 4027, AF3: 0.0182, AB: 0 } },
   TH: { voicing: 0, BW1: 600, A1: 0.01758, A2: 0, A3: 0, frication: { FF1: 1340, BF1: 150, AF1: 0.00844, FF2: 5104, BF2: 287, AF2: 0.02228, FF3: 9491, BF3: 4208, AF3: 0.01464, AB: 0.005074 } },
