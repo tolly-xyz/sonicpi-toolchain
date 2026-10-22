@@ -7,6 +7,8 @@
 //   "aspiration": "breath"                                 adds BR<vowel> entries, a bank "<base>--br<hash>" (below)
 //   "coarticulation": true | {...}                         adds klattsch's coarticulation fields (vowel, locus,
 //                                                          locusBurst, transparent): a bank "<base>--co<hash>"
+//   "fricatives": true | {...}                             fricative entries for klattsch's frication path, "<base>--fr<hash>"
+//                                                          (fricatives.js)
 //   "stops": true | {...}                                  context-dependent stop entries, "<base>--st<hash>" (stops.js)
 // klattsch layers banks by whole phoneme entries, so a patched entry is the base's resolved entry with the
 // patch's fields merged in (a field set to null is removed; an object value, e.g. glideTo, is merged one level).
@@ -19,6 +21,7 @@ import { VOWELS } from './phones.js';
 import { coartOptions, coartFields } from './coarticulation.js';
 import { nasalOptions, nasalEntries } from './nasals.js';
 import { stopOptions, stopsBank } from './stops.js';
+import { fricOptions, fricEntries } from './fricatives.js';
 
 const BANK_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'banks');
 
@@ -121,6 +124,16 @@ export function nasalBank(base, n) {
   return { schemaVersion: 1, name: `${base}--nas${hash(canonical({ extends: base, phonemes }))}`, extends: base, phonemes };
 }
 
+// "fricatives" (src/fricatives.js): F V TH DH S Z SH ZH with frication fields for klattsch's [FRIC], generated per bank
+// and options, extending it (after bankPatch, coarticulation and breath, so their fields carry over; before stops)
+export function fricBank(base, f) {
+  ensureBank(base);
+  const resolved = banks.get(base);
+  if (!resolved) throw new Error(`unknown bank: ${base}`);
+  const phonemes = fricEntries(resolved, f);
+  return { schemaVersion: 1, name: `${base}--fr${hash(canonical({ extends: base, phonemes }))}`, extends: base, phonemes };
+}
+
 // spec -> the bank name to select with [bank=NAME] (undefined: klattsch's default), registering inline and
 // generated banks in this process. A plain string bank without a patch is passed through untouched, as before.
 // banksFor(spec) lists the banks a spec's string needs that are not files (inline, bankPatch, coarticulation, breath), parents
@@ -147,6 +160,8 @@ function chain(o) {
   if (o.bankPatch && Object.keys(o.bankPatch).length) add(patchedBank(name || banks.defaultName, o.bankPatch));
   if (o.coarticulation) add(coartBank(name || banks.defaultName, o.coarticulation));
   if (o.aspiration === 'breath') add(breathBank(name || banks.defaultName, o.breathVoicing));
+  const fr = fricOptions(o);
+  if (fr) add(fricBank(name || banks.defaultName, fr));
   if (o.stops) { const base = name || banks.defaultName; ensureBank(base); add(stopsBank(base, stopOptions(o.stops), canonical)); }
   return { name, banks: out };
 }

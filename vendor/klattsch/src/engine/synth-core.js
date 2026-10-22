@@ -42,6 +42,19 @@ export const NASAL_DEFAULT = Object.freeze({
 });
 const hasNasal = (t) => { for (const k of NASAL_PARAMS) if (k in t) return true; return false; };
 
+// (sonicpi-toolchain patch) A frication path, after Klatt's (1980) parallel branch for the frication source: white
+// noise (the synth's own generator; pitch-synchronously modulated like the [GS] source's noise while voiced, AM)
+// through three resonators of its own, FF1/BF1/AF1, FF2/BF2/AF2, FF3/BF3/AF3 (frequency, bandwidth, amplitude; the
+// main path's bandpass biquads, 0 dB at the peak; the middle one's sign flipped, as Klatt alternates the parallel
+// formants' signs, so the skirts add between neighbouring peaks instead of cancelling), and AB, a bypass (flat
+// noise), added to the formant output: noise shaped independently of the voicing and of F1-F3 (mixed voicing in a
+// voiced fricative, any fricative spectrum). Each parameter glides linearly on its own clock: an event moves only
+// the frication keys it carries (so frequencies can jump while amplitudes rise), and { fricOnly: true } events move
+// them alone. The path runs only once a target carries one of these keys; until then every sample is as before.
+export const FRIC_PARAMS = ['FF1', 'BF1', 'AF1', 'FF2', 'BF2', 'AF2', 'FF3', 'BF3', 'AF3', 'AB'];
+export const FRIC_DEFAULT = Object.freeze({ FF1: 2500, BF1: 1000, AF1: 0, FF2: 5000, BF2: 2000, AF2: 0, FF3: 8000, BF3: 4000, AF3: 0, AB: 0 });
+const hasFric = (t) => { for (const k of FRIC_PARAMS) if (k in t) return true; return false; };
+
 export const DEFAULT = {
   F0: 120, voicing: 0,
   F1: 500, BW1: 80,  A1: 0,
@@ -78,6 +91,7 @@ const toEvents = (events, sr) => events.map((e) => ({
   transitionSamples: Math.max(1, Math.floor((e.transitionMs ?? 30) * sr / 1000)),
   ...(e.curve || e.params ? { curve: e.curve ?? 0, params: e.params ?? null } : {}),
   ...(e.nasalOnly ? { nasalOnly: true } : {}),
+  ...(e.fricOnly ? { fricOnly: true } : {}),
 }));
 
 export class FormantSynth {
@@ -102,6 +116,7 @@ export class FormantSynth {
     this.bp3 = new BandpassBiquad();
     this.resetSource();
     this.initNasal(init);
+    this.initFric(init);
 
     this.schedule = toEvents(schedule ?? [], this.sr);
     this.scheduleIdx = 0;
@@ -178,12 +193,50 @@ export class FormantSynth {
     if (--this.nasalSamples === 0) for (const k of NASAL_PARAMS) cur[k] = this.target[k];
   }
 
+  // (sonicpi-toolchain patch) frication path state; this.fric turns on with the first target that has a frication key
+  initFric(init) {
+    this.fric = hasFric(init);
+    for (const k of FRIC_PARAMS) if (!(k in this.current)) { this.current[k] = FRIC_DEFAULT[k]; this.target[k] = FRIC_DEFAULT[k]; }
+    this.fricLeft = {};
+    this.fricIncrement = {};
+    for (const k of FRIC_PARAMS) { this.fricLeft[k] = 0; this.fricIncrement[k] = 0; }
+    this.fricMoving = 0;
+    this.bf1 = new BandpassBiquad();
+    this.bf2 = new BandpassBiquad();
+    this.bf3 = new BandpassBiquad();
+    this.noiseMod = 1;
+  }
+
+  // move the frication parameters a target names to it over N samples, each on its own clock
+  retargetFric(target, N) {
+    if (!hasFric(target)) return;
+    this.fric = true;
+    for (const k of FRIC_PARAMS) {
+      if (!(k in target)) continue;
+      this.target[k] = target[k];
+      if (this.fricLeft[k] === 0) this.fricMoving++;
+      this.fricLeft[k] = N;
+      this.fricIncrement[k] = (target[k] - this.current[k]) / N;
+    }
+  }
+
+  // advance the moving frication parameters one sample
+  stepFric() {
+    const cur = this.current;
+    for (const k of FRIC_PARAMS) {
+      if (this.fricLeft[k] === 0) continue;
+      cur[k] += this.fricIncrement[k];
+      if (--this.fricLeft[k] === 0) { cur[k] = this.target[k]; this.fricMoving--; }
+    }
+  }
+
   // Schedule a new target. transitionMs samples are linearly interpolated
   // from current state to the new target
   setTarget(target, transitionMs = 30) {
     if ('GS' in target) this.setSource(target);
     const N = Math.max(1, Math.floor(transitionMs * this.sr / 1000));
     this.retargetNasal(target, N);
+    this.retargetFric(target, N);
     if (this.shaped) { this.startMove(target, N); return; }
     this.transitionSamples = N;
     for (const k of PARAMS) {
@@ -220,6 +273,7 @@ export class FormantSynth {
     this.current = { ...DEFAULT, ...init };
     this.target = { ...this.current };
     this.initNasal(init);
+    this.initFric(init);
     for (const k of PARAMS) this.increment[k] = 0;
     this.transitionSamples = 0;
     this.schedule = [];
@@ -337,7 +391,8 @@ export class FormantSynth {
       const norm = Math.sqrt((1 - a) * (1 - a) + 2 * (1 - a) * a * L.uMean + a * a * L.uSq);
       const m = ((1 - a) + a * u) / norm;
       asp *= m; fric *= m;
-    }
+      this.noiseMod = m;       // (sonicpi-toolchain patch) the frication path's noise follows the flow too
+    } else this.noiseMod = 1;
     const dphase = f0 * this.cycleRate / this.sr;
     this.flow += raw * dphase;
     const before = this.glottalPhase;
@@ -361,6 +416,8 @@ export class FormantSynth {
           const evt = this.schedule[this.scheduleIdx++];
           this.retargetNasal(evt.target, evt.transitionSamples);
           if (evt.nasalOnly) continue;      // (sonicpi-toolchain patch) moves the nasal parameters alone
+          this.retargetFric(evt.target, evt.transitionSamples);
+          if (evt.fricOnly) continue;       // (sonicpi-toolchain patch) moves the frication parameters alone
           if (sourceEvent(evt.target, this.src.GS)) this.setSource(evt.target);   // the voice source in shaped mode too
           this.startMove(evt.target, evt.transitionSamples, evt.curve, evt.params);
         }
@@ -373,6 +430,8 @@ export class FormantSynth {
         const evt = this.schedule[this.scheduleIdx++];
         this.retargetNasal(evt.target, evt.transitionSamples);
         if (evt.nasalOnly) continue;        // (sonicpi-toolchain patch) moves the nasal parameters alone
+        this.retargetFric(evt.target, evt.transitionSamples);
+        if (evt.fricOnly) continue;         // (sonicpi-toolchain patch) moves the frication parameters alone
         if (sourceEvent(evt.target, this.src.GS)) this.setSource(evt.target);
         const N = evt.transitionSamples;
         this.transitionSamples = N;
@@ -392,6 +451,7 @@ export class FormantSynth {
       }
       }
       if (this.nasalSamples > 0) this.stepNasal();
+      if (this.fricMoving > 0) this.stepFric();
 
       // Vibrato LFO modulates F0 around its target value
       this.vibratoPhase += 2 * Math.PI * cur.vibratoRate / this.sr;
@@ -440,6 +500,17 @@ export class FormantSynth {
           +  this.bp2.process(en) * cur.A2
           +  this.bp3.process(en) * cur.A3
           +  this.bpn.process(exc) * cur.AN) * cur.GN * cur.gain * tremoloMod;
+      }
+      if (this.fric) {
+        // (sonicpi-toolchain patch) the frication path: its own noise resonators and bypass (signs + - +)
+        this.bf1.setFreq(cur.FF1, cur.BF1, this.sr);
+        this.bf2.setFreq(cur.FF2, cur.BF2, this.sr);
+        this.bf3.setFreq(cur.FF3, cur.BF3, this.sr);
+        const nf = noiseSample * 0.35 * (this.src.GS ? this.noiseMod : 1);
+        y += (this.bf1.process(nf) * cur.AF1
+          -   this.bf2.process(nf) * cur.AF2
+          +   this.bf3.process(nf) * cur.AF3
+          +   nf * cur.AB) * cur.gain * tremoloMod;
       }
 
       const tilted = y - cur.tilt * this.tiltPrev;

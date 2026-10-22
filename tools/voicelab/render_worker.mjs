@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // A rendering worker for fitting tools (tools/voicelab/fricfit.py): each stdin line is a request, answered by one
 // stdout line.
-//   {"config": {klattsing speak options}, "entries": {CODE: {bank fields}}, "body": "b100 r120 AH r90 S r120 AH", "sr": 48000}
+//   {"config": {klattsing speak options}, "entries": {CODE: {bank fields}}, "body": "b100 r120 AH r90 S r120 AH", "sr": 48000,
+//    "ms": render only the first ms (optional)}
 //   -> {"pcm": base64 float32 little-endian at sr, "totalMs", "text"}   or {"error"}
+//   {"config", "resolve": [CODE, ...]} -> {"entries": {CODE: the config's bank entry, resolved}}
 // The string is klattsing's prefix for config (bank chain, directives, voice) followed by body. entries (optional):
 // laid over the config's resolved bank entries (each a complete entry: the resolved one's fields, e.g. its
 // coarticulation locus, with these over them) in an inline bank "fit--<n>" that extends the config's bank.
@@ -23,6 +25,12 @@ for await (const line of createInterface({ input: process.stdin, crlfDelay: Infi
     const req = JSON.parse(line);
     const cfg = { mode: 'speak', ...(req.config ?? {}) };
     let prefix = prefixOf(cfg);
+    if (req.resolve) {
+      // {"config", "resolve": [CODE, ...]} -> {"entries": {CODE: the config's resolved bank entry}}
+      const P = E.banks.get(bankName(cfg) ?? E.banks.defaultName).phonemes;
+      process.stdout.write(`${JSON.stringify({ entries: Object.fromEntries(req.resolve.filter((c) => P[c]).map((c) => [c, P[c]])) })}\n`);
+      continue;
+    }
     if (req.entries && Object.keys(req.entries).length) {
       const base = bankName(cfg) ?? E.banks.defaultName, resolved = E.banks.get(base);
       const phonemes = {};
@@ -35,7 +43,7 @@ for await (const line of createInterface({ input: process.stdin, crlfDelay: Infi
     const c = E.compileString(text);
     if (c.warnings.length) throw new Error(`klattsch: ${c.warnings.join(', ')}`);
     const sr = req.sr ?? 48000;
-    const buf = E.renderToBuffer({ sampleRate: sr, schedule: c.schedule, totalMs: c.totalMs });
+    const buf = E.renderToBuffer({ sampleRate: sr, schedule: c.schedule, totalMs: req.ms ? Math.min(req.ms, c.totalMs) : c.totalMs });
     reply = { pcm: Buffer.from(buf.buffer, buf.byteOffset, buf.byteLength).toString('base64'), totalMs: c.totalMs, text };
   } catch (e) { reply = { error: String(e?.message ?? e) }; }
   process.stdout.write(`${JSON.stringify(reply)}\n`);
