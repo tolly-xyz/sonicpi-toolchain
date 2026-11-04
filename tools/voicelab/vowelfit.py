@@ -16,11 +16,16 @@ consonants' loci on top. One round:
 The glide windows: fitted once to Kokoro's own median trajectories (onset/offset least squares over a grid of
 windows) for the diphthongs and the r-colored codes; the monophthongs keep klattsch's 0.25-0.75 (their Kokoro
 trajectories are mostly the consonants', which coarticulation already gives).
+Then (--mcd N) the MCD stage below: N sweeps of coordinate descent on each code's own vowels' MCD + mcd_cmn over the
+parameters --params (the shipped targets: formants from the rounds above, then A2 A3 BW1 BW2 BW3 only). --true N: the
+rounds against klattsch's exact formants instead (below; fits the formants as well, scores lower).
 
 usage: vowelfit.py CONFIG_JSON_OR_FILE [--rounds 4] [--start ENTRIES.json] [--out ENTRIES.json] [--codes AA,AE,..]
-                   [--no-windows] [--max-step 250] [--fields F1,F2,F3]
+                   [--no-windows] [--max-step 250] [--fields F1,F2,F3] [--mcd N --params A2,A3,BW1,BW2,BW3] [--true N]
   CONFIG: the speak config the vowels are fitted under (BASE); "vowels" in it is replaced. Prints per round the
   fidelity score and per code n, d at 20/50/80 and MCD; writes the entries (code -> {F1, F2, F3, glideTo, glide}).
+  The shipped targets: vowelfit.py BASE --rounds 4 --out fit1.json (best round: 3), then
+  vowelfit.py BASE --start fit1.best.json --rounds -1 --mcd 3 --params A2,A3,BW1,BW2,BW3 --out amp1.json
 """
 import argparse, json, os, sys
 import numpy as np

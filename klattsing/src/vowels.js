@@ -6,8 +6,13 @@
 // vowel is rendered with (the timeline still names the lexical vowel, with `code` beside it):
 //   targets   every vowel gets an onset target (F1-F3) and an offset target (glideTo), not only the diphthongs:
 //             vowel-inherent spectral change (Nearey & Assmann 1986; Hillenbrand, Getty, Clark & Wheeler 1995: formants
-//             at 20% and 80% of the vowel identify American English vowels far better than one steady state),
-//             fitted to Kokoro (am_onyx) by analysis-by-synthesis (tools/voicelab/vowelfit.py, below)
+//             at 20% and 80% of the vowel identify American English vowels far better than one steady state; Assmann
+//             & Katz 2005: synthetic vowels with their natural trajectories are identified better than flat ones),
+//             and its own bandwidths and amplitudes (BW1-BW3, A2, A3), fitted to Kokoro (am_onyx) by analysis-by-
+//             synthesis under BASE (tools/voicelab/vowelfit.py): the formants by the median paired difference Kokoro -
+//             klattsch of Praat formants at 20/35/50/65/80% of the same aligned vowels (so coarticulation's loci act
+//             on both sides alike), then BW and A by coordinate descent on each code's own vowels' MCD + mcd_cmn
+//             (train split), then the formants once more
 //   glide     each vowel's glide window [a, b] (the share of the vowel over which it moves from onset to offset;
 //             klattsch's own is 0.25-0.75): Kokoro's diphthongs hold their first target longer and move late
 //             (Gay 1968; Hillenbrand et al. 1995: AY/AW/OY's offglide mostly after the middle); a klattsch patch
@@ -27,7 +32,8 @@
 // Without the option nothing here runs and the strings are unchanged.
 import { VOWELS, REDUCED_CODES, RHOTIC_SUFFIX, vowelOf } from './phones.js';
 
-// Fitted onset (F1-F3) and offset (glideTo) targets and glide windows (tools/voicelab/vowelfit.py): filled in below.
+// Fitted onset (F1-F3) and offset (glideTo) targets, bandwidths and amplitudes, glide windows (tools/voicelab/vowelfit.py;
+// IYQR: IHQR's, Kokoro says [ɪɹ] in "here", "near"; the other r-colored codes have no corpus tokens: RHOTIC_RULE).
 export const VOWEL_TARGETS = {
   AA: { F1: 719, F2: 1003, F3: 2544, glideTo: { F1: 791, F2: 1096, F3: 2507 } },
   AE: { F1: 701, F2: 1569, F3: 2382, glideTo: { F1: 833, F2: 1458, F3: 2298 } },
@@ -55,7 +61,7 @@ export const VOWEL_TARGETS = {
 };
 export const WEAK_FORMS = ['to', 'was', 'than'];
 export const RHOTIC_VOWELS = 'AA AE AH AO EH IH IY UH UW'.split(' ');
-// a vowel before R without fitted r-colored targets: its own onset, its offset F3 down to this, gliding from this share
+// a vowel before R without fitted r-colored targets: its own entry, its offset F3 down to this, gliding from this share
 export const RHOTIC_RULE = { F3: 1900, glide: [0.35, 1] };
 export const VOWELS_DEFAULTS = { targets: true, glide: true, reduced: true, weak: true, rhotic: true, singGlideMs: 150 };
 const KEYS = [...Object.keys(VOWELS_DEFAULTS), 'phonemes'];
