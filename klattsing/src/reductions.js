@@ -3,7 +3,8 @@
 // "was" wəz, "for" fɚ, "can" kən), "the" is ði before a vowel, and a heteronym's reading follows its context ("read"
 // the verb, "their lives" the noun). With the option every word of a phrase is looked at in its context, after the
 // lexicon and before syllables are timed:
-//   weak      a function word in WEAK takes its weak form unless it ends a phrase (punctuation or the text's end:
+//   weak      a function word in WEAK (true; "all": WEAK_ALL, with to / into / do, which need a schwa the banks
+//             do not have, below) takes its weak form unless it ends a phrase (punctuation or the text's end:
 //             "who is it for?", "faced us."), where English uses the strong form (Jones 1956 / EPD; Gimson 1962,
 //             Cruttenden 2014 §12.3; Roach 2009 ch. 12, whose list this follows; American forms after Kenyon &
 //             Knott 1953: rhotic "for" fɚ, "are" ɚ, "your" jɚ, "or" ɚ). Context-dependent ones (STRONG_UNLESS):
@@ -12,7 +13,7 @@
 //             "of", have/has/had only as auxiliaries (before "been" or a participle-like word, not "have to"),
 //             do/does only before "not" or a subject pronoun (you / it in a question only: not "do it now"). The
 //             weak syllable is unstressed (stress 0).
-//             `weak: {word: "PHONES" | ["before a consonant", "before a vowel"] | null}` changes or removes entries
+//             `weak: {word: "PHONES" | ["before a consonant", "before a vowel"] | null}` changes or removes entries of WEAK
 //             (the vowel count must stay the citation form's: sing gives every syllable a note).
 //   the       "the" before a vowel: DH IY0 ("IY", the default; Jones, Gimson, Roach), DH IH0 ("IH", Kokoro's ði
 //             / ðɪ) or false (DH AH0 everywhere)
@@ -39,8 +40,9 @@ import { lexiconHas } from './lexicon.js';
 export const REDUCTIONS = { weak: true, the: 'IY', heteronyms: true, hDrop: false, elision: false, assimilation: false };
 const KEYS = Object.keys(REDUCTIONS);
 
-// weak forms: one form, or [before a consonant, before a vowel] (Roach 2009 ch. 12; Kenyon & Knott 1953)
-export const WEAK = {
+// weak forms: one form, or [before a consonant, before a vowel] (Roach 2009 ch. 12; Kenyon & Knott 1953): the full
+// table (`weak: "all"`)
+export const WEAK_ALL = {
   a: 'AH0', an: 'AH0 N', the: 'DH AH0',
   and: 'AH0 N D', but: 'B AH0 T', or: 'ER0', nor: 'N ER0', than: 'DH AH0 N', that: 'DH AH0 T', as: 'AH0 Z',
   at: 'AH0 T', for: 'F ER0', from: 'F R AH0 M', of: 'AH0 V', to: ['T AH0', 'T UW0'], into: ['IH0 N T AH0', 'IH0 N T UW0'],
@@ -51,6 +53,13 @@ export const WEAK = {
   he: 'HH IY0', she: 'SH IY0', we: 'W IY0', me: 'M IY0', you: 'Y UW0',
   him: 'HH IH0 M', his: 'HH IH0 Z', her: 'HH ER0', them: 'DH AH0 M', us: 'AH0 S', your: 'Y ER0',
 };
+// The default table (`weak: true`) leaves out to / into / do: their weak vowel is a schwa, and klattsch's banks have
+// none: AH0 is rendered as AH, [ʌ] (F1 620 Hz), so tə comes out as an open "tuh", further from Kokoro's tə than
+// the short unstressed T UW0 is (the vowel's MCD to Kokoro 3.55 -> 3.83 dB over the corpus's 18) and harder for
+// Whisper (Harvard sentences whose only change is "to": 6 worse, 2 better). With a schwa-like unstressed AH (a
+// vowel bank that has one), `weak: "all"` gives them back.
+export const NEEDS_SCHWA = ['to', 'into', 'do'];
+export const WEAK = Object.fromEntries(Object.entries(WEAK_ALL).filter(([w]) => !NEEDS_SCHWA.includes(w)));
 
 const set = (s) => new Set(s.split(' '));
 const SUBJECT_STRICT = set("i he she we they");
@@ -130,6 +139,7 @@ export function reductionOptions(x) {
   if (![false, 'IY', 'IH'].includes(o.the)) throw new Error(`reductions.the: "IY", "IH" or false, got ${JSON.stringify(o.the)}`);
   o.custom = new Set();
   if (o.weak === true) o.weak = WEAK;
+  else if (o.weak === 'all') o.weak = WEAK_ALL;
   else if (o.weak === false) o.weak = {};
   else if (isObj(o.weak)) {
     const w = { ...WEAK };
@@ -142,7 +152,7 @@ export function reductionOptions(x) {
       else delete w[word.toLowerCase()];
     }
     o.weak = w;
-  } else throw new Error(`reductions.weak: true, false or {word: phones}, got ${JSON.stringify(o.weak)}`);
+  } else throw new Error(`reductions.weak: true, "all", false or {word: phones}, got ${JSON.stringify(o.weak)}`);
   return o;
 }
 

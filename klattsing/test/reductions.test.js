@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { words, speak, sing, toKlattsch, durationsOf } from '../src/compile.js';
-import { reductionOptions, reduceWords, WEAK, HETERONYMS, REDUCTIONS } from '../src/reductions.js';
+import { reductionOptions, reduceWords, WEAK, WEAK_ALL, NEEDS_SCHWA, HETERONYMS, REDUCTIONS } from '../src/reductions.js';
 import { lookup, addLexicon } from '../src/lexicon.js';
 import { syllabify } from '../src/syllables.js';
 import { timelineOf } from '../src/timeline.js';
@@ -28,7 +28,13 @@ test('defaults: no reductions option (or false / null) gives the reference strin
 });
 
 test('weak forms inside a phrase, the strong (citation) form at its end', () => {
-  assert.deepEqual(pron("It's easy to tell the depth of a well."), ['IH1 T S', 'IY1 Z IY0', 'T AH0', 'T EH1 L', 'DH AH0', 'D EH1 P TH', 'AH0 V', 'AH0', 'W EH1 L']);
+  assert.deepEqual(pron("It's easy to tell the depth of a well.", { weak: 'all' }), ['IH1 T S', 'IY1 Z IY0', 'T AH0', 'T EH1 L', 'DH AH0', 'D EH1 P TH', 'AH0 V', 'AH0', 'W EH1 L']);
+  // the default table leaves out to / into / do (their schwa would be rendered as an open AH): citation forms
+  assert.deepEqual(pron("It's easy to tell the depth of a well."), ['IH1 T S', 'IY1 Z IY0', 'T UW1', 'T EH1 L', 'DH AH0', 'D EH1 P TH', 'AH0 V', 'AH0', 'W EH1 L']);
+  assert.deepEqual(NEEDS_SCHWA.filter((w) => w in WEAK), []);
+  assert.deepEqual(Object.keys(WEAK_ALL).filter((w) => !(w in WEAK)).sort(), [...NEEDS_SCHWA].sort());
+  assert.equal(at('Do you see?', 'do'), 'D UW1');
+  assert.equal(at('Cut the pie into large parts.', 'into'), 'IH1 N T UW0');
   assert.equal(at('The box was thrown.', 'was'), 'W AH0 Z');
   assert.equal(at('Read verse for pleasure.', 'for'), 'F ER0');
   assert.equal(at('Who is it for?', 'for'), 'F AO1 R');          // stranded: strong
@@ -38,12 +44,13 @@ test('weak forms inside a phrase, the strong (citation) form at its end', () => 
   assert.equal(at('More than two.', 'than'), 'DH AH0 N');
   assert.equal(at('I want them home.', 'them'), 'DH AH0 M');
   assert.equal(at('Hoist the load to your left shoulder.', 'your'), 'Y ER0');
-  // "to" / "do" / "into": [before a consonant, before a vowel]
-  assert.equal(at('Go to bed.', 'to'), 'T AH0');
-  assert.equal(at('Go to it now.', 'to'), 'T UW0');
-  assert.equal(at('Do you see?', 'do'), 'D AH0');
-  assert.equal(at('Do I see?', 'do'), 'D UW0');
-  assert.equal(at('Cut the pie into large parts.', 'into'), 'IH0 N T AH0');
+  // "to" / "do" / "into" (weak: "all"): [before a consonant, before a vowel]
+  const all = { weak: 'all' };
+  assert.equal(at('Go to bed.', 'to', all), 'T AH0');
+  assert.equal(at('Go to it now.', 'to', all), 'T UW0');
+  assert.equal(at('Do you see?', 'do', all), 'D AH0');
+  assert.equal(at('Do I see?', 'do', all), 'D UW0');
+  assert.equal(at('Cut the pie into large parts.', 'into', all), 'IH0 N T AH0');
   // a weak syllable is unstressed whether or not functionWords is on
   assert.equal(words('It was red.', null, null, { reductions: true })[1].syllables[0].stress, 0);
 });
@@ -60,10 +67,10 @@ test('weak forms by context: that, there, some, have / has / had, do / does', ()
   assert.equal(at('They have a dog.', 'have'), 'HH AE1 V');           // main verb
   assert.equal(at('She has to go.', 'has'), 'HH AE1 Z');              // "has to"
   assert.equal(at('He had walked home.', 'had'), 'HH AH0 D');
-  assert.equal(at('Do it now.', 'do'), 'D UW1');                       // main verb
+  assert.equal(at('Do it now.', 'do', { weak: 'all' }), 'D UW1');      // main verb
   assert.equal(at('Does he know?', 'does'), 'D AH0 Z');
-  assert.equal(at('Do you see it?', 'do'), 'D AH0');                   // "you", "it": auxiliary in a question only
-  assert.equal(at('I do not know.', 'do'), 'D AH0');
+  assert.equal(at('Do you see it?', 'do', { weak: 'all' }), 'D AH0');  // "you", "it": auxiliary in a question only
+  assert.equal(at('I do not know.', 'do', { weak: 'all' }), 'D AH0');
 });
 
 test('"the" before a vowel: DH IY0 (default), DH IH0, or DH AH0 throughout', () => {
@@ -110,7 +117,7 @@ test('heteronyms by context', () => {
 });
 
 test('weak forms keep the citation form\'s syllable count; sing gets the same forms', () => {
-  for (const [w, f] of Object.entries(WEAK)) {
+  for (const [w, f] of Object.entries(WEAK_ALL)) {
     const n = lookup(w)[0].phones.filter((x) => x.stress !== null).length;
     for (const s of Array.isArray(f) ? f : [f]) assert.equal(s.split(' ').filter((t) => /\d$/.test(t)).length, n, `${w} ${s}`);
   }
@@ -118,7 +125,8 @@ test('weak forms keep the citation form\'s syllable count; sing gets the same fo
   const n = words(text, null, null, {}).flatMap((w) => w.syllables).length;
   assert.equal(words(text, null, null, { reductions: true }).flatMap((w) => w.syllables).length, n);
   const s = sing({ text, notes: 'auto', reductions: true });
-  assert.match(s, / T r[\d.]+ AH /);                            // to read
+  assert.match(s, / W r[\d.]+ AH /);                            // she was at
+  assert.match(sing({ text, notes: 'auto', reductions: { weak: 'all' } }), / T r[\d.]+ AH /);   // to read
   assert.notEqual(s, sing({ text, notes: 'auto' }));
   assert.deepEqual(compileString(s).warnings, []);
 });
@@ -150,6 +158,9 @@ test('options: weak overrides and removals, validation', () => {
   assert.throws(() => reductionOptions({ hDrop: 1 }), /reductions\.hDrop/);
   assert.throws(() => reductionOptions({ weak: { to: 'tə' } }), /reductions\.weak\.to/);
   assert.throws(() => reductionOptions('yes'), /reductions: true or an object/);
+  assert.throws(() => reductionOptions({ weak: 'some' }), /reductions\.weak: true, "all"/);
+  assert.equal(reductionOptions({ weak: 'all' }).weak, WEAK_ALL);
+  assert.equal(reductionOptions(true).weak, WEAK);
   assert.deepEqual(Object.keys(reductionOptions(true)).filter((k) => k !== 'custom').sort(), Object.keys(REDUCTIONS).sort());
   assert.equal(reductionOptions(false), null);
   // the parsed words are not changed in place (they are cached per text)
@@ -170,7 +181,7 @@ test('a project lexicon keeps its heteronyms; weak forms still apply', () => {
 test('durations and timelines name the reduced phonemes; speak strings carry them', () => {
   const spec = { mode: 'speak', text: 'It was to be the evening.', reductions: true };
   const d = durationsOf(spec).phones.map((x) => x.p);
-  assert.deepEqual(d.slice(0, 7), ['IH', 'T', 'W', 'AH', 'Z', 'T', 'AH']);
+  assert.deepEqual(d.slice(0, 7), ['IH', 'T', 'W', 'AH', 'Z', 'T', 'UW']);
   assert.equal(d[10], 'IY');                                   // the (before "evening")
   const tl = timelineOf(spec).phones.filter((x) => !x.asp).map((x) => x.p);
   assert.deepEqual(tl, d.filter((p) => p !== 'pau'));

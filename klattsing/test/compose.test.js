@@ -197,12 +197,12 @@ test('reductions on top of all six: it changes the sound, each of the six still 
     const without = { ...all }; delete without[k];
     assert.notEqual(h, audio(without), `${k} has no effect with reductions and the other five on`);
   }
-  // the string carries every feature's directives and the reduced forms (was, to, the before a vowel, read), in
-  // the stops' context entries (to: voicing tail, released into AH; read: voice bar, unreleased)
+  // the string carries every feature's directives and the reduced forms (was, the before a vowel, read; "to" keeps
+  // its citation vowel by default), in the stops' context entries (to: released, aspirated into UW; read: voice bar)
   const s = speak(all);
   assert.match(s, /^\[bank=klatt1980-en--nas[0-9a-f]{12}--co[0-9a-f]{12}--fr[0-9a-f]{12}--st[0-9a-f]{12}\] \[CO=2\].* \[GS=1\].* \[NAS=1\].* \[FRIC=1\]/);
   const seq = s.split(' ').filter((t) => /^[A-Z]+(\(|$)/.test(t)).map((t) => t.replace(/\(.*/, '')).join(' ');
-  assert.match(seq, /^SH IY W AH Z TQTAH AH R IY DQVU DH IY IY V /, seq);
+  assert.match(seq, /^SH IY W AH Z TQTUW HQUW UW R IY DQVU DH IY IY V /, seq);
   assert.match(seq, / F ER AH S$/, seq);
   for (const b of banksFor(all)) registerBank(b);
   const v = compileString(s).voices[0];
