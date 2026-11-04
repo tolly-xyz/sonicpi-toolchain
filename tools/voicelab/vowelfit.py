@@ -24,8 +24,12 @@ usage: vowelfit.py CONFIG_JSON_OR_FILE [--rounds 4] [--start ENTRIES.json] [--ou
                    [--no-windows] [--max-step 250] [--fields F1,F2,F3] [--mcd N --params A2,A3,BW1,BW2,BW3] [--true N]
   CONFIG: the speak config the vowels are fitted under (BASE); "vowels" in it is replaced. Prints per round the
   fidelity score and per code n, d at 20/50/80 and MCD; writes the entries (code -> {F1, F2, F3, glideTo, glide}).
-  The shipped targets: vowelfit.py BASE --rounds 4 --out fit1.json (best round: 3), then
-  vowelfit.py BASE --start fit1.best.json --rounds -1 --mcd 3 --params A2,A3,BW1,BW2,BW3 --out amp1.json
+  The shipped targets (work/voicelab/vowels/, BASE = the round-4 tournament's six-feature config):
+    vowelfit.py BASE --rounds 4 --out fit1.json                                           (best: round 3, 3.374)
+    vowelfit.py BASE --start fit1.best.json --rounds -1 --mcd 3 --params A2,A3,BW1,BW2,BW3 --out amp1.json   (3.482)
+    vowelfit.py BASE --start amp1.mcd.best.json --rounds 2 --no-windows --out rc1.json   (best: round 1, 3.494)
+    vowelfit.py BASE --start rc1.best.json --rounds -1 --mcd 2 --params A2,A3,BW2,BW3 --out amp2.json        (3.520)
+  then amp2.mcd.best.json -> klattsing/src/vowels.js VOWEL_TARGETS (IYQR := IHQR; codes without tokens: RHOTIC_RULE).
 """
 import argparse, json, os, sys
 import numpy as np

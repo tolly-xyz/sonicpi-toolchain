@@ -76,12 +76,19 @@ test('fields: targets, reduced, weak, rhotic and phonemes switch their parts; ba
   assert.equal(P({ reduced: false, weak: false }).AX, undefined);
   assert.equal(P({ rhotic: false }).AOQR, undefined);
   assert.equal(P({ glide: false }).AY.glide, undefined);
+  // balance: false: the fitted formants, the base bank's bandwidths and amplitudes
+  const nb = P({ balance: false });
+  for (const c of ['AA', 'IY', 'AX', 'AOQR']) {
+    assert.equal(nb[c].F2, VOWEL_TARGETS[c].F2, c);
+    for (const f of ['BW1', 'BW2', 'BW3', 'A2', 'A3']) assert.equal(nb[c][f], k[vowelOf(c)][f], `${c}.${f}`);
+  }
+  assert.notEqual(P({}).IY.BW2, k.IY.BW2, 'balance: true sets them');
   const ph = P({ phonemes: { IY: { F2: 2500, glideTo: { F3: 3100 }, glide: [0.1, 0.6] }, AX: { BW1: null, glideTo: null }, AY: { glide: null } } });
   assert.equal(ph.IY.F2, 2500); assert.equal(ph.IY.glideTo.F3, 3100); assert.deepEqual(ph.IY.glide, [0.1, 0.6]);
   // null: the base bank's value (AX: AH's), or none
   assert.equal(ph.AX.BW1, k.AH.BW1); assert.equal(ph.AX.glideTo, undefined); assert.equal(ph.AY.glide, undefined);
   assert.equal(k.AA.glideTo, undefined, 'the base bank is untouched');
-  for (const bad of [{ targets: 1 }, { foo: true }, { weak: 'to' }, { phonemes: { XX: {} } }, { phonemes: { AA: { glide: [0.8, 0.2] } } },
+  for (const bad of [{ targets: 1 }, { balance: 'no' }, { foo: true }, { weak: 'to' }, { phonemes: { XX: {} } }, { phonemes: { AA: { glide: [0.8, 0.2] } } },
     { phonemes: { AA: { F9: 1 } } }, { singGlideMs: -1 }, 'yes']) {
     assert.throws(() => speak({ text: 'A cat.', vowels: bad }), JSON.stringify(bad));
   }
