@@ -325,13 +325,14 @@ On the Kokoro corpus (`fidelity.py --audio`, BASE = `presets/kokoro-durations.js
 3.35, OW 3.11 -> 2.73, OY 3.75 -> 3.03, UH 3.57 -> 2.98, UW 3.86 -> 3.30), the other classes level or slightly better
 (stops 3.244 -> 3.216, liquids/glides 3.393 -> 3.372); F0 r 0.898 -> 0.899, detrended 0.676 -> 0.673. Held out (the 20
 sentences the bandwidth stages did not see; the formant rounds saw all 100): 2.878 -> 3.111 (spec 4.574 -> 5.312, pros
-3.179 -> 3.139); train 3.378 -> 3.644. Each part left out: the glide windows 3.515, the weak forms 3.510, the
-r-colored vowels 3.498, the reduced vowels 3.491; the targets alone (no windows, reduced, weak or r-colored codes)
-3.457, everything but the 15 vowels' targets 3.363. Along the way: the formant rounds alone 3.374; the earlier
-`banks/kokoro-male-en.json` vowels (steady Kokoro formants, measured at 50 ms-late timings) under BASE 3.270; fitting
-klattsch's exact formants (`--true`: the synth's own F1-F3 from the compiled schedule,
-`tools/voicelab/formant_tracks.mjs`, against Kokoro's Praat formants; it avoids Praat merging ER's F2 and F3 in
-klattsch's audio) matched the formants better but scored 3.345 (MCD favours matching what the tracker sees in both).
+3.179 -> 3.139); train 3.378 -> 3.644. Each part left out: the fitted bandwidths and amplitudes (`balance: false`)
+3.385, the glide windows 3.515, the weak forms 3.510, the r-colored vowels 3.498, the reduced vowels 3.491; the
+targets alone (no windows, reduced, weak or r-colored codes) 3.457, everything but the 15 vowels' targets 3.363. Along
+the way: the formant rounds alone 3.374; the earlier `banks/kokoro-male-en.json` vowels (steady Kokoro formants,
+measured at 50 ms-late timings) under BASE 3.270; fitting klattsch's exact formants (`--true`: the synth's own F1-F3
+from the compiled schedule, `tools/voicelab/formant_tracks.mjs`, against Kokoro's Praat formants; it avoids Praat
+merging ER's F2 and F3 in klattsch's audio) matched the formants better but scored 3.345 (MCD favours matching what
+the tracker sees in both).
 
 Presets fitted against Kokoro by `tools/voicelab/climb.py` are spec fragments in `presets/` (merge one into a spec:
 `{"mode": "speak", "text": ..., ...preset}`): `kokoro-durations.json` (`rules`, `phoneDur`, `functionWords`) and
