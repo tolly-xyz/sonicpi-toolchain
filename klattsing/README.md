@@ -265,6 +265,74 @@ fricatives are about as loud as the vowels (no glottal noise low-pass; S +0.4, S
 gap after this one Whisper run) puts them back near base sing's level with the fitted spectra: 61.2% -> 61.9%, p = 1
 (9 vs 10), fricatives 54% -> 69%; against `singGain: 1`, 56.1% -> 61.9%, p = 0.021 (1 vs 9).
 
+### Vowels (`vowels`)
+
+Without it the vowels are the bank's (klatt1980-en: Klatt's 1980 table, most with a second target, `glideTo`, reached
+over the middle half of the vowel), the same unstressed as stressed and before R as anywhere else. Against the Kokoro
+corpus (`tools/voicelab/vowelscope.py`: Praat Burg formants at 20/35/50/65/80% of every aligned vowel, Hillenbrand,
+Getty, Clark & Wheeler's (1995) onset and offset points, at the corpus's corrected phone times; ~870 vowels; Kokoro /
+BASE klattsch, Hz at 50%) Kokoro's unstressed AH is a schwa (F1 389 against stressed AH's 596; klattsch 470), its ER's
+F3 is ~1700, its vowels before R move toward R through their second half (AA's F3 2450 -> 1950 from 20% to 80%, EH's
+2240 -> 2000) and /ɔr/ is raised toward [o] (F1 380-440, F2 740-890 against AO's 560-590 / 960), and its diphthongs
+hold their first target longer (AY, AW, OY move over 40-80% of the vowel). Klattsch's vowels are off by a mean 51 / 103
+/ 129 Hz (F1 / F2 / F3, median paired difference per vowel at 50%, token-weighted). `vowels` adds a generated bank
+`<base>--vw<hash>` (after `bankPatch`, before coarticulation's, so coarticulation's loci, the stops' bursts and
+aspiration `HQ<vowel>` and `"breath"` take its targets; its fields win over `bankPatch`'s, change them with `phonemes`)
+and gives each syllable the code its vowel is rendered with (the timeline still names the lexical vowel, `code`
+beside it):
+
+- **targets** (`targets`): every vowel code has an onset target (F1-F3) and an offset target (`glideTo`), not only the
+  diphthongs, and its own bandwidths and amplitudes: vowel-inherent spectral change (Nearey & Assmann 1986;
+  Hillenbrand et al. 1995: formants at 20% and 80% identify American English vowels far better than one steady
+  state; Assmann & Katz 2005: synthetic vowels with their natural trajectories are identified better than flat ones).
+  Fitted to Kokoro by analysis-by-synthesis under BASE (`tools/voicelab/vowelfit.py`): (1) the corpus rendered with
+  the current entries and both audios measured alike at the five points of the same aligned vowels, so the paired
+  difference Kokoro - klattsch per token already holds what coarticulation's loci (and the tracker) do to the vowel
+  in its context; per code the median difference is solved for an onset / offset change (least squares over the five
+  points), three rounds; (2) BW1-BW3 and A2/A3 per code by coordinate descent on that code's own vowels' MCD +
+  mcd_cmn (`climb.py split`'s train split, 80 sentences; a wider BW1 was rejected each time, it costs prosody: Praat's
+  F0 on klattsch's audio); (3) one more round of (1); (4) two more sweeps of (2). After it the mean offsets are 18 / 37 / 67 Hz. The
+  shipped bandwidths are mostly wider than Klatt's (F2 of front vowels 225-395 Hz) and A3 lower (Kokoro is darker
+  above 2.5 kHz); moving the formant frequencies by MCD instead (lowering F3 to ~2000 Hz in AE and EH) scored 3.405,
+  against 3.520 for amplitudes and bandwidths.
+- **glide windows** (`glide`): the share of the vowel over which a code moves from onset to offset (bank field
+  `glide`, a klattsch patch; default 0.25-0.75), fitted to Kokoro's median trajectories (the window whose two-target
+  ramp fits them best, kept if it fits a third better than 0.25-0.75): AY AW OY 0.4-0.8 (Gay 1968: the offglide is
+  late), the r-colored codes late too; the monophthongs keep 0.25-0.75.
+- **reduced vowels** (`reduced`): unstressed AH IH ER (after `functionWords`) are AX IX AXR with targets of their
+  own, centralized (Lindblom 1963; Koopmans-van Beinum 1980; Flemming & Johnson 2007: English schwa and the reduced
+  high vowel); their durations stay the duration rules' (Kokoro's AH0 median 75 ms, klattsing's 73).
+- **weak forms** (`weak`): "to", "was", "than", unstressed by `functionWords`, take AX (their weak forms [tə], [wəz],
+  [ðən]: Gimson; Cruttenden 2014); `true` = `WEAK_FORMS`, or a list of words.
+- **r-colored vowels** (`rhotic`): a vowel before R in its syllable ("dark", "four", "there", "clear") is
+  `<vowel>QR`, F3 falling through its second half (Lehiste 1964; Espy-Wilson 1992; Hagiwara 1995: the low F3 of
+  American /r/ spreads into the vowel before it), /ɔr/ raised toward [o]; IYQR takes IHQR's targets (Kokoro says
+  [ɪɹ] in "here", "near"), and AE UH UW AH before R (no corpus tokens) their own targets with the offset F3 at most
+  1900 Hz (`RHOTIC_RULE`).
+- **sung** (`singGlideMs`, 150): `[GLMS=ms]`, every glide at most this long, ending where its window ends (a held
+  note keeps its first target and moves at the end); a sung diphthong is then one gliding vowel instead of two.
+
+The targets act through coarticulation: in "One: bat." AE starts at B's locus value computed from its onset
+(548 / 1252 / 2359 Hz), moves to the onset (694 / 1537 / 2359) over 60 ms, glides to the offset (841 / 1418 / 2252)
+over 25-75% and moves over its last 50 ms toward T's locus value computed from the offset (419 / 1614 / 2655).
+
+On the Kokoro corpus (`fidelity.py --audio`, BASE = `presets/kokoro-durations.json` + `mitalk-bursts` +
+`coarticulation` + `glottal` + `nasals` + `stops` + `prosody` + `fricatives`): score 3.262 -> 3.520 (dur 1.092 ->
+1.092, spec 5.280 -> 6.035, pros 3.415 -> 3.433), MCD 3.168 -> 3.000, mcd_cmn 2.983 -> 2.841; vowels' MCD 3.394 ->
+2.970 (mcd_cmn 3.092 -> 2.750), every vowel better (AA 2.91 -> 2.39, AE 3.52 -> 2.88, AH 3.55 -> 3.24, AO 3.58 ->
+2.98, AW 3.42 -> 2.83, AY 3.47 -> 2.75, EH 3.19 -> 2.76, ER 3.30 -> 2.63, EY 2.95 -> 2.73, IH 3.24 -> 2.92, IY 3.86
+-> 3.35, OW 3.11 -> 2.73, OY 3.75 -> 3.03, UH 3.57 -> 2.98, UW 3.86 -> 3.30), the other classes level or slightly
+better (stops 3.244 -> 3.216, liquids/glides 3.393 -> 3.372); F0 r 0.898 -> 0.899, detrended 0.676 -> 0.673.
+Held out (the 20 sentences the bandwidth stages did not see; the formant rounds saw all 100): 2.878 -> 3.111 (spec
+4.574 -> 5.312, pros 3.179 -> 3.139); train 3.378 -> 3.644. Each part left out: the glide
+windows 3.515, the weak forms 3.510, the r-colored vowels 3.498, the reduced vowels 3.491; the targets alone (no
+windows, reduced, weak or r-colored codes) 3.457, everything but the 15 vowels' targets 3.363. Along the way: the
+formant rounds alone 3.374; the earlier `banks/kokoro-male-en.json` vowels (steady Kokoro formants, measured at
+50 ms-late timings) under BASE 3.270; fitting klattsch's exact formants (`--true`: the synth's own F1-F3 from the
+compiled schedule, `tools/voicelab/formant_tracks.mjs`, against Kokoro's Praat formants; it avoids Praat merging ER's
+F2 and F3 in klattsch's audio) matched the formants better but scored 3.345 (MCD favours matching what the tracker
+sees in both).
+
 Presets fitted against Kokoro by `tools/voicelab/climb.py` are spec fragments in `presets/` (merge one into a spec:
 `{"mode": "speak", "text": ..., ...preset}`): `kokoro-durations.json` (`rules`, `phoneDur`, `functionWords`) and
 `kokoro-voice.json` (that plus voice, prosody and `bankPatch` from the voice search).
@@ -321,3 +389,6 @@ compares its stops with Kokoro's part by part (closure voicing, burst spectra an
 and `burstfit.py` fits burst bandwidths and amplitudes to Kokoro's from stopscope's `--rows`.
 `fricscope.py CONFIG [--by p,next]` does the same for fricatives (spectra, spectral moments as Jongman et al. 2000,
 level re the vowels, voicing, envelopes), and `fricfit.py` fits the `fricatives` entries to Kokoro's spectra.
+`vowelscope.py CONFIG [--by p,red,r]` compares the vowels' formant trajectories with Kokoro's (Praat at 20-80% of the
+aligned vowels, paired per token), `vowelfit.py` fits the `vowels` targets, and `formant_tracks.mjs` is a worker giving
+the formant frequencies klattsch renders, read off the compiled schedule without audio.
