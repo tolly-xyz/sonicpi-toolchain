@@ -59,10 +59,11 @@ test('option: a generated bank <base>--vw<hash> (after bankPatch, before coartic
     assert.equal(P[c].F1, P[vowelOf(c)].F1, c);
   }
   // the chain with the others: nasals, bankPatch, vowels, coarticulation, fricatives, stops
-  const all = { text: 'Lower the bucket.', bankPatch: { AA: { A3: 0.5 } }, vowels: true, coarticulation: true, nasals: true, stops: true, fricatives: true };
+  const all = { text: 'Lower the bucket.', bankPatch: { AA: { A1: 0.8, A3: 0.5 } }, vowels: true, coarticulation: true, nasals: true, stops: true, fricatives: true };
   assert.match(speak(all), /^\[bank=klatt1980-en--nas[0-9a-f]{12}--[0-9a-f]{12}--vw[0-9a-f]{12}--co[0-9a-f]{12}--fr[0-9a-f]{12}--st[0-9a-f]{12}\]/);
   const Q = banks.get(bankName(all)).phonemes;
-  assert.equal(Q.AA.A3, 0.5, 'bankPatch under the vowel targets');
+  // bankPatch is under the vowel targets: a field they leave alone (A1) is the patch's, one they set (A3) theirs
+  assert.equal(Q.AA.A1, 0.8, 'bankPatch under the vowel targets'); assert.equal(Q.AA.A3, VOWEL_TARGETS.AA.A3);
   for (const c of ['AX', 'IX', 'AXR', 'AAQR', 'IY']) assert.equal(Q[c].vowel, true, `${c}: coarticulation's vowel field`);
   for (const c of ['AX', 'AXR', 'AOQR']) assert.ok(Q[`HQ${c}`] && Q[`TQ${c}`], `stops' aspiration and burst into ${c}`);
 });
