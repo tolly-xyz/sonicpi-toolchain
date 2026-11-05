@@ -1,0 +1,229 @@
+{
+ "functionWords": true,
+ "rules": {
+  "phraseFinal": 1.369,
+  "nonPhraseFinal": 0.6005,
+  "nonWordFinal": 1.138,
+  "polysyllabic": 0.8354,
+  "nonInitialConsonant": 1.276,
+  "unstressedMedial": 0.4901,
+  "unstressedSyllabic": 0.4358,
+  "unstressedLiquidGlide": 0.324,
+  "unstressedOther": 0.7949,
+  "openFinal": 1.815,
+  "beforeVoicedFricative": 1.167,
+  "beforeVoicedStop": 1.23,
+  "beforeNasal": 0.8162,
+  "beforeVoicelessStop": 0.7389,
+  "vowelBeforeVowel": 1.159,
+  "vowelAfterVowel": 0.6695,
+  "consonantBetween": 0.4653,
+  "consonantNext": 0.495,
+  "aspirationMs": 19.5
+ },
+ "phoneDur": {
+  "AA": [
+   189.5,
+   72.8
+  ],
+  "AE": [
+   205.8,
+   74.6
+  ],
+  "AH": [
+   168.2,
+   54.8
+  ],
+  "AO": [
+   177.1,
+   82.0
+  ],
+  "AW": [
+   293.5,
+   107.4
+  ],
+  "AY": [
+   233.0,
+   135.5
+  ],
+  "B": [
+   75.2,
+   63.0
+  ],
+  "CH": [
+   96.8,
+   50.3
+  ],
+  "D": [
+   70.5,
+   58.9
+  ],
+  "DH": [
+   40.5,
+   26.7
+  ],
+  "EH": [
+   139.5,
+   63.7
+  ],
+  "ER": [
+   210.6,
+   82.3
+  ],
+  "EY": [
+   205.0,
+   94.6
+  ],
+  "F": [
+   77.2,
+   73.7
+  ],
+  "G": [
+   75.0,
+   60.3
+  ],
+  "HH": [
+   61.4,
+   19.8
+  ],
+  "IH": [
+   160.9,
+   55.1
+  ],
+  "IY": [
+   195.3,
+   61.5
+  ],
+  "JH": [
+   106.5,
+   52.4
+  ],
+  "K": [
+   71.8,
+   67.4
+  ],
+  "L": [
+   64.6,
+   40.5
+  ],
+  "M": [
+   64.7,
+   56.4
+  ],
+  "N": [
+   63.1,
+   36.6
+  ],
+  "NG": [
+   74.5,
+   65.1
+  ],
+  "OW": [
+   233.8,
+   87.0
+  ],
+  "OY": [
+   277.4,
+   148.7
+  ],
+  "P": [
+   69.4,
+   60.5
+  ],
+  "R": [
+   62.9,
+   31.6
+  ],
+  "S": [
+   87.1,
+   82.9
+  ],
+  "SH": [
+   94.2,
+   78.6
+  ],
+  "T": [
+   64.7,
+   52.7
+  ],
+  "TH": [
+   86.8,
+   77.8
+  ],
+  "UH": [
+   144.2,
+   56.9
+  ],
+  "UW": [
+   178.6,
+   62.7
+  ],
+  "V": [
+   66.5,
+   42.4
+  ],
+  "W": [
+   63.3,
+   57.9
+  ],
+  "Y": [
+   67.8,
+   39.5
+  ],
+  "Z": [
+   72.5,
+   46.5
+  ],
+  "ZH": [
+   75.4,
+   40.0
+  ]
+ },
+ "bank": "mitalk-bursts",
+ "voice": "g0.5 t0.25 h0.03",
+ "glottal": {
+  "rd": 1.14,
+  "rdEffort": 5.7,
+  "tilt": 3.5,
+  "shimmer": 5.4,
+  "noiseTilt": 18.0,
+  "aspMod": 0.47
+ },
+ "prosody": {
+  "nuclear": 0.54,
+  "declination": 3.05,
+  "initial": 3.7,
+  "initialMs": 85,
+  "continuation": -0.3,
+  "micro": 1.65,
+  "microMs": 53,
+  "dip": 1.1
+ },
+ "coarticulation": {
+  "degree": 1.24,
+  "cv": 62,
+  "vc": 53
+ },
+ "nasals": {
+  "strength": 1.54,
+  "vc": 0.98,
+  "cv": 0.46,
+  "transition": 3.0
+ },
+ "stops": {
+  "aspirationGain": 1.52,
+  "voicingTail": 0.018,
+  "voiceBar": {
+   "A1": 0.083
+  }
+ },
+ "fricatives": {
+  "gain": 0.58,
+  "rise": 0.0,
+  "fall": 0.33,
+  "fallTo": 0.18,
+  "in": 4.5
+ },
+ "vowels": {},
+ "reductions": {}
+}

@@ -443,7 +443,18 @@ its own weak words (to, was, than: AX).
 
 Presets fitted against Kokoro by `tools/voicelab/climb.py` are spec fragments in `presets/` (merge one into a spec:
 `{"mode": "speak", "text": ..., ...preset}`): `kokoro-durations.json` (`rules`, `phoneDur`, `functionWords`) and
-`kokoro-voice.json` (that plus voice, prosody and `bankPatch` from the voice search).
+`kokoro-voice.json` (that plus voice, prosody and `bankPatch` from the voice search), and `kokoro-features.json`:
+the durations preset plus `mitalk-bursts`, all eight features and the options of six of them (and the voice string)
+from one joint search, `climb.py voice --base work/voicelab/climb/base8.json --space
+tools/voicelab/climb/feature-space.json` (40 options around their fitted defaults; base8 = the durations preset +
+`mitalk-bursts` + every feature as `{}`). 1,250 evaluations (stopped at the sigma floor, the last 700 adding 0.01):
+train 3.522 -> 3.660, held-out 2.984 -> 3.110. The largest moves: `glottal.tilt` 0 -> 3.5, `aspMod` 1 -> 0.47,
+`coarticulation.degree` 2 -> 1.24, `nasals.strength` 1 -> 1.54 (`vc` 0.8 -> 0.98), `stops.aspirationGain` 1 -> 1.52,
+`fricatives.gain` 1 -> 0.58 (`rise` 5 -> 0, `in` 10 -> 4.5), voice `t0.25 h0.03`. Fidelity (`--audio`) 3.398 ->
+3.533. Whisper, base8 -> the preset: 90 sentences (30 corpus, 30 held-out, 30 fresh) 124 -> 90 errors (16.5% ->
+12.0%; 30 better, 14 worse, sign test p = 0.02; held-out 55 -> 39, fresh 36 -> 20); pairs 66.2% -> 63.3% (p = 0.54,
+14 vs 10; voicing contrasts 59% -> 44%, initial and final), the same with the fricatives at their defaults. Tuned on
+speech only: sung lines are better off with the features' own defaults.
 
 Generated and inline banks exist only in the process that compiled the spec: `klattsing.mjs` renders and times
 them itself, and a JS caller can `compileString` in the same process. A `--print` string that names one renders
