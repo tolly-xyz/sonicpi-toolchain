@@ -13,7 +13,9 @@
 //             klattsch of Praat formants at 20/35/50/65/80% of the same aligned vowels (so coarticulation's loci act
 //             on both sides alike), then BW and A by coordinate descent on each code's own vowels' MCD + mcd_cmn
 //             (train split), then the formants once more
-//   balance   the fitted bandwidths and amplitudes with the targets (false: the base bank's; formants only)
+//   balance   the fitted bandwidths and amplitudes too (default false: the base bank's, the formant targets alone;
+//             true is more Kokoro-like, fidelity 3.520 against 3.385, but heard less well: Whisper pairs 63.3%
+//             against 65.5%, BASE 66.9%)
 //   glide     each vowel's glide window [a, b] (the share of the vowel over which it moves from onset to offset;
 //             klattsch's own is 0.25-0.75): Kokoro's diphthongs hold their first target longer and move late
 //             (Gay 1968; Hillenbrand et al. 1995: AY/AW/OY's offglide mostly after the middle); a klattsch patch
@@ -64,7 +66,7 @@ export const WEAK_FORMS = ['to', 'was', 'than'];
 export const RHOTIC_VOWELS = 'AA AE AH AO EH IH IY UH UW'.split(' ');
 // a vowel before R without fitted r-colored targets: its own entry, its offset F3 down to this, gliding from this share
 export const RHOTIC_RULE = { F3: 1900, glide: [0.35, 1] };
-export const VOWELS_DEFAULTS = { targets: true, balance: true, glide: true, reduced: true, weak: true, rhotic: true, singGlideMs: 150 };
+export const VOWELS_DEFAULTS = { targets: true, balance: false, glide: true, reduced: true, weak: true, rhotic: true, singGlideMs: 150 };
 const KEYS = [...Object.keys(VOWELS_DEFAULTS), 'phonemes'];
 const FIELDS = ['F1', 'F2', 'F3', 'BW1', 'BW2', 'BW3', 'A1', 'A2', 'A3', 'voicing'];
 const BALANCE = ['BW1', 'BW2', 'BW3', 'A1', 'A2', 'A3'];

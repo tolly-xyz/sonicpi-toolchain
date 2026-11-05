@@ -49,7 +49,7 @@ reconstruction), `rules`; and the opt-in options below (`bankPatch`, `functionWo
 | `stops` | `true`, or `{voiceBar: {F1: 180, BW1: 60, A1: 0.07, inMs: 20, fade: 0.35}, burst: 1, burstFit: ["T", "D", "K"], burstLocus: false, burstGain: 1, aspiration: 1, aspirationGain: 1, vot: false, votTotal: false, flap: "words", flapMs: 0, flapLocus: false, unreleased: "consonant", glottalStop: false, closureMs: null, voicingTail: 0.02}` (fields over these) (off) | context-dependent stop consonants (`src/stops.js`, below): a voice bar in B/D/G closures after a voiced sound (a fading voicing tail in P/T/K ones), bursts by place and the following vowel, aspiration through the vowel's formants, flaps, unreleased stops before consonants, as entries of a generated bank `<base>--st<hash>` (after the other generated banks) that a klattsch patch reads (a stop's `closure` and `release: false`). Timings and the timeline's phonemes are unchanged (unless `vot`/`votTotal`/`flapMs`) |
 | `prosody` | `true`, or `{accent: 3.3, downstep: 0.52, nuclear: 0.58, peak: -0.14, rise: 43, fall: 470, top: 2.65, declination: 3.1, initial: 3.6, initialMs: 86, reset: 0, final: 0, finalFrom: 0, continuation: -0.6, question: 0, micro: 1.6, microMs: 50, microOffset: 0, dip: 1.2, effort: false}` (fields over these; `null` keeps one) (off) | speak: a pitch-accent intonation model in place of `intonation` (`src/prosody.js`, below): accents on content words only, smooth rise-falls peaking at `peak` of the stressed vowel, downstep, a nuclear accent, declination with an initial rise and resets, (opt-in) phrase-final lowering, comma and (opt-in) question tunes, F0 raised after voiceless and lowered in voiced obstruents. A `b` directive per phoneme and a pitch delta per vowel; timings, phonemes and timelines unchanged. Sing mode ignores it |
 | `fricatives` | `true`, or `{gain: 1, singGain: 4, rise: 5, fall: 0.3, fallTo: 0.3, fallToC: 0.05, in: 10, phonemes: {S: {field: value, frication: {FF1, BF1, AF1, FF2, BF2, AF2, FF3, BF3, AF3, AB, FM, rise, fall, fallTo, fallToC, in}}}}` (fields over these; `null` removes one) (off) | fricatives with their own noise spectra, levels and envelopes (`src/fricatives.js`, below): F V TH DH S Z SH ZH get entries of a generated bank `<base>--fr<hash>` (after coarticulation's, before the stops') whose `frication` drives a klattsch patch, `[FRIC=gain]`: a frication path of its own (noise through three resonators and a bypass, Klatt 1980's parallel branch), fitted to Kokoro; sung, `[FRIC=gain x singGain]`. Timings and the timeline's phonemes are unchanged |
-| `vowels` | `true`, or `{targets: true, balance: true, glide: true, reduced: true, weak: true, rhotic: true, singGlideMs: 150, phonemes: {CODE: {F1, F2, F3, BW1, BW2, BW3, A1, A2, A3, glideTo: {F1, F2, F3}, glide: [a, b]}}}` (fields over these; in `phonemes` `null` takes the base bank's value) (off) | vowel targets fitted to Kokoro (`src/vowels.js`, below): every vowel an onset and an offset target (vowel-inherent spectral change) and its own bandwidths and amplitudes (`balance`), diphthongs and r-colored vowels a late glide window (bank field `glide`, a klattsch patch), unstressed AH IH ER as reduced AX IX AXR, the weak forms of "to", "was", "than" as AX, a vowel before R in its syllable as r-colored `<vowel>QR`; entries of a generated bank `<base>--vw<hash>` (after `bankPatch`, before coarticulation's, so the loci, the stops' bursts and aspiration take them); sung, `[GLMS=singGlideMs]` (every glide at most that long, late) and diphthongs not split. Timings, durations and the timeline's phonemes are unchanged (vowels carry `code`) |
+| `vowels` | `true`, or `{targets: true, balance: false, glide: true, reduced: true, weak: true, rhotic: true, singGlideMs: 150, phonemes: {CODE: {F1, F2, F3, BW1, BW2, BW3, A1, A2, A3, glideTo: {F1, F2, F3}, glide: [a, b]}}}` (fields over these; in `phonemes` `null` takes the base bank's value) (off) | vowel targets fitted to Kokoro (`src/vowels.js`, below): every vowel an onset and an offset target (vowel-inherent spectral change) and (with `balance`) its own bandwidths and amplitudes, diphthongs and r-colored vowels a late glide window (bank field `glide`, a klattsch patch), unstressed AH IH ER as reduced AX IX AXR, the weak forms of "to", "was", "than" as AX, a vowel before R in its syllable as r-colored `<vowel>QR`; entries of a generated bank `<base>--vw<hash>` (after `bankPatch`, before coarticulation's, so the loci, the stops' bursts and aspiration take them); sung, `[GLMS=singGlideMs]` (every glide at most that long, late) and diphthongs not split. Timings, durations and the timeline's phonemes are unchanged (vowels carry `code`) |
 
 ### The LF voice source (`glottal`)
 
@@ -282,11 +282,11 @@ aspiration `HQ<vowel>` and `"breath"` take its targets; its fields win over `ban
 `code` beside it):
 
 - **targets** (`targets`): every vowel code has an onset target (F1-F3) and an offset target (`glideTo`), not only the
-  diphthongs, and its own bandwidths and amplitudes: vowel-inherent spectral change (Nearey & Assmann 1986;
-  Hillenbrand et al. 1995: formants at 20% and 80% identify American English vowels far better than one steady state;
-  Assmann & Katz 2005: synthetic vowels with their natural trajectories are identified better than flat ones). Fitted
-  to Kokoro by analysis-by-synthesis under BASE (`tools/voicelab/vowelfit.py`): (1) the corpus rendered with the
-  current entries and both audios measured alike at the five points of the same aligned vowels, so the paired
+  diphthongs, and (`balance`) its own bandwidths and amplitudes: vowel-inherent spectral change (Nearey & Assmann
+  1986; Hillenbrand et al. 1995: formants at 20% and 80% identify American English vowels far better than one steady
+  state; Assmann & Katz 2005: synthetic vowels with their natural trajectories are identified better than flat ones).
+  Fitted to Kokoro by analysis-by-synthesis under BASE (`tools/voicelab/vowelfit.py`): (1) the corpus rendered with
+  the current entries and both audios measured alike at the five points of the same aligned vowels, so the paired
   difference Kokoro - klattsch per token already holds what coarticulation's loci (and the tracker) do to the vowel in
   its context; per code the median difference is solved for an onset / offset change (least squares over the five
   points), three rounds; (2) BW1-BW3 and A2/A3 per code by coordinate descent on that code's own vowels' MCD + mcd_cmn
@@ -294,8 +294,9 @@ aspiration `HQ<vowel>` and `"breath"` take its targets; its fields win over `ban
   Praat's F0 on klattsch's audio); (3) one more round of (1); (4) two more sweeps of (2). After it the mean offsets
   are 18 / 37 / 67 Hz. The shipped bandwidths are mostly wider than Klatt's (BW2 of the front vowels 224-394 Hz
   against 90-200) and A3 mostly lower (Kokoro is darker above 2.5 kHz); moving the formant frequencies by MCD instead
-  (lowering F3 to ~2000 Hz in AE and EH) scored 3.405, against 3.520 for amplitudes and bandwidths. `balance: false`
-  keeps the base bank's bandwidths and amplitudes (the formant targets alone).
+  (lowering F3 to ~2000 Hz in AE and EH) scored 3.405, against 3.520 for amplitudes and bandwidths. The bandwidths and
+  amplitudes are off by default (`balance: false`, the base bank's: the formant targets alone): they are what costs
+  intelligibility (below); `balance: true` turns them on.
 - **glide windows** (`glide`): the share of the vowel over which a code moves from onset to offset (bank field
   `glide`, a klattsch patch; default 0.25-0.75), fitted to Kokoro's median trajectories (the window whose two-target
   ramp fits them best, kept if it fits a third better than 0.25-0.75): AY AW OY 0.4-0.8 (Gay 1968: the offglide is
@@ -318,7 +319,7 @@ The targets act through coarticulation: in "One: bat." AE starts at B's locus va
 25-75% and moves over its last 50 ms toward T's locus value computed from the offset (419 / 1614 / 2655).
 
 On the Kokoro corpus (`fidelity.py --audio`, BASE = `presets/kokoro-durations.json` + `mitalk-bursts` +
-`coarticulation` + `glottal` + `nasals` + `stops` + `prosody` + `fricatives`): score 3.262 -> 3.520 (dur 1.092 ->
+`coarticulation` + `glottal` + `nasals` + `stops` + `prosody` + `fricatives`), with `balance: true`: score 3.262 -> 3.520 (dur 1.092 ->
 1.092, spec 5.280 -> 6.035, pros 3.415 -> 3.433), MCD 3.168 -> 3.000, mcd_cmn 2.983 -> 2.841; vowels' MCD 3.394 ->
 2.970 (mcd_cmn 3.092 -> 2.750), every vowel better (AA 2.91 -> 2.39, AE 3.52 -> 2.88, AH 3.55 -> 3.24, AO 3.58 ->
 2.98, AW 3.42 -> 2.83, AY 3.47 -> 2.75, EH 3.19 -> 2.76, ER 3.30 -> 2.63, EY 2.95 -> 2.73, IH 3.24 -> 2.92, IY 3.86 ->
@@ -333,6 +334,17 @@ measured at 50 ms-late timings) under BASE 3.270; fitting klattsch's exact forma
 from the compiled schedule, `tools/voicelab/formant_tracks.mjs`, against Kokoro's Praat formants; it avoids Praat
 merging ER's F2 and F3 in klattsch's audio) matched the formants better but scored 3.345 (MCD favours matching what
 the tracker sees in both).
+
+Whisper minimal pairs (`tools/voicelab/pairs.py`, 139 words, BASE as above): with `balance: true` 66.9% -> 63.3%,
+McNemar p = 0.33 (11 vs 6 discordant; vowels 67% -> 67%, liquids/glides 55% -> 27%, voicing-initial 67% -> 50%: IH and
+IY heard more open, tip as tape, bill as bell, dip as dead, lead as lad, and W/R onsets lost, row, white, weed); with
+the default `balance: false` 66.9% -> 65.5%, p = 0.82 (11 vs 9; vowels 67% -> 67%, liquids/glides 55% -> 55%,
+voicing-initial 67% -> 56%). Neither is significant, but the fitted bandwidths and amplitudes (weaker, broader F2/F3
+in the front vowels, which MCD rewards because Kokoro is darker) cost the most, so `vowels: true` leaves them off:
+fidelity 3.262 -> 3.385 (spec 5.280 -> 5.632, pros 3.415 -> 3.431; vowels' MCD 3.394 -> 3.205, mcd_cmn 3.092 -> 2.934;
+held out 2.878 -> 2.984) instead of 3.520. Sung (pairs.py's sing mode, `mitalk-bursts` + `coarticulation` + `nasals` +
+`stops` + `fricatives`, measured with `balance: true` only): 61.9% -> 61.2%, p = 1 (13 vs 12; vowels 67% -> 53%,
+liquids/glides 73% -> 45%, place-stops 50% -> 64%).
 
 Presets fitted against Kokoro by `tools/voicelab/climb.py` are spec fragments in `presets/` (merge one into a spec:
 `{"mode": "speak", "text": ..., ...preset}`): `kokoro-durations.json` (`rules`, `phoneDur`, `functionWords`) and

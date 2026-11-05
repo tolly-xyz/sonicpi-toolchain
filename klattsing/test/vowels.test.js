@@ -39,13 +39,14 @@ test('option: a generated bank <base>--vw<hash> (after bankPatch, before coartic
   const s = speak({ text: 'Lower the bucket.', vowels: true });
   assert.match(s, /^\[bank=klatt1980-en--vw[0-9a-f]{12}\] g0\.5/);
   const P = banks.get(bankName({ vowels: true })).phonemes;
+  const PB = banks.get(bankName({ vowels: { balance: true } })).phonemes;
   for (const c of VOWEL_CODES) {
     assert.ok(P[c], c);
     assert.ok(P[c].glideTo && ['F1', 'F2', 'F3'].every((f) => typeof P[c].glideTo[f] === 'number'), `${c} glideTo`);
     const t = VOWEL_TARGETS[c];
     if (t) {
       for (const f of ['F1', 'F2', 'F3']) { assert.equal(P[c][f], t[f], `${c}.${f}`); assert.equal(P[c].glideTo[f], t.glideTo[f], `${c}.glideTo.${f}`); }
-      for (const f of ['BW1', 'BW2', 'BW3', 'A1', 'A2', 'A3']) if (f in t) assert.equal(P[c][f], t[f], `${c}.${f}`);
+      for (const f of ['BW1', 'BW2', 'BW3', 'A1', 'A2', 'A3']) if (f in t) assert.equal(PB[c][f], t[f], `${c}.${f}`);
       assert.deepEqual(P[c].glide, t.glide, `${c}.glide`);
     }
     // a complete klattsch entry
@@ -62,8 +63,10 @@ test('option: a generated bank <base>--vw<hash> (after bankPatch, before coartic
   const all = { text: 'Lower the bucket.', bankPatch: { AA: { A1: 0.8, A3: 0.5 } }, vowels: true, coarticulation: true, nasals: true, stops: true, fricatives: true };
   assert.match(speak(all), /^\[bank=klatt1980-en--nas[0-9a-f]{12}--[0-9a-f]{12}--vw[0-9a-f]{12}--co[0-9a-f]{12}--fr[0-9a-f]{12}--st[0-9a-f]{12}\]/);
   const Q = banks.get(bankName(all)).phonemes;
-  // bankPatch is under the vowel targets: a field they leave alone (A1) is the patch's, one they set (A3) theirs
-  assert.equal(Q.AA.A1, 0.8, 'bankPatch under the vowel targets'); assert.equal(Q.AA.A3, VOWEL_TARGETS.AA.A3);
+  // bankPatch is under the vowel targets: a field they leave alone is the patch's (A1, and A3 without balance), one
+  // they set (A3 with balance: true) theirs
+  assert.equal(Q.AA.A1, 0.8, 'bankPatch under the vowel targets'); assert.equal(Q.AA.A3, 0.5);
+  assert.equal(banks.get(bankName({ ...all, vowels: { balance: true } })).phonemes.AA.A3, VOWEL_TARGETS.AA.A3);
   for (const c of ['AX', 'IX', 'AXR', 'AAQR', 'IY']) assert.equal(Q[c].vowel, true, `${c}: coarticulation's vowel field`);
   for (const c of ['AX', 'AXR', 'AOQR']) assert.ok(Q[`HQ${c}`] && Q[`TQ${c}`], `stops' aspiration and burst into ${c}`);
 });
@@ -82,7 +85,8 @@ test('fields: targets, reduced, weak, rhotic and phonemes switch their parts; ba
     assert.equal(nb[c].F2, VOWEL_TARGETS[c].F2, c);
     for (const f of ['BW1', 'BW2', 'BW3', 'A2', 'A3']) assert.equal(nb[c][f], k[vowelOf(c)][f], `${c}.${f}`);
   }
-  assert.notEqual(P({}).IY.BW2, k.IY.BW2, 'balance: true sets them');
+  assert.notEqual(P({ balance: true }).IY.BW2, k.IY.BW2, 'balance: true sets them');
+  assert.equal(P({}).IY.BW2, k.IY.BW2, 'balance is off by default');
   const ph = P({ phonemes: { IY: { F2: 2500, glideTo: { F3: 3100 }, glide: [0.1, 0.6] }, AX: { BW1: null, glideTo: null }, AY: { glide: null } } });
   assert.equal(ph.IY.F2, 2500); assert.equal(ph.IY.glideTo.F3, 3100); assert.deepEqual(ph.IY.glide, [0.1, 0.6]);
   // null: the base bank's value (AX: AH's), or none
