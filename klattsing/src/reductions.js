@@ -43,7 +43,10 @@ import { syllabify } from './syllables.js';
 import { VOWELS } from './phones.js';
 import { lexiconHas } from './lexicon.js';
 
-export const REDUCTIONS = { weak: true, the: 'IY', heteronyms: true, hDrop: false, elision: false, assimilation: false, sing: 'lexical' };
+// weak forms are opt-in (weak: true): on top of all the other features they made Harvard sentences harder for Whisper
+// (BASE7: 14.5/23.7/14.3% -> 13.7/26.1/16.6% WER over three sets of 30), the lexical corrections alone easier
+// (-> 13.7/22.4/13.6%); see the README
+export const REDUCTIONS = { weak: false, the: 'IY', heteronyms: true, hDrop: false, elision: false, assimilation: false, sing: 'lexical' };
 const KEYS = Object.keys(REDUCTIONS);
 
 // weak forms: one form, or [before a consonant, before a vowel] (Roach 2009 ch. 12; Kenyon & Knott 1953): the full

@@ -191,7 +191,8 @@ test('reductions on top of all six: it changes the sound, each of the six still 
   const { FormantSynth } = await import('../../vendor/klattsch/src/engine/synth-core.js');
   const text = 'She was to read the evening paper to them, and five good men kept the bottom of it for us.';
   const six = { coarticulation: true, glottal: true, nasals: true, stops: true, fricatives: true, prosody: true };
-  const all = { text, ...six, reductions: true }, h = audio(all);
+  const all = { text, ...six, reductions: { weak: true } }, h = audio(all);
+  assert.notEqual(audio({ text, ...six, reductions: true }), audio({ text, ...six }), 'the default (lexical) has no effect');
   assert.notEqual(h, audio({ text, ...six }), 'reductions has no effect with the six on');
   for (const k of Object.keys(six)) {
     const without = { ...all }; delete without[k];
@@ -222,7 +223,7 @@ test('reductions on top of all six: it changes the sound, each of the six still 
   assert.ok(peak < 1, `peak ${peak}`);
   // sung (pairs.py's sing stack: no glottal, no prosody): reductions changes it too, and it compiles cleanly
   const sungOn = { mode: 'sing', text: 'She was to read the evening paper to them', notes: 'auto', coarticulation: true, nasals: true, stops: true, fricatives: true };
-  const sung = toKlattsch({ ...sungOn, reductions: true });
+  const sung = toKlattsch({ ...sungOn, reductions: { weak: true } });
   assert.notEqual(sung, toKlattsch(sungOn));
   for (const b of banksFor(sungOn)) registerBank(b);
   assert.deepEqual(compileString(sung).warnings, []);
@@ -276,7 +277,8 @@ test('vowels composes with all six: it changes the sound, each of the six still 
 test('reductions on top of the seven (with vowels): each of the eight changes the sound; weak forms take AX', () => {
   const text = 'She was to read the evening paper to them, and five good men kept the bottom of it for us.';
   const seven = { coarticulation: true, glottal: true, nasals: true, stops: true, fricatives: true, prosody: true, vowels: true };
-  const all = { text, functionWords: true, ...seven, reductions: true }, h = audio(all);
+  const all = { text, functionWords: true, ...seven, reductions: { weak: true } }, h = audio(all);
+  assert.notEqual(audio({ ...all, reductions: true }), audio({ ...all, reductions: false }), 'the default (lexical) has no effect');
   assert.notEqual(h, audio({ ...all, reductions: false }), 'reductions has no effect with the seven on');
   for (const k of Object.keys(seven)) {
     const without = { ...all }; delete without[k];
