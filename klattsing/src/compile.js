@@ -14,6 +14,7 @@ import { nasalOptions, nasalDirectives } from './nasals.js';
 import { stopOptions, planStops, afterSilence, beforeSilence } from './stops.js';
 import { prosodyOptions, accentPlan, intonate } from './prosody.js';
 import { fricOptions, fricDirectives } from './fricatives.js';
+import { reductionOptions, reduceWords } from './reductions.js';
 import { vowelOptions, planVowels, vowelDirectives } from './vowels.js';
 
 const DIPH = { AY: ['AA', 'IY'], EY: ['EH', 'IY'], OW: ['AO', 'UW'], AW: ['AA', 'UW'], OY: ['AO', 'IY'] };
@@ -70,17 +71,32 @@ export function durTable(phoneDur) {
   return { ...DUR, ...phoneDur };
 }
 
+// o.reductions (reductions.js): weak forms, heteronyms by context, ...: the parsed words with those forms, cached
+// per parse (the parsed array) and option value
+// (ctx: the mode, and whether "vowels" gives a weak vowel its schwa AX: then the full weak table)
+const reducedCache = new WeakMap();
+function reduced(ws, x, ctx) {
+  if (!x) return ws;
+  let m = reducedCache.get(ws);
+  if (!m) reducedCache.set(ws, (m = new Map()));
+  const key = JSON.stringify([x, ctx]);
+  let r = m.get(key);
+  if (!r) { const R = reductionOptions(x, ctx); r = R ? reduceWords(ws, R) : ws; if (m.size >= 64) m.clear(); m.set(key, r); }
+  return r;
+}
+
 // o.functionWords: true (FUNCTION_WORDS) or a list of words: one-syllable ones get stress 0 before the rules
 export function words(text, rules, version, o = {}) {
   const fw = o.functionWords && (o.functionWords === true ? FUNCTION_WORDS : new Set(o.functionWords.map((x) => x.toLowerCase())));
-  const ws = parse(text).map((w) => {
+  const V = vowelOptions(o);
+  const ctx = { mode: o.mode === 'sing' ? 'sing' : 'speak', schwa: !!V && (V.reduced || !!V.weak) };
+  const ws = reduced(parse(text), o.reductions, ctx).map((w) => {
     const reduce = fw && w.syllables.length === 1 && fw.has(w.word);
     return { ...w, syllables: w.syllables.map((s) => (reduce ? { ...s, stress: 0 } : { ...s })) };
   });
   const dur = durTable(o.phoneDur);
   const timed = version === 'v0' ? timeWordsV0(ws, rules ?? undefined, dur) : timeWords(ws, { ...RULES, ...(rules ?? {}) }, dur);
   // "vowels" (vowels.js): the code each syllable's vowel is rendered with (s.nucleusCode), before the stops take it
-  const V = vowelOptions(o);
   if (V) planVowels(timed, V);
   return o.stops ? planStops(timed, stopOptions(o.stops)) : timed;
 }
@@ -207,7 +223,7 @@ export function autoNotes(syl, { scale = ['E2', 'G2', 'A2', 'G2', 'F2'], long = 
 // sing's timing, shared by sing() and durationsOf(): per syllable { s, at, rests, note, ons, coda, a, parts, to, rest }
 function singPlan(o) {
   const bpm = o.bpm ?? 120, st = (n) => n * 15000 / bpm;
-  const ws = words(o.text, o.rules, o.durations, o);
+  const ws = words(o.text, o.rules, o.durations, { ...o, mode: 'sing' });
   const syl = ws.flatMap((w) => w.syllables);
   const where = ws.flatMap((w, wi) => w.syllables.map((_, si) => ({ word: wi, syl: si })));
   // a note named 'r' (or 'rest') is a rest: [ 'r', sixteenths ]

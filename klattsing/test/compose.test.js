@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { speak } from '../src/compile.js';
+import { speak, toKlattsch } from '../src/compile.js';
 import { banksFor } from '../src/banks.js';
 import { registerBank } from '../../vendor/klattsch/src/engine/banks/index.js';
 import { compileString, renderToBuffer } from '../../vendor/klattsch/src/engine/index.js';
@@ -184,6 +184,51 @@ test('all six features: each changes the sound with the other five on; prosody k
   assert.ok(peak < 1, `peak ${peak}`);
 });
 
+// reductions (src/reductions.js) changes only the phonemes before syllables are timed: every feature after it must
+// see the reduced words (stops' voice bars and flaps, nasal murmurs, fricative entries, prosody's accents), and its
+// forms must keep each engine path running
+test('reductions on top of all six: it changes the sound, each of the six still does, LF / nasal / frication paths on', async () => {
+  const { FormantSynth } = await import('../../vendor/klattsch/src/engine/synth-core.js');
+  const text = 'She was to read the evening paper to them, and five good men kept the bottom of it for us.';
+  const six = { coarticulation: true, glottal: true, nasals: true, stops: true, fricatives: true, prosody: true };
+  const all = { text, ...six, reductions: { weak: true } }, h = audio(all);
+  assert.notEqual(audio({ text, ...six, reductions: true }), audio({ text, ...six }), 'the default (lexical) has no effect');
+  assert.notEqual(h, audio({ text, ...six }), 'reductions has no effect with the six on');
+  for (const k of Object.keys(six)) {
+    const without = { ...all }; delete without[k];
+    assert.notEqual(h, audio(without), `${k} has no effect with reductions and the other five on`);
+  }
+  // the string carries every feature's directives and the reduced forms (was, the before a vowel, read; "to" keeps
+  // its citation vowel by default), in the stops' context entries (to: released, aspirated into UW; read: voice bar)
+  const s = speak(all);
+  assert.match(s, /^\[bank=klatt1980-en--nas[0-9a-f]{12}--co[0-9a-f]{12}--fr[0-9a-f]{12}--st[0-9a-f]{12}\] \[CO=2\].* \[GS=1\].* \[NAS=1\].* \[FRIC=1\]/);
+  const seq = s.split(' ').filter((t) => /^[A-Z]+(\(|$)/.test(t)).map((t) => t.replace(/\(.*/, '')).join(' ');
+  assert.match(seq, /^SH IY W AH Z TQTUW HQUW UW R IY DQVU DH IY IY V /, seq);
+  assert.match(seq, / F ER AH S$/, seq);
+  for (const b of banksFor(all)) registerBank(b);
+  const v = compileString(s).voices[0];
+  assert.ok(v.schedule.some((e) => e.fricOnly), 'expected fricOnly events');
+  assert.ok(v.schedule.some((e) => e.nasalOnly), 'expected nasalOnly events');
+  assert.ok(v.schedule.some((e) => e.params && e.params.join() === 'F1,F2,F3'), 'expected coarticulation formant events');
+  assert.ok(v.schedule.some((e) => e.target.voicing === 1 && e.target.A2 === 0 && e.target.BW1 === 60), 'expected a voice bar');
+  const f0 = v.schedule.map((e) => e.target.F0).filter((x) => x > 0);
+  assert.ok(12 * Math.log2(Math.max(...f0) / Math.min(...f0)) > 4, 'F0 range (prosody)');
+  const synth = new FormantSynth({ sampleRate: 16000, schedule: v.schedule });
+  const buf = new Float32Array(Math.ceil(v.totalMs * 16));
+  let gs = 0, n = 0, peak = 0;
+  for (let i = 0; i < buf.length; i += 160) { synth.process(buf.subarray(i, i + 160)); n++; gs += synth.src.GS; }
+  for (const x of buf) { assert.ok(Number.isFinite(x)); peak = Math.max(peak, Math.abs(x)); }
+  assert.ok(gs / n > 0.95, `LF source on ${(100 * gs / n).toFixed(0)}% of blocks`);
+  assert.ok(synth.nasal && synth.fric, 'nasal and frication paths on');
+  assert.ok(peak < 1, `peak ${peak}`);
+  // sung (pairs.py's sing stack: no glottal, no prosody): reductions changes it too, and it compiles cleanly
+  const sungOn = { mode: 'sing', text: 'She was to read the evening paper to them', notes: 'auto', coarticulation: true, nasals: true, stops: true, fricatives: true };
+  const sung = toKlattsch({ ...sungOn, reductions: { weak: true } });
+  assert.notEqual(sung, toKlattsch(sungOn));
+  for (const b of banksFor(sungOn)) registerBank(b);
+  assert.deepEqual(compileString(sung).warnings, []);
+});
+
 // vowels (src/vowels.js: a vowel-target bank between bankPatch's and coarticulation's, new vowel codes, the glide window)
 // on top of all six: coarticulation, the stops, breath and the nasals must take its targets and codes, prosody's pitch and
 // the frication must not move, and every one of the six must still change the sound
@@ -225,4 +270,27 @@ test('vowels composes with all six: it changes the sound, each of the six still 
   assert.ok(gs / n > 0.95, `LF source on ${(100 * gs / n).toFixed(0)}% of blocks`);
   assert.ok(synth.nasal && synth.fric, 'nasal and frication paths on');
   assert.ok(peak < 1, `peak ${peak}`);
+});
+
+// all eight: reductions on top of the seven (vowels included): it changes the sound, each of the seven still does, and
+// the weak forms reach vowels' reduced codes (reductions owns to / was / than, vowels renders their schwa)
+test('reductions on top of the seven (with vowels): each of the eight changes the sound; weak forms take AX', () => {
+  const text = 'She was to read the evening paper to them, and five good men kept the bottom of it for us.';
+  const seven = { coarticulation: true, glottal: true, nasals: true, stops: true, fricatives: true, prosody: true, vowels: true };
+  const all = { text, functionWords: true, ...seven, reductions: { weak: true } }, h = audio(all);
+  assert.notEqual(audio({ ...all, reductions: true }), audio({ ...all, reductions: false }), 'the default (lexical) has no effect');
+  assert.notEqual(h, audio({ ...all, reductions: false }), 'reductions has no effect with the seven on');
+  for (const k of Object.keys(seven)) {
+    const without = { ...all }; delete without[k];
+    assert.notEqual(h, audio(without), `${k} has no effect with reductions and the other six on`);
+  }
+  const s = speak(all);
+  assert.match(s, /^\[bank=klatt1980-en--nas[0-9a-f]{12}--vw[0-9a-f]{12}--co[0-9a-f]{12}--fr[0-9a-f]{12}--st[0-9a-f]{12}\] \[CO=2\].* \[GS=1\].* \[NAS=1\].* \[FRIC=1\]/);
+  const seq = s.split(' ').filter((t) => /^[A-Z]+(\(|$)/.test(t)).map((t) => t.replace(/\(.*/, '')).join(' ');
+  assert.match(seq, /^SH IY W AX Z TQTAX AX R IY DQVU DH IY IY V /, seq);      // was to read the evening
+  assert.match(seq, / F AXR AH S$/, seq);                                         // for us.
+  for (const b of banksFor(all)) registerBank(b);
+  const v = compileString(s).voices[0];
+  assert.deepEqual(compileString(s).warnings, []);
+  assert.ok(v.schedule.some((e) => e.fricOnly) && v.schedule.some((e) => e.nasalOnly), 'frication and nasal events');
 });

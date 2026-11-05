@@ -2,7 +2,9 @@
 """Sentence intelligibility: Harvard sentences (IEEE 1969, lists 1-2), spoken or sung (auto melody),
 one per Whisper call; word error rate against the text.
 
-usage: sentences.py CONFIGS.json [OUT.json]     (configs as for pairs.py; "mode": "speak"|"sing"|"kokoro")
+usage: sentences.py CONFIGS.json [OUT.json] [--texts TEXTS.json]
+  CONFIGS: as for pairs.py ("mode": "speak"|"sing"|"kokoro"); the klattsing options in KEEP are passed on.
+  --texts: a JSON list of sentences instead of HARVARD (every word must be in the lexicon); the report records them.
 """
 import json, os, re, subprocess, sys, tempfile, difflib
 import numpy as np, soundfile as sf
@@ -22,6 +24,10 @@ HARVARD = [
     "Smoky fires lack flame and heat.", "The soft cushion broke the man's fall.",
     "The salt breeze came across from the sea.", "The girl at the booth sold fifty bonds.",
 ]
+# the config keys passed on to klattsing (the opt-in features too: a key left out here silently measures without it)
+KEEP = ("bank", "transition", "aspiration", "voice", "rules", "accent", "gate", "hold", "durations", "dynamics", "melody", "bpm", "rate",
+        "functionWords", "phoneDur", "bankPatch", "intonation", "pauseMs", "accentDelta", "breathLevel", "breathVoicing",
+        "coarticulation", "glottal", "nasals", "stops", "prosody", "fricatives", "reductions", "vowels")
 norm = lambda s: re.findall(r"[a-z']+", s.lower().replace("’", "'"))
 
 def render(cfg, text, path):
@@ -30,8 +36,7 @@ def render(cfg, text, path):
         d = os.environ.get("KOKORO_DIR", "/home/user/tts")
         P.KOKORO = P.KOKORO or Kokoro(f"{d}/kokoro-v1.0.onnx", f"{d}/voices-v1.0.bin")
         x, sr = P.KOKORO.create(text, voice=cfg.get("voice", "am_onyx"), speed=1.0, lang="en-us"); sf.write(path, x, sr); return
-    keep = ("bank", "transition", "aspiration", "voice", "rules", "accent", "gate", "hold", "durations", "dynamics", "melody", "bpm", "rate")
-    spec = {k: v for k, v in cfg.items() if k in keep}
+    spec = {k: v for k, v in cfg.items() if k in KEEP}
     spec.update(mode=cfg.get("mode", "speak"), text=text)
     if spec["mode"] == "speak": spec["pitch"] = cfg.get("pitch", "A2")
     else: spec["notes"] = "auto"
@@ -39,7 +44,11 @@ def render(cfg, text, path):
     if r.returncode: raise SystemExit(r.stderr)
 
 def main():
-    cfgs = json.load(open(sys.argv[1])); out = sys.argv[2] if len(sys.argv) > 2 else None
+    args = sys.argv[1:]
+    texts = HARVARD
+    if "--texts" in args:
+        i = args.index("--texts"); texts = json.load(open(args[i + 1])); del args[i:i + 2]
+    cfgs = json.load(open(args[0])); out = args[1] if len(args) > 1 else None
     import whisper, torch
     torch.set_num_threads(os.cpu_count())
     model = whisper.load_model(os.environ.get("WHISPER_MODEL", "/home/user/whisper/large-v3-turbo.pt"), device="cpu")
@@ -47,7 +56,7 @@ def main():
     for cfg in cfgs:
         if cfg["name"] in report: print(f"{cfg['name']:28s} (done earlier)", flush=True); continue
         errs = words = 0; rows = []
-        for text in HARVARD:
+        for text in texts:
             with tempfile.NamedTemporaryFile(suffix=".wav") as f:
                 render(cfg, text, f.name); x, sr = sf.read(f.name)
             heard = model.transcribe(resample_poly(x, 16000, sr).astype("float32"), language="en", temperature=0,
@@ -56,7 +65,8 @@ def main():
             sm = difflib.SequenceMatcher(None, R, H, autojunk=False)
             e = sum(max(i2 - i1, j2 - j1) for op, i1, i2, j1, j2 in sm.get_opcodes() if op != "equal")
             errs += e; words += len(R); rows.append(f"{e}/{len(R)}  {heard}")
-        report[cfg["name"]] = {"wer": round(errs / words, 3), "heard": rows}
+        report[cfg["name"]] = {"wer": round(errs / words, 3), "errors": errs, "words": words, "heard": rows,
+                               **({"texts": texts} if texts is not HARVARD else {})}
         print(f"{cfg['name']:28s} WER {errs / words:5.1%}", flush=True)
         for r in rows[:6]: print("   " + r, flush=True)
         if out: json.dump(report, open(out, "w"), indent=1)

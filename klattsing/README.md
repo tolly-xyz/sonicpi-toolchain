@@ -28,7 +28,7 @@ per syllable, or `"auto"`), `bpm`, `melody` (auto: `scale`, `long`, `short`, `la
 `dynamics` (loudness by stress, a klattsch patch; off by default), `durations` (`"v0"` for the first
 reconstruction), `rules`; and the opt-in options below (`bankPatch`, `functionWords`, `intonation`,
 `breathLevel`, `breathVoicing`, `pauseMs`, `accentDelta`, `phoneDur`, `coarticulation`, `glottal`, `nasals`, `stops`,
-`prosody`, `fricatives`, `vowels`).
+`prosody`, `fricatives`, `vowels`, `reductions`).
 
 ## Options for optimizers (all opt-in; leaving them out gives exactly the strings from before)
 
@@ -50,6 +50,7 @@ reconstruction), `rules`; and the opt-in options below (`bankPatch`, `functionWo
 | `prosody` | `true`, or `{accent: 3.3, downstep: 0.52, nuclear: 0.58, peak: -0.14, rise: 43, fall: 470, top: 2.65, declination: 3.1, initial: 3.6, initialMs: 86, reset: 0, final: 0, finalFrom: 0, continuation: -0.6, question: 0, micro: 1.6, microMs: 50, microOffset: 0, dip: 1.2, effort: false}` (fields over these; `null` keeps one) (off) | speak: a pitch-accent intonation model in place of `intonation` (`src/prosody.js`, below): accents on content words only, smooth rise-falls peaking at `peak` of the stressed vowel, downstep, a nuclear accent, declination with an initial rise and resets, (opt-in) phrase-final lowering, comma and (opt-in) question tunes, F0 raised after voiceless and lowered in voiced obstruents. A `b` directive per phoneme and a pitch delta per vowel; timings, phonemes and timelines unchanged. Sing mode ignores it |
 | `fricatives` | `true`, or `{gain: 1, singGain: 4, rise: 5, fall: 0.3, fallTo: 0.3, fallToC: 0.05, in: 10, phonemes: {S: {field: value, frication: {FF1, BF1, AF1, FF2, BF2, AF2, FF3, BF3, AF3, AB, FM, rise, fall, fallTo, fallToC, in}}}}` (fields over these; `null` removes one) (off) | fricatives with their own noise spectra, levels and envelopes (`src/fricatives.js`, below): F V TH DH S Z SH ZH get entries of a generated bank `<base>--fr<hash>` (after coarticulation's, before the stops') whose `frication` drives a klattsch patch, `[FRIC=gain]`: a frication path of its own (noise through three resonators and a bypass, Klatt 1980's parallel branch), fitted to Kokoro; sung, `[FRIC=gain x singGain]`. Timings and the timeline's phonemes are unchanged |
 | `vowels` | `true`, or `{targets: true, balance: false, glide: true, reduced: true, weak: true, rhotic: true, singGlideMs: 150, phonemes: {CODE: {F1, F2, F3, BW1, BW2, BW3, A1, A2, A3, glideTo: {F1, F2, F3}, glide: [a, b]}}}` (fields over these; in `phonemes` `null` takes the base bank's value) (off) | vowel targets fitted to Kokoro (`src/vowels.js`, below): every vowel an onset and an offset target (vowel-inherent spectral change) and (with `balance`) its own bandwidths and amplitudes, diphthongs and r-colored vowels a late glide window (bank field `glide`, a klattsch patch), unstressed AH IH ER as reduced AX IX AXR, the weak forms of "to", "was", "than" as AX, a vowel before R in its syllable as r-colored `<vowel>QR`; entries of a generated bank `<base>--vw<hash>` (after `bankPatch`, before coarticulation's, so the loci, the stops' bursts and aspiration take them); sung, `[GLMS=singGlideMs]` (every glide at most that long, late) and diphthongs not split. Timings, durations and the timeline's phonemes are unchanged (vowels carry `code`) |
+| `reductions` | `true`, or `{weak: false, the: "IY", heteronyms: true, hDrop: false, elision: false, assimilation: false, sing: "lexical"}` (fields over these; `weak`: `true` for the weak-form table, `"all"` with to / into / do, or `{word: "PHONES" \| ["before a consonant", "before a vowel"] \| null}` over the table) (off) | connected-speech forms in the lexicon (`src/reductions.js`, below): heteronyms are read by their neighbours ("Read verse", "their lives", "close the door") and "the" is DH IY0 before a vowel; opt-in (`weak: true`; on top of the other features they did not help Whisper), function words take their weak forms inside a phrase ("was" W AH0 Z, "for" F ER0, "can" K AH0 N, "than" DH AH0 N; "to" T AH0 only with `weak: "all"` or `vowels`, whose AX renders the schwa), the strong ones at its end; opt-in h-dropping, "and"/"must" elision and N-to-M/NG assimilation across words. Changes phonemes and stress only, before the duration rules (which then time the reduced forms); sung, only the heteronyms and "the" (`sing`); the syllable count never changes |
 
 ### The LF voice source (`glottal`)
 
@@ -346,6 +347,99 @@ held out 2.878 -> 2.984) instead of 3.520. Sung (pairs.py's sing mode, `mitalk-b
 `stops` + `fricatives`): with the default 61.9% -> 60.4%, p = 0.85 (14 vs 12; vowels 67% -> 67%, liquids/glides
 73% -> 55%), with `balance: true` 61.9% -> 61.2%, p = 1 (13 vs 12; vowels 67% -> 53%, liquids/glides 73% -> 45%,
 place-stops 50% -> 64%). Neither helps singing (sung lines can leave `vowels` out).
+
+### Connected speech (`reductions`)
+
+CMUdict gives a word its citation form, and its first entry is the one klattsing uses: "to" T UW1, "was" W AA1 Z,
+"for" F AO1 R, "can" K AE1 N, "at" AE1 T, "than" DH AE1 N, "your" Y AO1 R; "the" is DH AH0 before a vowel too; "read" is
+always R EH1 D, "lives" L IH1 V Z, "close" K L OW1 S, "use" Y UW1 S and "perfect" P ER0 F EH1 K T, whatever the sentence
+says. `functionWords` takes the stress off one-syllable function words, but leaves their vowels. In running speech the
+unstressed function words take their weak forms (Jones's EPD; Gimson 1962 / Cruttenden 2014 §12.3; Roach 2009 ch.
+12; American forms after Kenyon & Knott 1953). `reductions` looks at every word in its phrase after the lexicon and
+before syllables are timed (`src/reductions.js`):
+
+- **weak forms** (`weak: true`, opt-in, the table `WEAK`): a, an, the, and, but, or, nor, than, that, as, at, for, from, of,
+  some, there, am, are, is, was, were, be, been, can, could, would, should, shall, must, will, does, have, has, had, he,
+  she, we, me, you, him, his, her, them, us, your take their weak form (Roach's list, rhotic: "for" F ER0, "are" ER0,
+  "your" Y ER0) unless they end a phrase (punctuation or the end of the text: "who is it for?", "faced us.", "yes, he
+  can."), where English uses the strong form. `weak: "all"` (`WEAK_ALL`) adds to, into and do, with a form before a
+  consonant and one before a vowel (T AH0 / T UW0, by the next word's first phoneme): their weak vowel is a schwa, and
+  the banks have none (AH0 is rendered as AH, an open [ʌ] at F1 620 Hz), so by default they keep their citation vowel
+  (see the measurements below; with a schwa-like unstressed AH they can come back). Some only in their unstressed uses: "that" as a conjunction or
+  relative (before a determiner or subject pronoun: "said that the", not "that year"), "there" existential (before a form
+  of be or a modal), "some" not before "of", have / has / had as auxiliaries (before "been", a participle-like word or an
+  adverb, not "have to"), do / does before "not" or a subject pronoun (before "you" / "it" in a question only: "do it
+  now"). A weak syllable is unstressed (stress 0, with or without `functionWords`).
+- **"the" before a vowel** (`the`): DH IY0 (`"IY"`: Jones, Gimson, Roach), DH IH0 (`"IH"`, Kokoro's ðɪ) or `false`.
+- **heteronyms** (`heteronyms`, `HETERONYMS`): read, lives, live, close, use, excuse, abuse, used, wind, tear, tears,
+  lead, perfect and 23 stress-shifting noun / verb pairs (record, present, object, permit, produce, project, refuse, ...: the
+  noun stressed on the first syllable, the verb on the second; and records, presents, objects) read by their neighbours in the phrase: a verb after "to",
+  a modal or do, or a subject pronoun, or with an object after it (a determiner or object pronoun next, nothing
+  determiner-like before: "always close the door", "Use a pencil"); a noun or adjective after a determiner, possessive or
+  number ("their lives", "of perfect"); "read" past after be / have and he / she / it, else present ("Read verse out
+  loud"); "used" Y UW1 S T before "to" unless after be / get ("I used to", not "is used to catch"); "lead" L IY1 D (verb,
+  and the noun of "take the lead"), L EH1 D only in the metal's contexts ("lead pipe", "made of lead", "black lead"). A word a project
+  lexicon (`dict/lexicon.json`) gives keeps its pronunciation.
+- opt-in, off by default: **`hDrop`** (him, his, her, have, has, had lose their H inside a phrase when weak: "tell 'im";
+  Roach, Cruttenden), **`elision`** ("and" loses its D before a consonant, the most frequent -t/-d deletion, Neu 1980,
+  Guy 1980; "must" its T), **`assimilation`** (a word-final N becomes M before P B M and NG before K G in the
+  same phrase: "ten pins", "in case"; regressive place assimilation of word-final alveolars, Gimson; gradient and
+  optional in connected speech, Nolan 1992, Ellis & Hardcastle 2002).
+
+Only phonemes and stress change, before the duration rules, so the reduced forms get their own (shorter, unstressed)
+rule durations and every later feature (stops' voice bars and flaps, nasals, fricatives, prosody's accents) sees them;
+the number of syllables never changes, so sing's notes still fit. Sung lines (`sing`, below) take only the lexical
+corrections by default. Not here: function-word
+durations (`functionWords`), flapped T/D (`stops`, acoustically), reduced vowel qualities (a schwa entry), syllabic
+consonants ("button" B AH1 T N, as Kokoro says it).
+
+(The BASE measurements in this paragraph and the next are of `weak: true`, the default until the BASE7 runs below.)
+On the Kokoro corpus (`fidelity.py --audio`, BASE = `kokoro-durations` + `mitalk-bursts` + `coarticulation` + `glottal` +
+`nasals` + `stops` + `prosody` + `fricatives`): score 3.262 -> 3.278 (dur 1.092 -> 1.118, spec 5.280 -> 5.301, pros
+3.415 -> 3.415; mcd_cmn 2.983 -> 2.978, unstressed vowel durations log_rmse 0.305 -> 0.299, vowel r 0.835 -> 0.841). The
+vowels of the words it changes (38 in 32 sentences) come nearer Kokoro's: MCD 3.32 -> 3.04 dB, mcd_cmn 3.12 -> 2.82 ("the"
+before a vowel 4.43 -> 3.38, "for" 4.24 -> 3.64, "read" 5.24 -> 3.95, "was" 2.64 -> 2.61; against it existential "there"
+3.26 -> 3.66 and "at" 3.04 -> 3.11, which Kokoro says strong). Phone labels (Needleman-Wunsch, fidelity's costs): 2360 of the
+2454 Kokoro phones matched instead of 2359 (96.1% -> 96.2%), substitutions 91 -> 83, words pronounced as Kokoro does 682
+-> 690 of 778. `weak: "all"` (the first version's default) matched far more labels (2378, 96.9%; substitutions 65; words
+708: Kokoro says "to" T AH all 18 times) and scored 3.279 (dur 1.126, spec 5.293), but its "to" vowel was further from
+Kokoro's (MCD 3.55 -> 3.83 dB, mcd_cmn 3.24 -> 3.58): the label is Kokoro's, the sound is not, because AH0 is the bank's
+[ʌ]. Kokoro (misaki's lexicon) also keeps "and" AE N D (CMUdict's first entry, AH0 N D, is a weak form already), "for" F
+AO R (3 of 4), "at" AE T (2 of 3), existential "there" strong and "your" Y UH R: the literature's forms are kept (each a
+fidelity tie). Parts and variants (score): weak forms off (heteronyms and "the") 3.276, heteronyms off 3.270, "the" as DH
+IH0 3.277 (labels 2365: Kokoro's ðɪ, but spec 5.301 -> 5.296), as DH AH0 3.274; `hDrop` 3.282 (but Kokoro keeps the H:
+labels 2360 -> 2356), `assimilation` 3.277 (Kokoro does not assimilate: 2353), `elision` 3.256 (Kokoro keeps the D of
+"and": labels 2345, dur 1.118 -> 1.063), all three 3.254: they stay off.
+
+Whisper (large-v3-turbo): pairs (`pairs.py`, BASE as base6) 66.9% -> 66.9%, McNemar p = 1 (1 word each way; its carriers
+are content words, phrase-final, so only "read" / "lead" change: "read" is now heard, "bill" in the group with "lead" is
+lost). Harvard sentences (`sentences.py --texts`, word error rate; each subset the first 30 sentences the first version
+changed, in order): 30 corpus sentences 16.6% -> 16.6% (3 better, 3 worse); 30 held-out ones from lists 11-20
+24.1% -> 21.2% (6 better, 4 worse); 30 fresh ones (the remaining changed sentences of lists 11-20 and lists 21-26, never used for a decision)
+18.9% -> 18.5% (6 better, 5 worse): no harm, no clear gain. The first version (`weak: "all"`) made both subsets worse: 16.6% -> 20.7% and 24.1% -> 25.7% (sentences 9
+better, 15 worse); the harm was the weak "to": the 17 sentences whose only change was "to" had 12 more errors (6 worse,
+2 better: "to mark" heard as "tomorrow", "back to her feet" as "better if it"), which is why to / into / do now keep their
+citation vowel until there is a schwa. Sung (sing stack: coarticulation + nasals + stops + fricatives, `mitalk-bursts`):
+pairs 61.9% -> 62.6% (p = 1: "read"); the 30 corpus sentences sung (auto melody) with every form 16.2% ->
+18.3% (3 better, 6 worse: a weak form loses its stress, so the auto melody gives it a short note, and a held note
+on [ʌ] is not what singers do: they keep a full vowel on a sustained note), so `sing` defaults to `"lexical"`:
+sung, only the heteronyms and "the" before a vowel (16.2% -> 15.4%, 1 better: "their lives"); `sing: true` sings the spoken forms.
+
+With `vowels` (its reduced AX / AXR / IX) the schwa is there, so `reductions` uses the full table (to / into / do
+too) and owns the words of its table: it decides weak or strong by context (a phrase's end, "to" T UW0 before a vowel,
+"that" / "there" / "have" by use) and marks each word; vowels renders a weak form's unstressed vowels with its reduced
+codes ("was" W AX Z, "for" F AXR, "to bed" T AX) and leaves a kept strong form's vowel full ("what it was." W AA Z,
+"for us." AH S, where vowels alone gives AX); vowels' own weak list (to, was, than) applies to the words reductions
+does not handle. BASE7 = BASE + `vowels` (3.385): + `reductions` 3.409 (dur 1.092 -> 1.126, spec 5.632 -> 5.662, pros
+3.431 -> 3.437; mcd_cmn 2.914 -> 2.907), held out (climb.py's 20) 2.984 -> 3.007; labels 2359 -> 2378 of 2454 (96.9%),
+substitutions 91 -> 65; the changed words' vowels MCD 3.42 -> 3.18 dB (mcd_cmn 3.18 -> 2.93; "to" 3.65 -> 3.66: BASE7
+already gives it AX). Lexical forms alone (`weak: false`) 3.398. Whisper on BASE7 (pairs: BASE7 = vowels.json's `feature-nobalance`): pairs 65.5% -> 66.2% (p = 1, "read"); the weak
+forms (`weak: true`, with the schwa) made the sentences worse: 30 corpus 14.5% -> 13.7% (4 better, 4 worse), 30
+held-out 23.7% -> 26.1% (6, 7), 30 fresh 14.3% -> 16.6% (3, 8; "for" F AXR in 4 of them): 131 -> 141 errors; the
+lexical corrections alone (`weak: false`) 13.7%, 22.4%, 13.6%: 124 errors (6 better, 2 worse). So `weak` is off by
+default: `reductions: true` is the heteronyms and "the" before a vowel (fidelity BASE7 3.385 -> 3.398; BASE 3.262 ->
+3.276), and `weak: true` is for Kokoro-likeness (3.409) at some cost in intelligibility. With the default, vowels keeps
+its own weak words (to, was, than: AX).
 
 Presets fitted against Kokoro by `tools/voicelab/climb.py` are spec fragments in `presets/` (merge one into a spec:
 `{"mode": "speak", "text": ..., ...preset}`): `kokoro-durations.json` (`rules`, `phoneDur`, `functionWords`) and

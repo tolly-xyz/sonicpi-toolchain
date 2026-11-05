@@ -6,6 +6,8 @@ import { dictionary } from 'cmu-pronouncing-dictionary';
 const extra = {};
 let version = 0;                       // bumped by addLexicon, so callers can cache lookups
 export const lexiconVersion = () => version;
+// whether a project lexicon (addLexicon) gives this word (lower case) its pronunciation
+export const lexiconHas = (word) => Object.hasOwn(extra, word);
 export function addLexicon(path) {
   if (existsSync(path)) { Object.assign(extra, JSON.parse(readFileSync(path, 'utf8'))); version++; }
 }

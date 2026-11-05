@@ -158,8 +158,11 @@ export function planVowels(ws, V) {
   for (const w of ws) for (const s of w.syllables) {
     if (!s.nucleus || !VOWELS.has(s.nucleus)) continue;
     let c = s.nucleus;
-    if (s.stress === 0 && weak && weak.has(w.word) && c !== 'ER') c = 'AX';
-    else if (s.stress === 0 && V.reduced && REDUCE[c]) c = REDUCE[c];
+    // "reductions" (reductions.js) owns the words of its weak table: w.weakForm true (its weak form: the weak vowels
+    // take their codes) or false (its strong form, kept at a phrase's end or by use: the vowel stays full)
+    const strong = w.weakForm === false;
+    if (s.stress === 0 && weak && !strong && (w.weakForm ? c === 'AH' : weak.has(w.word) && c !== 'ER')) c = 'AX';
+    else if (s.stress === 0 && V.reduced && !strong && REDUCE[c]) c = REDUCE[c];
     else if (V.rhotic && s.coda[0] === 'R' && RHOTIC_VOWELS.includes(c)) c += RHOTIC_SUFFIX;
     if (c !== s.nucleus) s.nucleusCode = c;
   }
