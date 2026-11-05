@@ -453,8 +453,19 @@ train 3.522 -> 3.660, held-out 2.984 -> 3.110. The largest moves: `glottal.tilt`
 `fricatives.gain` 1 -> 0.58 (`rise` 5 -> 0, `in` 10 -> 4.5), voice `t0.25 h0.03`. Fidelity (`--audio`) 3.398 ->
 3.533. Whisper, base8 -> the preset: 90 sentences (30 corpus, 30 held-out, 30 fresh) 124 -> 90 errors (16.5% ->
 12.0%; 30 better, 14 worse, sign test p = 0.02; held-out 55 -> 39, fresh 36 -> 20); pairs 66.2% -> 63.3% (p = 0.54,
-14 vs 10; voicing contrasts 59% -> 44%, initial and final), the same with the fricatives at their defaults. Tuned on
-speech only: sung lines are better off with the features' own defaults.
+14 vs 10; voicing contrasts 59% -> 44%, initial and final), the same with the fricatives at their defaults. The
+347-word rhyme test (`tools/voicelab/mrt.py`, open response, six words per Whisper call) settles it the other way:
+
+| speak, n = 347 words           | words | initial | final | vowel |
+|--------------------------------|-------|---------|-------|-------|
+| klattsing defaults             | 38.3% | 35%     | 40%   | 45%   |
+| base8 (eight features)         | 59.7% | 59%     | 61%   | 57%   |
+| `kokoro-features.json`         | 64.0% | 64%     | 64%   | 64%   |
+| Kokoro (am_onyx), the ceiling  | 75.8% | 74%     | 76%   | 81%   |
+
+base8 -> the preset +4.3 points (paired bootstrap [+0.3, +8.4]; McNemar 18 vs 33, p = 0.049); defaults -> base8
++21.3 (p < 1e-10); the preset is 11.8 points under Kokoro (base8 16.1), i.e. it closes 69% of the gap from the
+defaults to Kokoro (base8 57%). Tuned on speech only: sung lines are better off with the features' own defaults.
 
 Generated and inline banks exist only in the process that compiled the spec: `klattsing.mjs` renders and times
 them itself, and a JS caller can `compileString` in the same process. A `--print` string that names one renders
