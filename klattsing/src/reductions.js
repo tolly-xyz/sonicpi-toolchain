@@ -31,6 +31,12 @@
 //   assimilation (off) a word-final N takes the place of a following word-initial labial (M before P B M) or
 //             velar (NG before K G) in the same phrase ("ten pins", "in case"; regressive place assimilation of
 //             word-final alveolars, Gimson 1962; gradient and optional, Nolan 1992, Ellis & Hardcastle 2002: off)
+//   sing      sung lines: "lexical" (the default: heteronyms and "the" before a vowel only, no weak forms or the opt-in
+//             three), true (as spoken) or false (nothing)
+// With "vowels" (vowels.js) on, which renders an unstressed AH as its schwa AX, the weak table is the full one (to /
+// into / do too) and reductions owns the words of its table: each is marked weakForm true (its weak form, whose
+// unstressed vowels vowels gives AX / AXR / IX) or false (the strong form it kept: the vowel stays full), and vowels'
+// own weak words (to, was, than) follow that mark instead of its list.
 // Not here (elsewhere): the duration of function words (functionWords), the flapped T/D (stops: DQF, acoustically;
 // the lexical phoneme stays T/D). The number of syllables never changes, so sing's notes still fit.
 import { syllabify } from './syllables.js';
