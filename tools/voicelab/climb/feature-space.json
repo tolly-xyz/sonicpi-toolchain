@@ -1,0 +1,405 @@
+{
+ "about": "Joint search space over the merged features for climb.py voice (--space): the speak options of coarticulation, glottal, nasals, stops, prosody, fricatives (and the voice string) around their fitted defaults, on top of the eight-feature base (klattsing/presets/kokoro-durations.json + mitalk-bursts + every feature as {}; a feature given as {} is its defaults, so dotted names set fields over them). prosody.final and microOffset are left out (Whisper heard final consonants' voicing worse with them); defaults are the options' own.",
+ "params": [
+  {
+   "name": "voice.t",
+   "type": "float",
+   "lo": -0.9,
+   "hi": 0.6,
+   "step": 0.15,
+   "res": 0.01,
+   "default": 0,
+   "weight": 1.5
+  },
+  {
+   "name": "voice.g",
+   "type": "float",
+   "lo": 0.1,
+   "hi": 0.95,
+   "step": 0.1,
+   "res": 0.01,
+   "default": 0.5,
+   "weight": 1
+  },
+  {
+   "name": "voice.h",
+   "type": "float",
+   "lo": 0,
+   "hi": 0.3,
+   "step": 0.04,
+   "res": 0.005,
+   "default": 0.05,
+   "weight": 1
+  },
+  {
+   "name": "glottal.rd",
+   "type": "float",
+   "lo": 0.4,
+   "hi": 2.5,
+   "step": 0.2,
+   "res": 0.01,
+   "default": 1,
+   "weight": 1.5
+  },
+  {
+   "name": "glottal.rdEffort",
+   "type": "float",
+   "lo": 0,
+   "hi": 12,
+   "step": 1.5,
+   "res": 0.1,
+   "default": 6,
+   "weight": 1
+  },
+  {
+   "name": "glottal.tilt",
+   "type": "float",
+   "lo": -12,
+   "hi": 12,
+   "step": 2,
+   "res": 0.1,
+   "default": 0,
+   "weight": 1
+  },
+  {
+   "name": "glottal.jitter",
+   "type": "float",
+   "lo": 0,
+   "hi": 2,
+   "step": 0.25,
+   "res": 0.01,
+   "default": 0.5,
+   "weight": 0.5
+  },
+  {
+   "name": "glottal.shimmer",
+   "type": "float",
+   "lo": 0,
+   "hi": 12,
+   "step": 1.5,
+   "res": 0.1,
+   "default": 5,
+   "weight": 0.5
+  },
+  {
+   "name": "glottal.noiseTilt",
+   "type": "float",
+   "lo": 0,
+   "hi": 30,
+   "step": 4,
+   "res": 0.5,
+   "default": 15,
+   "weight": 0.5
+  },
+  {
+   "name": "glottal.aspMod",
+   "type": "float",
+   "lo": 0,
+   "hi": 1,
+   "step": 0.15,
+   "res": 0.01,
+   "default": 1,
+   "weight": 0.5
+  },
+  {
+   "name": "prosody.accent",
+   "type": "float",
+   "lo": 0,
+   "hi": 7,
+   "step": 0.6,
+   "res": 0.05,
+   "default": 3.3,
+   "weight": 1
+  },
+  {
+   "name": "prosody.downstep",
+   "type": "float",
+   "lo": 0.2,
+   "hi": 1,
+   "step": 0.08,
+   "res": 0.01,
+   "default": 0.52,
+   "weight": 1
+  },
+  {
+   "name": "prosody.nuclear",
+   "type": "float",
+   "lo": 0.2,
+   "hi": 1.5,
+   "step": 0.1,
+   "res": 0.01,
+   "default": 0.58,
+   "weight": 1
+  },
+  {
+   "name": "prosody.peak",
+   "type": "float",
+   "lo": -0.6,
+   "hi": 0.6,
+   "step": 0.08,
+   "res": 0.01,
+   "default": -0.14,
+   "weight": 1
+  },
+  {
+   "name": "prosody.rise",
+   "type": "float",
+   "lo": 10,
+   "hi": 150,
+   "step": 15,
+   "res": 1,
+   "default": 43,
+   "weight": 1
+  },
+  {
+   "name": "prosody.fall",
+   "type": "float",
+   "lo": 100,
+   "hi": 1200,
+   "step": 100,
+   "res": 5,
+   "default": 470,
+   "weight": 1
+  },
+  {
+   "name": "prosody.top",
+   "type": "float",
+   "lo": 0,
+   "hi": 6,
+   "step": 0.5,
+   "res": 0.05,
+   "default": 2.65,
+   "weight": 1
+  },
+  {
+   "name": "prosody.declination",
+   "type": "float",
+   "lo": 0,
+   "hi": 6,
+   "step": 0.5,
+   "res": 0.05,
+   "default": 3.1,
+   "weight": 1
+  },
+  {
+   "name": "prosody.initial",
+   "type": "float",
+   "lo": 0,
+   "hi": 7,
+   "step": 0.6,
+   "res": 0.05,
+   "default": 3.6,
+   "weight": 1
+  },
+  {
+   "name": "prosody.initialMs",
+   "type": "float",
+   "lo": 20,
+   "hi": 200,
+   "step": 20,
+   "res": 1,
+   "default": 86,
+   "weight": 1
+  },
+  {
+   "name": "prosody.continuation",
+   "type": "float",
+   "lo": -3,
+   "hi": 3,
+   "step": 0.5,
+   "res": 0.05,
+   "default": -0.6,
+   "weight": 1
+  },
+  {
+   "name": "prosody.micro",
+   "type": "float",
+   "lo": 0,
+   "hi": 4,
+   "step": 0.4,
+   "res": 0.05,
+   "default": 1.6,
+   "weight": 1
+  },
+  {
+   "name": "prosody.microMs",
+   "type": "float",
+   "lo": 10,
+   "hi": 120,
+   "step": 12,
+   "res": 1,
+   "default": 50,
+   "weight": 1
+  },
+  {
+   "name": "prosody.dip",
+   "type": "float",
+   "lo": 0,
+   "hi": 3,
+   "step": 0.3,
+   "res": 0.05,
+   "default": 1.2,
+   "weight": 1
+  },
+  {
+   "name": "coarticulation.degree",
+   "type": "float",
+   "lo": 0.5,
+   "hi": 3.5,
+   "step": 0.3,
+   "res": 0.01,
+   "default": 2,
+   "weight": 1.2
+  },
+  {
+   "name": "coarticulation.cv",
+   "type": "float",
+   "lo": 20,
+   "hi": 140,
+   "step": 12,
+   "res": 1,
+   "default": 60,
+   "weight": 1
+  },
+  {
+   "name": "coarticulation.vc",
+   "type": "float",
+   "lo": 15,
+   "hi": 120,
+   "step": 10,
+   "res": 1,
+   "default": 50,
+   "weight": 1
+  },
+  {
+   "name": "nasals.strength",
+   "type": "float",
+   "lo": 0,
+   "hi": 2,
+   "step": 0.2,
+   "res": 0.01,
+   "default": 1,
+   "weight": 1
+  },
+  {
+   "name": "nasals.vc",
+   "type": "float",
+   "lo": 0,
+   "hi": 1,
+   "step": 0.1,
+   "res": 0.01,
+   "default": 0.8,
+   "weight": 0.7
+  },
+  {
+   "name": "nasals.cv",
+   "type": "float",
+   "lo": 0,
+   "hi": 1,
+   "step": 0.1,
+   "res": 0.01,
+   "default": 0.5,
+   "weight": 0.7
+  },
+  {
+   "name": "nasals.transition",
+   "type": "float",
+   "lo": 0,
+   "hi": 40,
+   "step": 5,
+   "res": 0.5,
+   "default": 5,
+   "weight": 0.7
+  },
+  {
+   "name": "stops.burstGain",
+   "type": "float",
+   "lo": 0.2,
+   "hi": 3,
+   "step": 0.25,
+   "res": 0.01,
+   "default": 1,
+   "weight": 1
+  },
+  {
+   "name": "stops.aspirationGain",
+   "type": "float",
+   "lo": 0.2,
+   "hi": 3,
+   "step": 0.25,
+   "res": 0.01,
+   "default": 1,
+   "weight": 1
+  },
+  {
+   "name": "stops.voicingTail",
+   "type": "float",
+   "lo": 0,
+   "hi": 0.1,
+   "step": 0.01,
+   "res": 0.001,
+   "default": 0.02,
+   "weight": 0.5
+  },
+  {
+   "name": "stops.voiceBar.A1",
+   "type": "float",
+   "lo": 0,
+   "hi": 0.3,
+   "step": 0.03,
+   "res": 0.001,
+   "default": 0.07,
+   "weight": 0.7
+  },
+  {
+   "name": "fricatives.gain",
+   "type": "float",
+   "lo": 0.3,
+   "hi": 3,
+   "step": 0.2,
+   "res": 0.01,
+   "default": 1,
+   "weight": 1
+  },
+  {
+   "name": "fricatives.rise",
+   "type": "float",
+   "lo": 0,
+   "hi": 30,
+   "step": 4,
+   "res": 0.5,
+   "default": 5,
+   "weight": 0.7
+  },
+  {
+   "name": "fricatives.fall",
+   "type": "float",
+   "lo": 0,
+   "hi": 1,
+   "step": 0.1,
+   "res": 0.01,
+   "default": 0.3,
+   "weight": 0.7
+  },
+  {
+   "name": "fricatives.fallTo",
+   "type": "float",
+   "lo": 0,
+   "hi": 1,
+   "step": 0.1,
+   "res": 0.01,
+   "default": 0.3,
+   "weight": 0.7
+  },
+  {
+   "name": "fricatives.in",
+   "type": "float",
+   "lo": 0,
+   "hi": 40,
+   "step": 5,
+   "res": 0.5,
+   "default": 10,
+   "weight": 0.5
+  }
+ ]
+}
