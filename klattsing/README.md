@@ -50,7 +50,7 @@ reconstruction), `rules`; and the opt-in options below (`bankPatch`, `functionWo
 | `prosody` | `true`, or `{accent: 3.3, downstep: 0.52, nuclear: 0.58, peak: -0.14, rise: 43, fall: 470, top: 2.65, declination: 3.1, initial: 3.6, initialMs: 86, reset: 0, final: 0, finalFrom: 0, continuation: -0.6, question: 0, micro: 1.6, microMs: 50, microOffset: 0, dip: 1.2, effort: false}` (fields over these; `null` keeps one) (off) | speak: a pitch-accent intonation model in place of `intonation` (`src/prosody.js`, below): accents on content words only, smooth rise-falls peaking at `peak` of the stressed vowel, downstep, a nuclear accent, declination with an initial rise and resets, (opt-in) phrase-final lowering, comma and (opt-in) question tunes, F0 raised after voiceless and lowered in voiced obstruents. A `b` directive per phoneme and a pitch delta per vowel; timings, phonemes and timelines unchanged. Sing mode ignores it |
 | `fricatives` | `true`, or `{gain: 1, singGain: 4, rise: 5, fall: 0.3, fallTo: 0.3, fallToC: 0.05, in: 10, phonemes: {S: {field: value, frication: {FF1, BF1, AF1, FF2, BF2, AF2, FF3, BF3, AF3, AB, FM, rise, fall, fallTo, fallToC, in}}}}` (fields over these; `null` removes one) (off) | fricatives with their own noise spectra, levels and envelopes (`src/fricatives.js`, below): F V TH DH S Z SH ZH get entries of a generated bank `<base>--fr<hash>` (after coarticulation's, before the stops') whose `frication` drives a klattsch patch, `[FRIC=gain]`: a frication path of its own (noise through three resonators and a bypass, Klatt 1980's parallel branch), fitted to Kokoro; sung, `[FRIC=gain x singGain]`. Timings and the timeline's phonemes are unchanged |
 | `vowels` | `true`, or `{targets: true, balance: false, glide: true, reduced: true, weak: true, rhotic: true, singGlideMs: 150, phonemes: {CODE: {F1, F2, F3, BW1, BW2, BW3, A1, A2, A3, glideTo: {F1, F2, F3}, glide: [a, b]}}}` (fields over these; in `phonemes` `null` takes the base bank's value) (off) | vowel targets fitted to Kokoro (`src/vowels.js`, below): every vowel an onset and an offset target (vowel-inherent spectral change) and (with `balance`) its own bandwidths and amplitudes, diphthongs and r-colored vowels a late glide window (bank field `glide`, a klattsch patch), unstressed AH IH ER as reduced AX IX AXR, the weak forms of "to", "was", "than" as AX, a vowel before R in its syllable as r-colored `<vowel>QR`; entries of a generated bank `<base>--vw<hash>` (after `bankPatch`, before coarticulation's, so the loci, the stops' bursts and aspiration take them); sung, `[GLMS=singGlideMs]` (every glide at most that long, late) and diphthongs not split. Timings, durations and the timeline's phonemes are unchanged (vowels carry `code`) |
-| `reductions` | `true`, or `{weak: true, the: "IY", heteronyms: true, hDrop: false, elision: false, assimilation: false, sing: "lexical"}` (fields over these; `weak` also `"all"` (with to / into / do), `false` or `{word: "PHONES" \| ["before a consonant", "before a vowel"] \| null}` over the table) (off) | connected-speech forms in the lexicon (`src/reductions.js`, below): function words take their weak forms inside a phrase ("was" W AH0 Z, "for" F ER0, "can" K AH0 N, "than" DH AH0 N; "to" T AH0 only with `weak: "all"` or `vowels`, whose AX renders the schwa), the strong ones at its end; "the" is DH IY0 before a vowel; heteronyms are read by their neighbours ("Read verse", "their lives", "close the door"); opt-in h-dropping, "and"/"must" elision and N-to-M/NG assimilation across words. Changes phonemes and stress only, before the duration rules (which then time the reduced forms); sung, only the heteronyms and "the" (`sing`); the syllable count never changes |
+| `reductions` | `true`, or `{weak: false, the: "IY", heteronyms: true, hDrop: false, elision: false, assimilation: false, sing: "lexical"}` (fields over these; `weak`: `true` for the weak-form table, `"all"` with to / into / do, or `{word: "PHONES" \| ["before a consonant", "before a vowel"] \| null}` over the table) (off) | connected-speech forms in the lexicon (`src/reductions.js`, below): heteronyms are read by their neighbours ("Read verse", "their lives", "close the door") and "the" is DH IY0 before a vowel; opt-in (`weak: true`; on top of the other features they did not help Whisper), function words take their weak forms inside a phrase ("was" W AH0 Z, "for" F ER0, "can" K AH0 N, "than" DH AH0 N; "to" T AH0 only with `weak: "all"` or `vowels`, whose AX renders the schwa), the strong ones at its end; opt-in h-dropping, "and"/"must" elision and N-to-M/NG assimilation across words. Changes phonemes and stress only, before the duration rules (which then time the reduced forms); sung, only the heteronyms and "the" (`sing`); the syllable count never changes |
 
 ### The LF voice source (`glottal`)
 
@@ -358,7 +358,7 @@ unstressed function words take their weak forms (Jones's EPD; Gimson 1962 / Crut
 12; American forms after Kenyon & Knott 1953). `reductions` looks at every word in its phrase after the lexicon and
 before syllables are timed (`src/reductions.js`):
 
-- **weak forms** (`weak`, the table `WEAK`): a, an, the, and, but, or, nor, than, that, as, at, for, from, of,
+- **weak forms** (`weak: true`, opt-in, the table `WEAK`): a, an, the, and, but, or, nor, than, that, as, at, for, from, of,
   some, there, am, are, is, was, were, be, been, can, could, would, should, shall, must, will, does, have, has, had, he,
   she, we, me, you, him, his, her, them, us, your take their weak form (Roach's list, rhotic: "for" F ER0, "are" ER0,
   "your" Y ER0) unless they end a phrase (punctuation or the end of the text: "who is it for?", "faced us.", "yes, he
@@ -422,7 +422,7 @@ citation vowel until there is a schwa. Sung (sing stack: coarticulation + nasals
 pairs 61.9% -> 62.6% (p = 1: "read"); the 30 corpus sentences sung (auto melody) with every form 16.2% ->
 18.3% (3 better, 6 worse: a weak form loses its stress, so the auto melody gives it a short note, and a held note
 on [ʌ] is not what singers do: they keep a full vowel on a sustained note), so `sing` defaults to `"lexical"`:
-sung, only the heteronyms and "the" before a vowel (SINGLEX_RESULT); `sing: true` sings the spoken forms.
+sung, only the heteronyms and "the" before a vowel (16.2% -> 15.4%, 1 better: "their lives"); `sing: true` sings the spoken forms.
 
 With `vowels` (its reduced AX / AXR / IX) the schwa is there, so `reductions` uses the full table (to / into / do
 too) and owns the words of its table: it decides weak or strong by context (a phrase's end, "to" T UW0 before a vowel,
@@ -432,7 +432,13 @@ codes ("was" W AX Z, "for" F AXR, "to bed" T AX) and leaves a kept strong form's
 does not handle. BASE7 = BASE + `vowels` (3.385): + `reductions` 3.409 (dur 1.092 -> 1.126, spec 5.632 -> 5.662, pros
 3.431 -> 3.437; mcd_cmn 2.914 -> 2.907), held out (climb.py's 20) 2.984 -> 3.007; labels 2359 -> 2378 of 2454 (96.9%),
 substitutions 91 -> 65; the changed words' vowels MCD 3.42 -> 3.18 dB (mcd_cmn 3.18 -> 2.93; "to" 3.65 -> 3.66: BASE7
-already gives it AX). Lexical forms alone (`weak: false`) 3.398. BASE7_RESULTS
+already gives it AX). Lexical forms alone (`weak: false`) 3.398. Whisper on BASE7 (pairs: BASE7 = vowels.json's `feature-nobalance`): pairs 65.5% -> 66.2% (p = 1, "read"); the weak
+forms (`weak: true`, with the schwa) made the sentences worse: 30 corpus 14.5% -> 13.7% (4 better, 4 worse), 30
+held-out 23.7% -> 26.1% (6, 7), 30 fresh 14.3% -> 16.6% (3, 8; "for" F AXR in 4 of them): 131 -> 141 errors; the
+lexical corrections alone (`weak: false`) 13.7%, 22.4%, 13.6%: 124 errors (6 better, 2 worse). So `weak` is off by
+default: `reductions: true` is the heteronyms and "the" before a vowel (fidelity BASE7 3.385 -> 3.398; BASE 3.262 ->
+3.276), and `weak: true` is for Kokoro-likeness (3.409) at some cost in intelligibility. With the default, vowels keeps
+its own weak words (to, was, than: AX).
 
 Presets fitted against Kokoro by `tools/voicelab/climb.py` are spec fragments in `presets/` (merge one into a spec:
 `{"mode": "speak", "text": ..., ...preset}`): `kokoro-durations.json` (`rules`, `phoneDur`, `functionWords`) and
