@@ -393,6 +393,7 @@ corrections by default. Not here: function-word
 durations (`functionWords`), flapped T/D (`stops`, acoustically), reduced vowel qualities (a schwa entry), syllabic
 consonants ("button" B AH1 T N, as Kokoro says it).
 
+(The BASE measurements in this paragraph and the next are of `weak: true`, the default until the BASE7 runs below.)
 On the Kokoro corpus (`fidelity.py --audio`, BASE = `kokoro-durations` + `mitalk-bursts` + `coarticulation` + `glottal` +
 `nasals` + `stops` + `prosody` + `fricatives`): score 3.262 -> 3.278 (dur 1.092 -> 1.118, spec 5.280 -> 5.301, pros
 3.415 -> 3.415; mcd_cmn 2.983 -> 2.978, unstressed vowel durations log_rmse 0.305 -> 0.299, vowel r 0.835 -> 0.841). The
