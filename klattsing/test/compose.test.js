@@ -227,3 +227,68 @@ test('reductions on top of all six: it changes the sound, each of the six still 
   for (const b of banksFor(sungOn)) registerBank(b);
   assert.deepEqual(compileString(sung).warnings, []);
 });
+
+// vowels (src/vowels.js: a vowel-target bank between bankPatch's and coarticulation's, new vowel codes, the glide window)
+// on top of all six: coarticulation, the stops, breath and the nasals must take its targets and codes, prosody's pitch and
+// the frication must not move, and every one of the six must still change the sound
+test('vowels composes with all six: it changes the sound, each of the six still does; targets reach coarticulation and stops', async () => {
+  const { FormantSynth } = await import('../../vendor/klattsch/src/engine/synth-core.js');
+  const text = 'The dark river was there to hear about her four boats, and five good men kept it.';
+  const on = { coarticulation: true, glottal: true, nasals: true, stops: true, fricatives: true, prosody: true };
+  const all = { text, functionWords: true, ...on, vowels: true }, h = audio(all);
+  assert.notEqual(h, audio({ ...all, vowels: false }), 'vowels has no effect with the six on');
+  for (const k of Object.keys(on)) {
+    const without = { ...all }; delete without[k];
+    assert.notEqual(h, audio(without), `${k} has no effect with vowels and the other five on`);
+  }
+  const s = speak(all);
+  assert.match(s, /^\[bank=klatt1980-en--nas[0-9a-f]{12}--vw[0-9a-f]{12}--co[0-9a-f]{12}--fr[0-9a-f]{12}--st[0-9a-f]{12}\] \[CO=2\].* \[GS=1\].* \[NAS=1\].* \[FRIC=1\]/);
+  // the codes reach the stops (aspiration and bursts into reduced / r-colored vowels) and coarticulation (vowel: true)
+  assert.match(s, / TQTAX /); assert.match(s, / AXR/); assert.match(s, / AAQR/); assert.match(s, / AOQR/);
+  for (const b of banksFor(all)) registerBank(b);
+  const P = (await import('../../vendor/klattsch/src/engine/index.js')).banks.get(s.match(/^\[bank=([^\]]+)\]/)[1]).phonemes;
+  for (const c of ['AX', 'AXR', 'AAQR', 'AOQR', 'OW']) assert.ok(P[c].vowel && P[c].glideTo, c);
+  assert.equal(P.HQOW.F2, P.OW.F2, "the aspiration takes the vowel's onset target");
+  // the targets act through coarticulation: formant events go to OW's onset (the CV move after B) and its offset (the glide)
+  const v = compileString(s).voices[0];
+  const fe = v.schedule.filter((e) => e.params && e.params.join() === 'F1,F2,F3');
+  assert.ok(fe.some((e) => Math.abs(e.target.F2 - P.OW.F2) < 0.01) && fe.some((e) => Math.abs(e.target.F2 - P.OW.glideTo.F2) < 0.01), 'OW onset and offset');
+  // prosody's pitch (the b directives) and the frication envelopes are the same with or without vowels
+  const bs = (x) => (x.match(/ b[\d.]+/g) ?? []).join('');
+  assert.equal(bs(s), bs(speak({ ...all, vowels: false })), 'vowels moved the pitch contour');
+  const sched = (spec) => { for (const b of banksFor(spec)) registerBank(b); return compileString(speak(spec)).voices[0]; };
+  const fo = (x) => JSON.stringify(x.schedule.filter((e) => e.fricOnly).map((e) => [e.atMs.toFixed(2), e.target]));
+  assert.equal(fo(v), fo(sched({ ...all, vowels: false })), 'vowels moved the frication events');
+  assert.ok(v.schedule.some((e) => e.nasalOnly), 'expected nasalOnly events');
+  assert.ok(v.schedule.some((e) => e.target.voicing === 1 && e.target.A2 === 0 && e.target.BW1 === 60), 'expected a voice bar');
+  const synth = new FormantSynth({ sampleRate: 16000, schedule: v.schedule });
+  const buf = new Float32Array(Math.ceil(v.totalMs * 16));
+  let gs = 0, n = 0, peak = 0;
+  for (let i = 0; i < buf.length; i += 160) { synth.process(buf.subarray(i, i + 160)); n++; gs += synth.src.GS; }
+  for (const x of buf) { assert.ok(Number.isFinite(x)); peak = Math.max(peak, Math.abs(x)); }
+  assert.ok(gs / n > 0.95, `LF source on ${(100 * gs / n).toFixed(0)}% of blocks`);
+  assert.ok(synth.nasal && synth.fric, 'nasal and frication paths on');
+  assert.ok(peak < 1, `peak ${peak}`);
+});
+
+// all eight: reductions on top of the seven (vowels included): it changes the sound, each of the seven still does, and
+// the weak forms reach vowels' reduced codes (reductions owns to / was / than, vowels renders their schwa)
+test('reductions on top of the seven (with vowels): each of the eight changes the sound; weak forms take AX', () => {
+  const text = 'She was to read the evening paper to them, and five good men kept the bottom of it for us.';
+  const seven = { coarticulation: true, glottal: true, nasals: true, stops: true, fricatives: true, prosody: true, vowels: true };
+  const all = { text, functionWords: true, ...seven, reductions: true }, h = audio(all);
+  assert.notEqual(h, audio({ ...all, reductions: false }), 'reductions has no effect with the seven on');
+  for (const k of Object.keys(seven)) {
+    const without = { ...all }; delete without[k];
+    assert.notEqual(h, audio(without), `${k} has no effect with reductions and the other six on`);
+  }
+  const s = speak(all);
+  assert.match(s, /^\[bank=klatt1980-en--nas[0-9a-f]{12}--vw[0-9a-f]{12}--co[0-9a-f]{12}--fr[0-9a-f]{12}--st[0-9a-f]{12}\] \[CO=2\].* \[GS=1\].* \[NAS=1\].* \[FRIC=1\]/);
+  const seq = s.split(' ').filter((t) => /^[A-Z]+(\(|$)/.test(t)).map((t) => t.replace(/\(.*/, '')).join(' ');
+  assert.match(seq, /^SH IY W AX Z TQTAX AX R IY DQVU DH IY IY V /, seq);      // was to read the evening
+  assert.match(seq, / F AXR AH S$/, seq);                                         // for us.
+  for (const b of banksFor(all)) registerBank(b);
+  const v = compileString(s).voices[0];
+  assert.deepEqual(compileString(s).warnings, []);
+  assert.ok(v.schedule.some((e) => e.fricOnly) && v.schedule.some((e) => e.nasalOnly), 'frication and nasal events');
+});

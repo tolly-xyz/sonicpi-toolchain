@@ -13,6 +13,9 @@ const REF = JSON.parse(readFileSync(new URL('./reference.fixture.json', import.m
 const PRESET = JSON.parse(readFileSync(new URL('../presets/kokoro-durations.json', import.meta.url), 'utf8'));
 const BASE4 = { bank: 'mitalk-bursts', coarticulation: true, glottal: true, nasals: true, stops: true };
 const FRIC_TEXT = 'Five thick shoes, the zoo; she has seven of those fish.';
+const BASE6 = { ...BASE4, prosody: true, fricatives: true };
+const SING4 = { bank: 'mitalk-bursts', coarticulation: true, nasals: true, stops: true, fricatives: true };
+const VOWEL_TEXT = 'The boy was there to hear about her hour in the dark, but my bird took a cool boat.';
 const TEXTS = ['The birch canoe slid on the smooth planks.', 'Nine men ran home in the morning, singing a song.', 'mine nine ram ran rang sum sun sung'];
 export const SPECS = [
   ...REF.map((r) => r.spec),
@@ -23,6 +26,10 @@ export const SPECS = [
   // "fricatives" engine patch: its frication path must leave these bit-identical)
   ...[...TEXTS, FRIC_TEXT].map((text) => ({ mode: 'speak', ...PRESET, ...BASE4, text })),
   { mode: 'sing', bank: 'mitalk-bursts', coarticulation: true, nasals: true, stops: true, text: 'She sells sea shells, five thin vases', notes: 'auto', bpm: 140 },
+  // round 4's BASE (all six merged features) and its sung stack, with vowel-heavy text (added before the "vowels"
+  // engine patch, the glide window and [GLMS]: they must leave these bit-identical)
+  ...[...TEXTS, FRIC_TEXT, VOWEL_TEXT].map((text) => ({ mode: 'speak', ...PRESET, ...BASE6, text })),
+  { mode: 'sing', ...SING4, text: 'High above the dark river, four hours away', notes: 'auto', bpm: 120 },
 ];
 export function audioHash(spec, sampleRate = 16000) {
   const c = compileString(toKlattsch(spec));

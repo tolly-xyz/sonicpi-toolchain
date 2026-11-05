@@ -15,6 +15,7 @@ import { stopOptions, planStops, afterSilence, beforeSilence } from './stops.js'
 import { prosodyOptions, accentPlan, intonate } from './prosody.js';
 import { fricOptions, fricDirectives } from './fricatives.js';
 import { reductionOptions, reduceWords } from './reductions.js';
+import { vowelOptions, planVowels, vowelDirectives } from './vowels.js';
 
 const DIPH = { AY: ['AA', 'IY'], EY: ['EH', 'IY'], OW: ['AO', 'UW'], AW: ['AA', 'UW'], OY: ['AO', 'IY'] };
 const NOTE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -72,26 +73,31 @@ export function durTable(phoneDur) {
 
 // o.reductions (reductions.js): weak forms, heteronyms by context, ...: the parsed words with those forms, cached
 // per parse (the parsed array) and option value
+// (ctx: the mode, and whether "vowels" gives a weak vowel its schwa AX: then the full weak table)
 const reducedCache = new WeakMap();
-function reduced(ws, x) {
+function reduced(ws, x, ctx) {
   if (!x) return ws;
   let m = reducedCache.get(ws);
   if (!m) reducedCache.set(ws, (m = new Map()));
-  const key = JSON.stringify(x);
+  const key = JSON.stringify([x, ctx]);
   let r = m.get(key);
-  if (!r) { r = reduceWords(ws, reductionOptions(x)); if (m.size >= 64) m.clear(); m.set(key, r); }
+  if (!r) { const R = reductionOptions(x, ctx); r = R ? reduceWords(ws, R) : ws; if (m.size >= 64) m.clear(); m.set(key, r); }
   return r;
 }
 
 // o.functionWords: true (FUNCTION_WORDS) or a list of words: one-syllable ones get stress 0 before the rules
 export function words(text, rules, version, o = {}) {
   const fw = o.functionWords && (o.functionWords === true ? FUNCTION_WORDS : new Set(o.functionWords.map((x) => x.toLowerCase())));
-  const ws = reduced(parse(text), o.reductions).map((w) => {
+  const V = vowelOptions(o);
+  const ctx = { mode: o.mode === 'sing' ? 'sing' : 'speak', schwa: !!V && (V.reduced || !!V.weak) };
+  const ws = reduced(parse(text), o.reductions, ctx).map((w) => {
     const reduce = fw && w.syllables.length === 1 && fw.has(w.word);
     return { ...w, syllables: w.syllables.map((s) => (reduce ? { ...s, stress: 0 } : { ...s })) };
   });
   const dur = durTable(o.phoneDur);
   const timed = version === 'v0' ? timeWordsV0(ws, rules ?? undefined, dur) : timeWords(ws, { ...RULES, ...(rules ?? {}) }, dur);
+  // "vowels" (vowels.js): the code each syllable's vowel is rendered with (s.nucleusCode), before the stops take it
+  if (V) planVowels(timed, V);
   return o.stops ? planStops(timed, stopOptions(o.stops)) : timed;
 }
 
@@ -116,7 +122,7 @@ export function glottalDirs(g) {
 function prefix(o, mode = 'speak') {
   const bank = bankName(o), co = coartOptions(o.coarticulation);
   return [bank ? `[bank=${bank}]` : '', o.transition ? `[TR=${o.transition}]` : '', co ? coartDirectives(co) : '', glottalDirs(o.glottal),
-    nasalDirectives(nasalOptions(o)), fricDirectives(fricOptions(o), mode), voiceOf(o)].filter(Boolean).join(' ');
+    nasalDirectives(nasalOptions(o)), fricDirectives(fricOptions(o), mode), vowelDirectives(vowelOptions(o), mode), voiceOf(o)].filter(Boolean).join(' ');
 }
 // the directives every string of spec o starts with (bank chain, TR, coarticulation, glottal, nasals, fricatives, voice)
 export const prefixOf = (o) => (o.mode === 'sing' ? prefix({ voice: 'sing', ...o }, 'sing') : prefix(o));
@@ -125,6 +131,10 @@ const asp = (s, o) => (o.aspiration !== false && s.aspMs ? `r${f1(s.aspMs)} HH `
 // timeline by its lexical phoneme; fix: sing's correction for a rest next to it
 const consonant = (s, part, i, p, at, fix) => { const c = s[part]?.[i]; return c ? [fix ? fix(c, p) : c, { ...at, p }] : [p, at]; };
 const aspToken = (s, at) => (s.aspCode ? [s.aspCode, { ...at, asp: true, p: 'HH' }] : ['HH', { ...at, asp: true }]);
+// "vowels" (vowels.js): a syllable's vowel code (s.nucleusCode: reduced AX/IX/AXR, r-colored <vowel>QR), named in the
+// timeline by its lexical vowel with the code beside it
+const vowelCode = (s) => s.nucleusCode ?? s.nucleus;
+const vowelAt = (s, at) => (s.nucleusCode ? { ...at, p: s.nucleus, code: s.nucleusCode } : at);
 // the klattsch aspiration (h) a voice string leaves set, so "breath" can restore it
 export function voiceAspiration(voice) {
   let h = 0;
@@ -187,8 +197,8 @@ export function speak(o, meta) {
         const delta = st ? f1(b * (2 ** (st / 12) - 1)) : 0;
         const acc = o.accent !== false && (P?.effort ? plan.accented.has(`${wi}:${si}`) : s.stress === 1);
         if (acc) out += accUp;
-        if (breathHere) { out += hUp; ph(s.aspMs, BREATH_PREFIX + s.nucleus, { ...at, asp: true, p: s.nucleus }); out += hDown; }
-        ph(s.nucleusMs * rate, s.nucleus, at, delta ? `(${delta > 0 ? '+' : ''}${delta})` : '', 'vowel');
+        if (breathHere) { out += hUp; ph(s.aspMs, BREATH_PREFIX + vowelCode(s), { ...at, asp: true, p: s.nucleus }); out += hDown; }
+        ph(s.nucleusMs * rate, vowelCode(s), vowelAt(s, at), delta ? `(${delta > 0 ? '+' : ''}${delta})` : '', 'vowel');
         if (acc) out += accDown;
       }
       s.coda.forEach((p, i) => ph(s.codaMs[i] * rate, ...consonant(s, 'codaCode', i, p, at)));
@@ -213,7 +223,7 @@ export function autoNotes(syl, { scale = ['E2', 'G2', 'A2', 'G2', 'F2'], long = 
 // sing's timing, shared by sing() and durationsOf(): per syllable { s, at, rests, note, ons, coda, a, parts, to, rest }
 function singPlan(o) {
   const bpm = o.bpm ?? 120, st = (n) => n * 15000 / bpm;
-  const ws = words(o.text, o.rules, o.durations, o);
+  const ws = words(o.text, o.rules, o.durations, { ...o, mode: 'sing' });
   const syl = ws.flatMap((w) => w.syllables);
   const where = ws.flatMap((w, wi) => w.syllables.map((_, si) => ({ word: wi, syl: si })));
   // a note named 'r' (or 'rest') is a rest: [ 'r', sixteenths ]
@@ -236,7 +246,8 @@ function singPlan(o) {
     if (gate && (typeof len === 'number' ? len : 0) >= 6) gate = Math.max(gate, slot * (o.hold ?? 0.55));
     if (gate && v > gate) { rest = v - gate; v = gate; }
     const to = extra.to !== undefined ? f1(hz(extra.to) - hz(note)) : 0;
-    const parts = DIPH[s.nucleus] && v > 200 ? [[DIPH[s.nucleus][0], v * 0.8], [DIPH[s.nucleus][1], v * 0.2]] : [[s.nucleus, v]];
+    // ("vowels": the diphthong's own entry glides late instead, [GLMS])
+    const parts = DIPH[s.nucleus] && !o.vowels && v > 200 ? [[DIPH[s.nucleus][0], v * 0.8], [DIPH[s.nucleus][1], v * 0.2]] : [[vowelCode(s), v]];
     return { s, at: where[i], rests: (restsBefore[i] ?? []).map(restMs), note, ons, coda, a, parts, to, rest };
   });
   return { ws, plan, tail: (restsBefore[syl.length] ?? []).map(restMs) };
@@ -260,8 +271,8 @@ export function sing(o, meta) {
     if (x.a && !breath) ph(x.a, ...aspToken(s, at));
     const acc = o.accent !== false && s.stress === 1;
     if (acc) out += accUp;
-    if (x.a && breath) { out += hUp; ph(x.a, BREATH_PREFIX + x.parts[0][0], { ...at, asp: true, p: x.parts[0][0] }); out += hDown; }
-    x.parts.forEach(([p, len2], j) => ph(len2, p, at, x.to && j === x.parts.length - 1 ? `${x.to > 0 ? '+' : ''}${x.to}` : ''));
+    if (x.a && breath) { out += hUp; ph(x.a, BREATH_PREFIX + x.parts[0][0], { ...at, asp: true, p: s.nucleusCode ? s.nucleus : x.parts[0][0] }); out += hDown; }
+    x.parts.forEach(([p, len2], j) => ph(len2, p, s.nucleusCode ? vowelAt(s, at) : at, x.to && j === x.parts.length - 1 ? `${x.to > 0 ? '+' : ''}${x.to}` : ''));
     if (acc) out += accDown;
     s.coda.forEach((p, j) => ph(x.coda[j], ...consonant(s, 'codaCode', j, p, at, j === s.coda.length - 1 && restAfter && beforeSilence)));
     if (x.rest > 0) out += `p${f1(x.rest)} `;

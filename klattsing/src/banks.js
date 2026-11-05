@@ -5,6 +5,8 @@
 //   "bankPatch": { CODE: { field: value } }                fields changed on top of "bank" (default klatt1980-en),
 //                                                          as a generated bank "<base>--<hash>" that extends it
 //   "aspiration": "breath"                                 adds BR<vowel> entries, a bank "<base>--br<hash>" (below)
+//   "vowels": true | {...}                                 vowel targets, reduced and r-colored vowels, "<base>--vw<hash>"
+//                                                          (vowels.js; after bankPatch, before coarticulation)
 //   "coarticulation": true | {...}                         adds klattsch's coarticulation fields (vowel, locus,
 //                                                          locusBurst, transparent): a bank "<base>--co<hash>"
 //   "fricatives": true | {...}                             fricative entries for klattsch's frication path, "<base>--fr<hash>"
@@ -17,11 +19,12 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { banks, registerBank } from '../../vendor/klattsch/src/engine/banks/index.js';
-import { VOWELS } from './phones.js';
+import { VOWELS, isVowelCode } from './phones.js';
 import { coartOptions, coartFields } from './coarticulation.js';
 import { nasalOptions, nasalEntries } from './nasals.js';
 import { stopOptions, stopsBank } from './stops.js';
 import { fricOptions, fricEntries } from './fricatives.js';
+import { vowelOptions, vowelEntries } from './vowels.js';
 
 const BANK_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'banks');
 
@@ -97,8 +100,8 @@ export function breathBank(base, voicing) {
   if (!resolved) throw new Error(`unknown bank: ${base}`);
   const phonemes = {};
   for (const [code, e] of Object.entries(resolved.phonemes)) {
-    if (!e || !VOWELS.has(code)) continue;
-    const { glideTo, ...steady } = e;
+    if (!e || !isVowelCode(code)) continue;
+    const { glideTo, glide, ...steady } = e;
     phonemes[BREATH_PREFIX + code] = voicing === undefined ? steady : { ...steady, voicing };
   }
   return { schemaVersion: 1, name: `${base}--br${hash(canonical({ extends: base, phonemes }))}`, extends: base, phonemes };
@@ -110,7 +113,9 @@ export function coartBank(base, c) {
   const resolved = banks.get(base);
   if (!resolved) throw new Error(`unknown bank: ${base}`);
   const phonemes = {};
-  for (const [code, f] of Object.entries(coartFields(coartOptions(c), (p) => !!resolved.phonemes[p]))) phonemes[code] = { ...resolved.phonemes[code], ...f };
+  // (vowel codes beyond the lexical 15: the "vowels" option's reduced and r-colored entries, when the base has them)
+  const extra = Object.keys(resolved.phonemes).filter((p) => resolved.phonemes[p] && isVowelCode(p) && !VOWELS.has(p)).sort();
+  for (const [code, f] of Object.entries(coartFields(coartOptions(c), (p) => !!resolved.phonemes[p], extra))) phonemes[code] = { ...resolved.phonemes[code], ...f };
   return { schemaVersion: 1, name: `${base}--co${hash(canonical({ extends: base, phonemes }))}`, extends: base, phonemes };
 }
 
@@ -122,6 +127,17 @@ export function nasalBank(base, n) {
   if (!resolved) throw new Error(`unknown bank: ${base}`);
   const phonemes = nasalEntries(resolved, n);
   return { schemaVersion: 1, name: `${base}--nas${hash(canonical({ extends: base, phonemes }))}`, extends: base, phonemes };
+}
+
+// "vowels" (src/vowels.js): every vowel's onset and offset targets, the reduced AX IX AXR and r-colored <vowel>QR
+// entries, generated per bank and options, extending it (after bankPatch, before coarticulation, breath, fricatives
+// and stops, so their entries take these targets)
+export function vowelBank(base, v) {
+  ensureBank(base);
+  const resolved = banks.get(base);
+  if (!resolved) throw new Error(`unknown bank: ${base}`);
+  const phonemes = vowelEntries(resolved, v);
+  return { schemaVersion: 1, name: `${base}--vw${hash(canonical({ extends: base, phonemes }))}`, extends: base, phonemes };
 }
 
 // "fricatives" (src/fricatives.js): F V TH DH S Z SH ZH with frication fields for klattsch's [FRIC], generated per bank
@@ -158,6 +174,8 @@ function chain(o) {
   const nas = nasalOptions(o);
   if (nas) add(nasalBank(name || banks.defaultName, nas));
   if (o.bankPatch && Object.keys(o.bankPatch).length) add(patchedBank(name || banks.defaultName, o.bankPatch));
+  const vw = vowelOptions(o);
+  if (vw) add(vowelBank(name || banks.defaultName, vw));
   if (o.coarticulation) add(coartBank(name || banks.defaultName, o.coarticulation));
   if (o.aspiration === 'breath') add(breathBank(name || banks.defaultName, o.breathVoicing));
   const fr = fricOptions(o);

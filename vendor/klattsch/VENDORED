@@ -41,3 +41,8 @@ tgies/klattsch @ 63dc2c6 (MIT), vendored with patches:
     frication field removed from an entry (null) keeps the previous fricative's value. Without [FRIC] the
     frication fields are dropped and the schedule is unchanged (audio fixture: klattsing/test/audio.test.js, round 3's BASE
     included); klattsing's "fricatives" option generates the entries
+  src/engine/sequencer.js: a gliding entry's glide: [a, b] (shares of its slot, 0 <= a < b <= 1) times its glide to glideTo
+    (default 0.25-0.75): under [CO] the formant event alone (F0 and the other parameters keep 0.25-0.75), without [CO] the
+    whole second event; [GLMS=ms] shortens any glide (with or without the field) to at most ms, ending where its window
+    ends. glide is not a target field. Without the field and the directive the schedule is unchanged (audio fixture:
+    klattsing/test/audio.test.js, round 4's BASE included); klattsing's "vowels" option generates such entries

@@ -116,7 +116,7 @@ test('heteronyms by context', () => {
   }
 });
 
-test('weak forms keep the citation form\'s syllable count; sing gets the same forms', () => {
+test('weak forms keep the citation form\'s syllable count; sung, only the lexical forms unless sing: true', () => {
   for (const [w, f] of Object.entries(WEAK_ALL)) {
     const n = lookup(w)[0].phones.filter((x) => x.stress !== null).length;
     for (const s of Array.isArray(f) ? f : [f]) assert.equal(s.split(' ').filter((t) => /\d$/.test(t)).length, n, `${w} ${s}`);
@@ -124,11 +124,18 @@ test('weak forms keep the citation form\'s syllable count; sing gets the same fo
   const text = 'There are more than two of them to read, and she was at the end of it';
   const n = words(text, null, null, {}).flatMap((w) => w.syllables).length;
   assert.equal(words(text, null, null, { reductions: true }).flatMap((w) => w.syllables).length, n);
-  const s = sing({ text, notes: 'auto', reductions: true });
-  assert.match(s, / W r[\d.]+ AH /);                            // she was at
-  assert.match(sing({ text, notes: 'auto', reductions: { weak: 'all' } }), / T r[\d.]+ AH /);   // to read
-  assert.notEqual(s, sing({ text, notes: 'auto' }));
+  // sung (sing: "lexical", the default): heteronyms and "the" before a vowel, no weak forms
+  const lex = sing({ text, notes: 'auto', reductions: true });
+  assert.match(lex, / W (?:[gt][+-][\d.]+ )*r[\d.]+ AA /);                          // she was at: strong
+  assert.match(lex, / R (?:[gt][+-][\d.]+ )*r[\d.]+ IY /);                          // to read: the verb
+  assert.notEqual(lex, sing({ text, notes: 'auto' }));
+  assert.equal(sing({ text, notes: 'auto', reductions: { sing: false } }), sing({ text, notes: 'auto' }));
+  const s = sing({ text, notes: 'auto', reductions: { sing: true } });
+  assert.match(s, / W r[\d.]+ AH /);                            // sing: true: the spoken forms
+  assert.match(sing({ text, notes: 'auto', reductions: { sing: true, weak: 'all' } }), / T r[\d.]+ AH /);   // to read
   assert.deepEqual(compileString(s).warnings, []);
+  assert.throws(() => reductionOptions({ sing: 'yes' }), /reductions\.sing/);
+  assert.equal(durationsOf({ mode: 'sing', text: 'It was red', notes: 'auto', reductions: true }).phones[3].p, 'AA');
 });
 
 test('opt-in: hDrop, elision, assimilation', () => {
@@ -186,4 +193,20 @@ test('durations and timelines name the reduced phonemes; speak strings carry the
   const tl = timelineOf(spec).phones.filter((x) => !x.asp).map((x) => x.p);
   assert.deepEqual(tl, d.filter((p) => p !== 'pau'));
   assert.match(speak(spec), / W r[\d.]+ AH r/);
+});
+
+test('with vowels: reductions owns its words (to / into / do back), vowels gives the weak vowels AX / AXR', () => {
+  const code = (t, o) => words(t, null, null, { functionWords: true, ...o }).map((w) => w.syllables.map((x) => [...x.onset, x.nucleusCode ?? x.nucleus, ...x.coda].join(' ')).join('.'));
+  const t = 'Go to bed, go to it, and that was for us; I know what it was.';
+  const both = code(t, { vowels: true, reductions: true }), v = code(t, { vowels: true }), r = code(t, { reductions: true });
+  assert.equal(both[1], 'T AX'); assert.equal(r[1], 'T UW');            // to bed: the weak form, now with a schwa
+  assert.equal(both[4], 'T UW'); assert.equal(v[4], 'T AX');            // to it: reductions' form before a vowel
+  assert.equal(both[8], 'W AX Z'); assert.equal(both[9], 'F AXR');      // was for: weak, reduced codes
+  assert.equal(both[10], 'AH S'); assert.equal(v[10], 'AX S');          // us; (phrase end): the strong form keeps its vowel
+  assert.equal(both[15], 'W AA Z'); assert.equal(v[15], 'W AX Z');      // ... was. (the end): strong
+  // no word gets two forms: every vowel code of a weak-table word is its reduced form's or the strong one's
+  assert.equal(code('Cut the pie into large parts.', { vowels: true, reductions: true })[3], 'IX N.T AX');
+  // without reductions, vowels is as before; without vowels, reductions is as before
+  assert.deepEqual(code(t, { vowels: true, reductions: false }), v);
+  assert.deepEqual(code(t, { reductions: true, vowels: false }), r);
 });

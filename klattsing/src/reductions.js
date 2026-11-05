@@ -37,7 +37,7 @@ import { syllabify } from './syllables.js';
 import { VOWELS } from './phones.js';
 import { lexiconHas } from './lexicon.js';
 
-export const REDUCTIONS = { weak: true, the: 'IY', heteronyms: true, hDrop: false, elision: false, assimilation: false };
+export const REDUCTIONS = { weak: true, the: 'IY', heteronyms: true, hDrop: false, elision: false, assimilation: false, sing: 'lexical' };
 const KEYS = Object.keys(REDUCTIONS);
 
 // weak forms: one form, or [before a consonant, before a vowel] (Roach 2009 ch. 12; Kenyon & Knott 1953): the full
@@ -124,8 +124,9 @@ const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
 const vowelsIn = (pron) => pron.split(' ').filter((t) => VOWELS.has(t.replace(/\d$/, ''))).length;
 const PHONES = /^[A-Z]{1,2}[012]?( [A-Z]{1,2}[012]?)*$/;
 
-// "reductions": true | { weak, the, heteronyms, hDrop, elision, assimilation } -> the full options, or null (off)
-export function reductionOptions(x) {
+// "reductions": true | { weak, the, heteronyms, hDrop, elision, assimilation, sing } -> the full options, or null
+// (off). ctx: { mode: "speak" | "sing", schwa: whether the vowels option renders an unstressed AH as its schwa AX }
+export function reductionOptions(x, ctx = {}) {
   if (!x) return null;
   if (x !== true && !isObj(x)) throw new Error(`reductions: true or an object, got ${JSON.stringify(x)}`);
   const o = { ...REDUCTIONS };
@@ -137,6 +138,16 @@ export function reductionOptions(x) {
     if (typeof o[k] !== 'boolean') throw new Error(`reductions.${k}: true or false, got ${JSON.stringify(o[k])}`);
   }
   if (![false, 'IY', 'IH'].includes(o.the)) throw new Error(`reductions.the: "IY", "IH" or false, got ${JSON.stringify(o.the)}`);
+  if (![true, false, 'lexical'].includes(o.sing)) throw new Error(`reductions.sing: "lexical", true or false, got ${JSON.stringify(o.sing)}`);
+  if (ctx.mode === 'sing') {
+    if (o.sing === false) return null;
+    // sung: by default only what corrects the lexicon (heteronyms, "the" before a vowel): no weak forms, no H, D, T
+    // dropped, no assimilation (sung Harvard sentences: weak forms 16.2% -> 18.3% WER; singers keep full vowels on
+    // held notes, and losing stress moves a function word to a short note of an auto melody)
+    if (o.sing === 'lexical') Object.assign(o, { weak: false, hDrop: false, elision: false, assimilation: false });
+  }
+  // a schwa to render the weak vowel with (vowels: AX): the full table, to / into / do too
+  if (o.weak === true && ctx.schwa) o.weak = 'all';
   o.custom = new Set();
   if (o.weak === true) o.weak = WEAK;
   else if (o.weak === 'all') o.weak = WEAK_ALL;
@@ -228,9 +239,12 @@ export function reduceWords(ws, o) {
     if (o.assimilation && phones[phones.length - 1]?.p === 'N' && (first === 'P' || first === 'B' || first === 'M' || first === 'K' || first === 'G')) {
       phones = [...phones.slice(0, -1), { p: first === 'K' || first === 'G' ? 'NG' : 'M', stress: null }];
     }
-    if (phones === w.phones) continue;
-    const same = phones.length === w.phones.length && phones.every((x, k) => x.p === w.phones[k].p && x.stress === w.phones[k].stress);
-    if (!same) out[i] = { ...w, phones, syllables: syllables(phones) };
+    // weakForm (a word of the weak table): true when it took its weak form, false when it kept its strong one; the
+    // vowels option (vowels.js) gives the weak vowels their reduced codes and leaves a strong form's vowel full
+    const mark = o.weak[word] ? { weakForm: weak } : weak ? { weakForm: true } : null;
+    const same = phones === w.phones || (phones.length === w.phones.length && phones.every((x, k) => x.p === w.phones[k].p && x.stress === w.phones[k].stress));
+    if (!same) out[i] = { ...w, phones, syllables: syllables(phones), ...mark };
+    else if (mark) out[i] = { ...w, ...mark };
   }
   return out;
 }

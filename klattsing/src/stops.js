@@ -58,7 +58,7 @@
 // glottal): 1.399 -> 1.681 (stops' MCD 4.32 -> 3.43 dB); see klattsing/README.md.
 import { createHash } from 'node:crypto';
 import { banks } from '../../vendor/klattsch/src/engine/banks/index.js';
-import { VOWELS, STOPS, VOICED, LIQUIDS, GLIDES, NASALS, AFFRICATES, SONORANT } from './phones.js';
+import { VOWELS, STOPS, VOICED, LIQUIDS, GLIDES, NASALS, AFFRICATES, SONORANT, isVowelCode, vowelOf } from './phones.js';
 
 // "stops": true = these (each chosen with tools/voicelab/fidelity.py against Kokoro; see VENDORED / README)
 export const STOP_DEFAULTS = {
@@ -167,7 +167,7 @@ function blend(e, t, k) {
   return out;
 }
 // a vowel's onset formants are its entry's F1-F3 (glideTo is where it ends)
-const vowelOnset = (v, code) => ({ ...v, rounded: ROUNDED.has(code) });
+const vowelOnset = (v, code) => ({ ...v, rounded: ROUNDED.has(vowelOf(code) ?? code) });
 
 // aspiration into vowel entry v: noise through the vowel's formants, F1 cut back and widened (blend k from HH)
 function aspirationEntry(hh, v, k) {
@@ -189,7 +189,8 @@ export function stopsBank(base, o, canonical) {
   const key = `${base}\n${canonical(o)}\n${canonical(resolved.phonemes)}`;
   if (cache.has(key)) return cache.get(key);
   const P = resolved.phonemes, phonemes = {};
-  const vowels = Object.keys(P).filter((c) => VOWELS.has(c) && P[c]);
+  // (with "vowels" also its reduced and r-colored codes: src/vowels.js)
+  const vowels = Object.keys(P).filter((c) => isVowelCode(c) && P[c]);
   for (const s of ['P', 'B', 'T', 'D', 'K', 'G']) {
     const e = P[s];
     if (!e || !e.isStop) continue;
@@ -235,7 +236,7 @@ export function planStops(ws, o) {
   const flat = [];
   ws.forEach((w, wi) => w.syllables.forEach((s, si) => {
     s.onset.forEach((p, i) => flat.push({ p, wi, si, s, part: 'onset', i }));
-    if (s.nucleus) flat.push({ p: s.nucleus, wi, si, s, part: 'nucleus' });
+    if (s.nucleus) flat.push({ p: s.nucleus, code: s.nucleusCode ?? s.nucleus, wi, si, s, part: 'nucleus' });
     s.coda.forEach((p, i) => flat.push({ p, wi, si, s, part: 'coda', i }));
   }));
   const pauseBetween = (a, b) => a.wi !== b.wi && ws[a.wi].punct !== '';
@@ -264,8 +265,8 @@ export function planStops(ws, o) {
     let rel = 'X';
     if (unrel) rel = 'U';
     else if (o.burst[x.p] > 0 && next) {
-      if (VOWELS.has(next)) rel = next;
-      else if (sameOnset && (LIQUIDS.has(next) || GLIDES.has(next)) && s.nucleus) rel = s.nucleus;
+      if (VOWELS.has(next)) rel = nextX.code;
+      else if (sameOnset && (LIQUIDS.has(next) || GLIDES.has(next)) && s.nucleus) rel = s.nucleusCode ?? s.nucleus;
     }
     const voicedCtx = prev !== undefined && VOICED.has(prev);
     // glottalStop: an unreleased T after a sonorant ends it with a glottal closure (abrupt), "that man"
@@ -280,7 +281,7 @@ export function planStops(ws, o) {
     // votTotal: the stop keeps its total (closure + aspiration): the closure gives what the aspiration gains (it
     // keeps at least MIN_CLOSURE_MS)
     if (o.votTotal && s.aspMs !== a0) s.onsetMs[i] = Math.max(s.onsetMs[i] - (s.aspMs - a0), Math.min(s.onsetMs[i], MIN_CLOSURE_MS));
-    if (aspirates(o)) s.aspCode = `HQ${s.nucleus}`;
+    if (aspirates(o)) s.aspCode = `HQ${s.nucleusCode ?? s.nucleus}`;
   }
   return ws;
 }

@@ -27,7 +27,7 @@ HARVARD = [
 # the config keys passed on to klattsing (the opt-in features too: a key left out here silently measures without it)
 KEEP = ("bank", "transition", "aspiration", "voice", "rules", "accent", "gate", "hold", "durations", "dynamics", "melody", "bpm", "rate",
         "functionWords", "phoneDur", "bankPatch", "intonation", "pauseMs", "accentDelta", "breathLevel", "breathVoicing",
-        "coarticulation", "glottal", "nasals", "stops", "prosody", "fricatives", "reductions")
+        "coarticulation", "glottal", "nasals", "stops", "prosody", "fricatives", "reductions", "vowels")
 norm = lambda s: re.findall(r"[a-z']+", s.lower().replace("’", "'"))
 
 def render(cfg, text, path):
